@@ -1,0 +1,9 @@
+# 工程级镜像设置：与用户级 ~/.cargo/config.toml 一致，保证 CI/新机器同样走国内源
+[source.crates-io]
+replace-with = "rsproxy-sparse"
+
+[source.rsproxy-sparse]
+registry = "sparse+https://rsproxy.cn/index/"
+
+[net]
+git-fetch-with-cli = true

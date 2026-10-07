@@ -1,0 +1,15 @@
+[package]
+name = "image-core"
+version.workspace = true
+edition.workspace = true
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+description = "RGBA 位图层（09 §3 bbox 保持全画布位置）+ 自带 PNG 读写（不引入图像依赖）"
+
+[dependencies]
+core-model = { workspace = true }
+flate2 = { workspace = true }
+
+[dev-dependencies]
+# 只用它的 check_png_size：验证"写出的 PNG 实际尺寸 == XML 声明尺寸"（13 §7 / AT-BDN-001）
+codec-bdn = { workspace = true }

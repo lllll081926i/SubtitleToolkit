@@ -1,0 +1,11 @@
+{
+  "windows_only": true,
+  "iced": true,
+  "full_16_9": true,
+  "layoutres_model": true,
+  "render_timeline": true,
+  "csri_split": true,
+  "pgs_ods_invariant": true,
+  "font_subset_gate": true,
+  "source_audit": true
+}

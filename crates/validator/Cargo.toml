@@ -1,0 +1,13 @@
+[package]
+name = "validator"
+version.workspace = true
+edition.workspace = true
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+description = "分层校验（13 §6、08、09、10）：结构/时间线/生命周期/Profile/码率测量；不做任何码率整形"
+
+[dependencies]
+core-model = { workspace = true }
+codec-ass = { workspace = true }
+codec-pgs = { workspace = true }
+serde = { workspace = true }

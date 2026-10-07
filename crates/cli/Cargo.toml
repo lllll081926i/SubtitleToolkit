@@ -1,0 +1,38 @@
+[package]
+name = "cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "subtitletool-cli（20_CLI_AUTOMATION）：与 GUI 共用同一 schema 的自动化入口"
+
+[[bin]]
+name = "subtitletool-cli"
+path = "src/main.rs"
+
+[dependencies]
+core-model = { workspace = true }
+format-detect = { workspace = true }
+codec-ass = { workspace = true }
+codec-srt = { workspace = true }
+codec-pgs = { workspace = true }
+transform-time = { workspace = true }
+transform-hdr = { workspace = true }
+transform-resolution = { workspace = true }
+validator = { workspace = true }
+media-probe = { workspace = true }
+task-engine = { workspace = true }
+sha2 = { workspace = true }
+pgs-author = { workspace = true }
+render-libass = { workspace = true }
+renderer-host = { workspace = true }
+win-job = { workspace = true }
+image-core = { workspace = true }
+codec-bdn = { workspace = true }
+font-service = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+[dev-dependencies]
+# 只为模糊冒烟：BDN XML 也必须做到"任何字节都不 panic"
+codec-bdn = { workspace = true }

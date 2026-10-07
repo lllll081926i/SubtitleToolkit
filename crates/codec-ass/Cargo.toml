@@ -1,0 +1,15 @@
+[package]
+name = "codec-ass"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "ASS/SSA AST：字节保真 round-trip，未知 tag/字段必须保留"
+
+[dependencies]
+core-model = { workspace = true }
+
+[dev-dependencies]
+# pysubs2 交叉验证要读写 JSON 期望，并顺带核对 SRT 侧语义
+serde = { workspace = true }
+serde_json = { workspace = true }
+codec-srt = { workspace = true }

@@ -1,0 +1,18 @@
+[Script Info
+Title: unclosed section header
+PlayResX: 1280
+Totally Unknown Key: value
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,ok
+Dialogue: 0,0:00:03.00,Default,,0,0,0,,too few fields
+Dialogue too short no colon
+0,0:00:05.00,0:00:06.00,Default,,0,0,0,,no key prefix
+: starts with colon
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize
+Style: Default,Arial,20,extra,fields,here
+Style: Short,Arial
+Style: ,

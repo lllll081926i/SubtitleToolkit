@@ -1,0 +1,10 @@
+[package]
+name = "format-detect"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "格式探测：扩展名只是 hint，以内容签名判定"
+
+[dependencies]
+core-model = { workspace = true }
+serde = { workspace = true }

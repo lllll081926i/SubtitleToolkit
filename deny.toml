@@ -1,0 +1,78 @@
+# cargo-deny 配置（21 §1 依赖原则、21 §11 依赖清单要求、28 §1 工具链）
+#
+# 立场来自 21 §1：核心安装包只允许宽松许可（MIT/Apache/BSD/ISC/Zlib 与公有领域奉献）。
+# GPL/AGPL/LGPL/MPL 项目（SUPer、VSFilterMod、ALASS、SupMover、ass2bdnxml 一类）
+# 只能作为**行为参考或外部可执行文件**（21 §7），不得链接进核心。
+#
+# 这份文件不是凭印象写的：schema 由本机 `cargo-deny 0.20.2` 的 `cargo deny init` 模板取证
+# （旧版键 unlicensed/copyleft/default/[licenses].deny 在该版本已移除），
+# allow 列表由 `cargo deny check licenses` 的真实输出反推（每次动依赖都要重跑）。
+
+[graph]
+# 本工程 Windows-only（ADR-001），唯一正式 target
+targets = ["x86_64-pc-windows-msvc"]
+
+[advisories]
+# RustSec advisory 库要联网拉取；拉不到时 `cargo deny check advisories` 直接失败，
+# 不允许"网络不行就当通过"。
+ignore = []
+# 直连 github.com 在本机会随机超时（实测 21s 连接失败）。用 git CLI 拉，
+# 由门阶注入一个仓库内临时的 insteadOf 镜像配置（tools/check_all.sh 的 advisory-audit），
+# 不碰用户全局 git 配置。结论里要写明这次是走镜像拿到的库。
+git-fetch-with-cli = true
+
+[licenses]
+# 白名单模式：allow 之外的任何 SPDX 表达式都会成为 error。
+# 该版本没有 [licenses].deny，"明确排除"由两条保证：白名单没包含就失败，
+# 加上 [bans].deny 按 crate 点名已知 GPL 项目。
+#
+# 这份列表是**21 §1 的许可政策**，不是"当前依赖恰好用到了哪些"。
+# 实测（cargo-deny 0.20.2，2026-10-06）当前真正遇到的只有：
+#   MIT / Apache-2.0 / Zlib / Unlicense / 0BSD / Unicode-3.0
+# BSD/ISC/LLVM-exception 属于政策预授权：以后新增这类依赖时不需要临时改政策；
+# 但要**新增一个政策里没有的许可家族**（例如 MPL-2.0、CC0）必须走决策记录（ISSUES E 节）。
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-DFS-2016",
+    "Unicode-3.0",
+    # 公有领域奉献：memchr 等的双许可另一侧，比 MIT 更宽松
+    "Unlicense",
+    # 0BSD 是 BSD-2 的进一步简化
+    "0BSD",
+]
+confidence-threshold = 0.8
+# 只有确实需要例外时才写；每一条都要能指回文档章节
+exceptions = []
+
+[licenses.private]
+# workspace 成员不因"未发布"就跳过许可检查
+ignore = false
+
+[bans]
+multiple-versions = "warn"
+# 21 §11 要求每个依赖记录版本；`*` 依赖等于没有版本
+wildcards = "deny"
+highlight = "all"
+deny = [
+    # 21 §5 明确不作为默认依赖（GPL-3.0/商业双许可）
+    { crate = "libimagequant", reason = "GPL-3.0 或商业双许可，核心不采用" },
+    # 21 §7 只作行为参考的 GPL/AGPL 项目，一旦被链进核心就是许可污染
+    { crate = "superss", reason = "SUPer 系是 GPL-3.0，只作行为参考" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = [
+    # .cargo/config.toml 把 crates-io 换成 rsproxy 国内镜像（ISSUES §B）
+    "sparse+https://rsproxy.cn/index/",
+    "https://index.crates.io/",
+    "https://github.com/rust-lang/crates.io-index",
+]
+allow-git = []

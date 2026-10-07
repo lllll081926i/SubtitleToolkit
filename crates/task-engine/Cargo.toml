@@ -1,0 +1,13 @@
+[package]
+name = "task-engine"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "任务引擎：输出事务、命名模板、覆盖策略、partial success"
+
+[dependencies]
+core-model = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# 15 §4 的缓存 key 合同要真哈希，不要用"拼字符串当指纹"的假实现
+sha2 = { workspace = true }

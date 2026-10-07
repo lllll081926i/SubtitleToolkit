@@ -1,0 +1,13 @@
+[package]
+name = "render-api"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "渲染层抽象：renderer 能力、帧数据、host IPC 协议类型（不含任何 native 依赖）"
+
+[dependencies]
+core-model = { workspace = true }
+serde = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }

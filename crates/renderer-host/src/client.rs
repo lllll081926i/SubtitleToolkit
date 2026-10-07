@@ -1,0 +1,571 @@
+//! 主进程这一侧：起 host、握手、要帧、处理崩溃与超时（12 §2）。
+//!
+//! 三条纪律决定了这个文件的形状：
+//!
+//! 1. **位数检查在加载之前**（12 §3）。`pe::arch_of_file` 只读 PE 头，不加载 DLL；
+//!    provider 与 host 的位数不一致就直接拒绝，绝不允许"试一下 `LoadLibrary` 看看行不行"。
+//! 2. **失败必须带证据**（38 §1）。崩溃返回退出码 + host 留下的 stderr 尾部 +
+//!    "这次有没有 Job 约束住整棵进程树"；超时返回等了多久、以及约束状态。
+//!    静默退化是本仓库反复犯的那类错（ISSUES Z6）。
+//! 3. **帧不直接信**。长度必须等于 `w*h*4`，摘要必须等于 host 报的 SHA-256
+//!    （12 §8 的去重纪律反过来用就是"传输完整性"）。
+
+use std::io::{self, Read};
+use std::path::{Path, PathBuf};
+use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+
+use core_model::canvas::Canvas;
+use sha2::{Digest as _, Sha256};
+
+use crate::pe::{self, PeArch};
+use crate::protocol::{self, Handshake, Message, Request, Response, API_VERSION};
+
+/// 一次 host 会话的请求参数。
+pub struct HostSpec<'a> {
+    /// `renderer-host-x64.exe` / `renderer-host-x86.exe`（28 §2 的产物）
+    pub host_exe: &'a Path,
+    pub dll: &'a Path,
+    pub storage: Canvas,
+    pub output: Canvas,
+    pub default_font: &'a str,
+    /// 单次请求（含握手）的等待上限
+    pub timeout: Duration,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum HostFailure {
+    /// 位数不符或架构未知：主进程据此换 host 或明确放弃（12 §3）
+    Arch {
+        provider: String,
+        host: String,
+    },
+    Spawn(String),
+    /// 等不到回应：调用方要知道"我等了多久、树有没有被约束住"
+    Timeout {
+        waited_ms: u64,
+        contained: bool,
+        job_error: u32,
+    },
+    /// host 死了（崩溃、abort、被系统干掉）
+    Crashed {
+        exit_code: Option<u32>,
+        log_tail: String,
+        contained: bool,
+        job_error: u32,
+    },
+    Protocol(String),
+    Io(String),
+}
+
+impl HostFailure {
+    /// 给人看的错误码（20 §错误模型：每一类失败都要有能对上的码）。
+    pub fn code(&self) -> &'static str {
+        match self {
+            HostFailure::Arch { .. } => "STK-RND-0201",
+            HostFailure::Spawn(_) => "STK-RND-0202",
+            HostFailure::Timeout { .. } => "STK-RND-0203",
+            HostFailure::Crashed { .. } => "STK-RND-0204",
+            HostFailure::Protocol(_) => "STK-RND-0205",
+            HostFailure::Io(_) => "STK-RND-0206",
+        }
+    }
+
+    pub fn title(&self) -> String {
+        match self {
+            HostFailure::Arch { provider, host } => {
+                format!("provider 与 host 位数不符（provider {provider}，host {host}）")
+            }
+            HostFailure::Spawn(s) => format!("无法启动 renderer-host：{s}"),
+            HostFailure::Timeout { waited_ms, .. } => {
+                format!("renderer-host 在 {waited_ms} ms 内没有回应")
+            }
+            HostFailure::Crashed { exit_code, .. } => format!(
+                "renderer-host 终止（退出码 {}）",
+                exit_code
+                    .map(|c| c.to_string())
+                    .unwrap_or_else(|| "无".to_string())
+            ),
+            HostFailure::Protocol(s) => format!("renderer-host 协议不符：{s}"),
+            HostFailure::Io(s) => format!("与 renderer-host 的管道出错：{s}"),
+        }
+    }
+}
+
+impl From<io::Error> for HostFailure {
+    fn from(e: io::Error) -> Self {
+        HostFailure::Io(e.to_string())
+    }
+}
+
+/// 一帧输出像素。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Frame {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
+    /// libass 的 `detect_change` 原值，只当 fast hint 用（12 §8）
+    pub detect_change: i32,
+    pub images: usize,
+}
+
+/// 一个活着的 host 会话。
+pub struct Host {
+    child: Child,
+    stdin: ChildStdin,
+    rx: Receiver<io::Result<Message>>,
+    stderr: Arc<Mutex<Vec<u8>>>,
+    /// `None` 意味着孙进程没被约束住（例如本进程已经属于另一个 Job —— nextest 就是这样）
+    job: Option<win_job::Job>,
+    job_error: u32,
+    handshake: Handshake,
+    timeout: Duration,
+    exe: PathBuf,
+}
+
+impl Host {
+    /// 起 host。**这里不做任何 `LoadLibrary`**：位数不符在进程边界上就拦掉。
+    pub fn start(spec: &HostSpec<'_>) -> Result<Host, HostFailure> {
+        let provider_arch =
+            pe::arch_of_file(spec.dll).map_err(|e| HostFailure::Io(e.to_string()))?;
+        let host_arch =
+            pe::arch_of_file(spec.host_exe).map_err(|e| HostFailure::Io(e.to_string()))?;
+        if !same_bitness(provider_arch, host_arch) {
+            return Err(HostFailure::Arch {
+                provider: arch_text(provider_arch),
+                host: arch_text(host_arch),
+            });
+        }
+
+        let mut child = Command::new(spec.host_exe)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| HostFailure::Spawn(format!("{}：{e}", spec.host_exe.display())))?;
+
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| HostFailure::Spawn("拿不到 host 的 stdin".to_string()))?;
+        let mut stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| HostFailure::Spawn("拿不到 host 的 stdout".to_string()))?;
+        let mut stderr_pipe = child
+            .stderr
+            .take()
+            .ok_or_else(|| HostFailure::Spawn("拿不到 host 的 stderr".to_string()))?;
+
+        // 读线程 + 通道：这样"等回应"可以有超时，而不是把调用方挂死在 read 上。
+        // 读线程同时把 EOF 变成一个明确的错误消息，让"host 崩了"与"host 还在想"区分得开。
+        let (tx, rx) = mpsc::channel();
+        std::thread::spawn(move || loop {
+            let outcome = match protocol::read_message(&mut stdout) {
+                Ok(None) => Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "host 关闭了控制面",
+                )),
+                Ok(Some(msg)) => Ok(msg),
+                Err(e) => Err(e),
+            };
+            if tx.send(outcome).is_err() {
+                break;
+            }
+        });
+        let stderr = Arc::new(Mutex::new(Vec::new()));
+        let sink = Arc::clone(&stderr);
+        std::thread::spawn(move || {
+            let mut buf = [0u8; 4096];
+            loop {
+                match stderr_pipe.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        if let Ok(mut g) = sink.lock() {
+                            g.extend_from_slice(&buf[..n]);
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+        });
+
+        // 12 §2：Job Object 限制 child tree。附着失败不能静默——它意味着只能杀直接子进程，
+        // 孙进程可能继续跑（Z6 实测过的正是这个场景）。
+        let (job, job_error) = match win_job::attach(child.id()) {
+            Ok(j) => (Some(j), 0u32),
+            Err(code) => (None, code),
+        };
+
+        let mut host = Host {
+            child,
+            stdin,
+            rx,
+            stderr,
+            job,
+            job_error,
+            handshake: empty_handshake(),
+            timeout: spec.timeout,
+            exe: spec.host_exe.to_path_buf(),
+        };
+
+        let hello = Request::Hello {
+            dll: spec.dll.display().to_string(),
+            storage: [spec.storage.width, spec.storage.height],
+            output: [spec.output.width, spec.output.height],
+            default_font: spec.default_font.to_string(),
+        };
+        protocol::write_message(&mut host.stdin, &protocol::to_json(&hello)?)?;
+        match host.recv() {
+            Ok(Response::Hello(hs)) => {
+                host.handshake = hs;
+                host.verify_handshake()?;
+            }
+            Ok(Response::Error { code, title }) => {
+                return Err(HostFailure::Protocol(format!(
+                    "host 拒绝握手：{code} {title}"
+                )))
+            }
+            Ok(other) => return Err(HostFailure::Protocol(format!("握手收到意外消息 {other:?}"))),
+            Err(e) => return Err(e),
+        }
+        Ok(host)
+    }
+
+    fn verify_handshake(&self) -> Result<(), HostFailure> {
+        let h = &self.handshake;
+        if h.api_version != API_VERSION {
+            return Err(HostFailure::Protocol(format!(
+                "协议版本应为 {API_VERSION}，host 报 {}",
+                h.api_version
+            )));
+        }
+        if h.pixel_format != "RGBA8" {
+            return Err(HostFailure::Protocol(format!(
+                "不支持的像素格式 {}",
+                h.pixel_format
+            )));
+        }
+        if h.provider != "libass" {
+            return Err(HostFailure::Protocol(format!(
+                "这个 host 只会讲 libass 协议，收到 provider {}",
+                h.provider
+            )));
+        }
+        Ok(())
+    }
+
+    pub fn handshake(&self) -> &Handshake {
+        &self.handshake
+    }
+
+    /// 12 §4：provider 的身份是哈希。两侧各自算一次，对不上就是"看的不是同一个文件"。
+    pub fn provider_sha_matches(&self, dll: &Path) -> bool {
+        let Ok(bytes) = std::fs::read(dll) else {
+            return false;
+        };
+        let mut h = Sha256::new();
+        h.update(bytes);
+        let mine: String = h.finalize().iter().map(|b| format!("{b:02x}")).collect();
+        mine == self.handshake.provider_binary_sha256
+    }
+
+    pub fn load_script(&mut self, ass: &[u8]) -> Result<usize, HostFailure> {
+        protocol::write_message(&mut self.stdin, &protocol::to_json(&Request::LoadScript)?)?;
+        protocol::write_message(&mut self.stdin, &Message::Blob(ass.to_vec()))?;
+        match self.recv()? {
+            Response::ScriptLoaded { bytes } => Ok(bytes),
+            other => Err(HostFailure::Protocol(format!(
+                "LoadScript 收到意外消息 {other:?}"
+            ))),
+        }
+    }
+
+    pub fn render(&mut self, pts_ms: i64) -> Result<Frame, HostFailure> {
+        protocol::write_message(
+            &mut self.stdin,
+            &protocol::to_json(&Request::Render { pts_ms })?,
+        )?;
+        let (w, h, digest, detect_change, images) = match self.recv()? {
+            Response::Frame {
+                width,
+                height,
+                digest,
+                detect_change,
+                images,
+            } => (width, height, digest, detect_change, images),
+            Response::Error { code, title } => {
+                return Err(HostFailure::Protocol(format!(
+                    "host 渲染失败 {code}：{title}"
+                )))
+            }
+            other => {
+                return Err(HostFailure::Protocol(format!(
+                    "Render 收到意外消息 {other:?}"
+                )))
+            }
+        };
+        let body = match self.recv_msg()? {
+            Message::Blob(b) => b,
+            Message::Text(t) => {
+                return Err(HostFailure::Protocol(format!(
+                    "期望 RGBA 负载，收到文本 {t}"
+                )))
+            }
+        };
+        let expected = (w as usize) * (h as usize) * 4;
+        if body.len() != expected {
+            return Err(HostFailure::Protocol(format!(
+                "帧长度 {} 与声明的 {w}x{h} RGBA 需要的 {expected} 不符",
+                body.len()
+            )));
+        }
+        let mut hasher = Sha256::new();
+        hasher.update(&body);
+        let got: String = hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        if got != digest {
+            return Err(HostFailure::Protocol(format!(
+                "帧摘要不符：host 报 {digest}，实际 {got}"
+            )));
+        }
+        Ok(Frame {
+            width: w,
+            height: h,
+            rgba: body,
+            detect_change,
+            images,
+        })
+    }
+
+    /// 让 host 自我了断（只为 AT-RENDER-002 制造崩溃；`how` 的取值见 host 侧）。
+    /// 返回 Ok 只表示"请求发出去了"，崩溃的证据由后续调用（或 `crash_evidence`）取出。
+    pub fn poison(&mut self, how: &str) -> Result<(), HostFailure> {
+        protocol::write_message(
+            &mut self.stdin,
+            &protocol::to_json(&Request::Poison {
+                how: how.to_string(),
+            })?,
+        )?;
+        Ok(())
+    }
+
+    pub fn shutdown(&mut self) -> Result<(), HostFailure> {
+        protocol::write_message(&mut self.stdin, &protocol::to_json(&Request::Bye)?)?;
+        match self.recv() {
+            Ok(Response::ByeOk) => Ok(()),
+            // Bye 之后 host 直接退出、管道先断，也是正常收尾
+            Err(HostFailure::Crashed { .. }) | Err(HostFailure::Timeout { .. }) => Ok(()),
+            Ok(other) => Err(HostFailure::Protocol(format!("Bye 收到意外消息 {other:?}"))),
+            Err(e) => Err(e),
+        }
+    }
+
+    /// 这次调用不要了：杀 host，并让 Job 带走整棵树。
+    /// 返回"孙进程到底有没有被约束住"，调用方必须把它说清楚而不是假装干净。
+    pub fn abandon(&mut self) -> Abandoned {
+        let killed = self.child.kill().is_ok();
+        let _ = self.child.wait();
+        let contained = self.job.take().is_some();
+        Abandoned {
+            killed,
+            contained,
+            job_error: self.job_error,
+        }
+    }
+
+    /// host 自己的可执行文件路径（诊断用）。
+    pub fn exe(&self) -> &Path {
+        &self.exe
+    }
+
+    /// provider log 尾部（12 §2："crash code / provider log 返回主进程"）。
+    pub fn log_tail(&self, bytes: usize) -> String {
+        let Ok(g) = self.stderr.lock() else {
+            return String::new();
+        };
+        let start = g.len().saturating_sub(bytes);
+        String::from_utf8_lossy(&g[start..]).into_owned()
+    }
+
+    pub fn job_error(&self) -> u32 {
+        self.job_error
+    }
+
+    pub fn contained(&self) -> bool {
+        self.job.is_some()
+    }
+
+    fn recv_msg(&mut self) -> Result<Message, HostFailure> {
+        let outcome = self.rx.recv_timeout(self.timeout);
+        match outcome {
+            Ok(Ok(msg)) => Ok(msg),
+            Ok(Err(e)) => Err(self.disconnected(e)),
+            Err(e) => Err(self.wait_failure(e)),
+        }
+    }
+
+    fn recv(&mut self) -> Result<Response, HostFailure> {
+        let msg = self.recv_msg()?;
+        protocol::from_json(&msg).map_err(|e| HostFailure::Io(e.to_string()))
+    }
+
+    /// 读线程报来的管道错误：如果是"host 关掉了控制面"，那就是崩溃/退出，
+    /// 要把退出码和日志一起拿回来。
+    fn disconnected(&mut self, e: io::Error) -> HostFailure {
+        if e.kind() != io::ErrorKind::UnexpectedEof && e.kind() != io::ErrorKind::BrokenPipe {
+            return HostFailure::Io(e.to_string());
+        }
+        let mut exit_code = None;
+        let deadline = Instant::now() + Duration::from_millis(2_000);
+        while Instant::now() < deadline {
+            if let Ok(Some(status)) = self.child.try_wait() {
+                exit_code = status.code().map(|c| c as u32);
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        HostFailure::Crashed {
+            exit_code,
+            log_tail: self.log_tail(4096),
+            contained: self.job.is_some(),
+            job_error: self.job_error,
+        }
+    }
+
+    fn wait_failure(&self, e: RecvTimeoutError) -> HostFailure {
+        match e {
+            RecvTimeoutError::Timeout => HostFailure::Timeout {
+                waited_ms: self.timeout.as_millis() as u64,
+                contained: self.job.is_some(),
+                job_error: self.job_error,
+            },
+            RecvTimeoutError::Disconnected => HostFailure::Crashed {
+                exit_code: None,
+                log_tail: self.log_tail(4096),
+                contained: self.job.is_some(),
+                job_error: self.job_error,
+            },
+        }
+    }
+}
+
+impl Drop for Host {
+    fn drop(&mut self) {
+        // 顺序要紧：先让直接子进程退出，再关 Job 句柄带走可能的孙进程
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+        if let Some(job) = self.job.take() {
+            drop(job);
+        }
+    }
+}
+
+impl std::fmt::Debug for Host {
+    /// 只报会改变判断的信息：是谁、在哪、约束住了没有。
+    /// （`Child`/管道句柄本身没有可用的 Debug，硬凑出来只会误导。）
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Host")
+            .field("exe", &self.exe)
+            .field("pid", &self.child.id())
+            .field("handshake", &self.handshake)
+            .field("contained", &self.job.is_some())
+            .field("job_error", &self.job_error)
+            .field("timeout_ms", &self.timeout.as_millis())
+            .finish()
+    }
+}
+
+/// `abandon()` 的结果：调用方必须能把"约束是否生效"讲清楚。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Abandoned {
+    pub killed: bool,
+    pub contained: bool,
+    pub job_error: u32,
+}
+
+fn empty_handshake() -> Handshake {
+    Handshake {
+        provider: String::new(),
+        name: String::new(),
+        version: String::new(),
+        api_version: 0,
+        host_arch: String::new(),
+        provider_arch: String::new(),
+        pixel_format: String::new(),
+        provider_binary_sha256: String::new(),
+    }
+}
+
+fn same_bitness(a: PeArch, b: PeArch) -> bool {
+    use PeArch::*;
+    match (a, b) {
+        (X64, X64) | (X86, X86) | (Arm64, Arm64) | (Arm, Arm) => true,
+        // 未知架构一律不当成"能配对"，哪怕两边数字一样（12 §3：其他架构拒绝并给诊断）
+        _ => false,
+    }
+}
+
+fn arch_text(a: PeArch) -> String {
+    match a {
+        PeArch::Other(v) => format!("未知架构 0x{v:04x}"),
+        other => other.label().to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bitness_gate_accepts_only_matching_known_pairs() {
+        assert!(same_bitness(PeArch::X64, PeArch::X64));
+        assert!(same_bitness(PeArch::X86, PeArch::X86));
+        assert!(!same_bitness(PeArch::X86, PeArch::X64));
+        assert!(
+            !same_bitness(PeArch::Other(0x1234), PeArch::Other(0x1234)),
+            "未知架构即使两边相同也不能放行"
+        );
+        assert_eq!(arch_text(PeArch::Other(0x1234)), "未知架构 0x1234");
+    }
+
+    #[test]
+    fn every_host_failure_has_its_own_code() {
+        let cases = [
+            HostFailure::Arch {
+                provider: "x86".to_string(),
+                host: "x64".to_string(),
+            },
+            HostFailure::Spawn("nope".to_string()),
+            HostFailure::Timeout {
+                waited_ms: 1,
+                contained: false,
+                job_error: 5,
+            },
+            HostFailure::Crashed {
+                exit_code: Some(3),
+                log_tail: String::new(),
+                contained: true,
+                job_error: 0,
+            },
+            HostFailure::Protocol("x".to_string()),
+            HostFailure::Io("x".to_string()),
+        ];
+        let mut codes: Vec<&str> = cases.iter().map(|c| c.code()).collect();
+        codes.sort_unstable();
+        codes.dedup();
+        assert_eq!(
+            codes.len(),
+            cases.len(),
+            "每类失败必须有独立错误码（12 §5）"
+        );
+        for c in &cases {
+            assert!(!c.title().is_empty(), "{c:?} 的标题不能是空的");
+        }
+    }
+}

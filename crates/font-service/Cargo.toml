@@ -1,0 +1,15 @@
+[package]
+name = "font-service"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "字幕可复现性用的字体数据库：扫描、用量扫描、匹配评级与缺字报告（17 §2-§4）"
+
+[dependencies]
+core-model = { workspace = true }
+codec-ass = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+read-fonts = { workspace = true }
+skrifa = { workspace = true }

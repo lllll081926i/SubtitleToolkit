@@ -1,0 +1,138 @@
+{
+  "purpose": "40 §11 要求参考仓库锁 commit SHA。本文件记录已取证来源；未列出的仓库表示尚未成功获取。",
+  "generated_at": "2026-10-05",
+  "sources": [
+    {
+      "name": "libass",
+      "role": "ASS 渲染语义唯一 baseline（09/12/40 的 storage/frame/LayoutRes/SBS 结论都出自它）",
+      "license": "ISC",
+      "repository": "https://github.com/libass/libass",
+      "ref": "master",
+      "commit_sha": "f61db567e6593df3470e91594bcd4ad2d0473aff",
+      "release_version_file": "0.17.5",
+      "artifact": "reference-audit/libass-master.tar.gz",
+      "artifact_sha256": "d2b2561cc8fb655451e8e4428539f94c2639184a914bdcacb4c9b1e837239f9a",
+      "reproduce": "curl -sSL https://codeload.github.com/libass/libass/tar.gz/refs/heads/master | sha256sum  (需与上述 commit 一致；master 前移后要重新锁 SHA)",
+      "verified_claims": [
+        "Script Info 认 LayoutResX/LayoutResY：libass/ass.c:888-893（另见 569-572 的 i18nstrcmp 路径）",
+        "ASS_Track.LayoutResX 注释：'overrides values from ass_set_storage_size and also takes precedence over ass_set_pixel_aspect'：libass/ass_types.h:302",
+        "ass_layout_res() 取值顺序 LayoutRes>storage>(par)>PlayRes：libass/ass_render.c:1008-1020",
+        "screen_scale = frame_content/PlayRes；blur_scale = frame_content/layout_res；SBS=no 时 border_scale=blur_scale：libass/ass_render.c:1036-1070",
+        "LayoutRes 存在时丢弃 API 设定的 PAR 并重算：libass/ass_render.c:3078-3090 与 libass/ass.h:470-486",
+        "Effect Banner/Scroll 的 delay 换算使用 layout_res/PlayRes：libass/ass_parse.c:939-1005",
+        "无 ScaledBorderAndShadow 头时的默认与 custom format line / legacy ffmpeg 兼容：libass/ass.c:805-822、940-1015",
+        "ASS_Image 定义与文档在 libass/ass.h:53-86（不在 ass_types.h）：按链表顺序合成、w/h 为 0 不画、最后一行可不补齐到 stride（保证长度 stride*(h-1)+w）、color 是 RGBA 打包",
+        "color 的最低字节是 ASS 风格的\"透明度\"（0x00 不透明 / 0xFF 全透明）：libass/ass_parse.h:26-29 定义 _a(c)=((c)&0xFF)，libass/ass_render.c:3411-3417 用 `_a(cur->color)==0xFF` 剔除\"fully transparent bitmaps\"，libass 官方参考消费者 compare/compare.c:48-53 用 `a = img->color >> 0` 后立刻 `mul = 129 * (255 - a)`",
+        "拷入工程的必需符号只有 11 个（ass_library_init/ass_library_done/ass_renderer_init/ass_renderer_done/ass_set_storage_size/ass_set_frame_size/ass_set_fonts/ass_read_memory/ass_free_track/ass_render_frame/ass_library_version）：能力探测按这 11 个符号名，不按文件名",
+        "[Fonts] 段的语法是 `fontname: X` 之后每一行都是这份字节的 base64，直到下一个 fontname: 或段末；在 fontname 之前出现的行只会被 \"Not understood\" 忽略：libass/ass.c 的 process_fonts_line（本机 buildtree 0.17.5，约 1121-1160 行），解码是同文件 decode_chars 组的 4 字节一组循环。**我们的 attachment parser 按这个语法实现**（ISSUES AK10：原先只认自造的 `P:` 形状）",
+        "头文件 325 行有 `void ass_set_extract_fonts(ASS_Library*, int)`：libass 自己解 [Fonts] 的开关。我们没绑它 —— 17 §7 给的是\"libass extraction 或我们自己的 parser\"二选一，选了后者（TRACEABILITY §35 的『没做』段）"
+      ],
+      "measured_on_this_machine": [
+        "内存字体按字体表里的**内部家族名**匹配，不按 ass_add_font 传的名字：libass 0.17.5 + 本机 DLL 实测（ISSUES AK1）",
+        "同一个内部家族注册两批不同字节时，**注册顺序不是裁决依据**：verdana 与 marlett 都改名成 `StkDup_` 后，A 先 B 先画出同一份像素。测试 `registration_order_is_not_a_tiebreaker_for_the_same_family` 钉住\"顺序不改变结果、且赢家必是交出去的某批字节\"（ISSUES AK8/AK9）"
+      ],
+      "native_build": {
+        "provider": "vcpkg（本机 ../tools/vcpkg，不入库）",
+        "port": "libass",
+        "triplet": "x64-windows",
+        "version": "0.17.5",
+        "vcpkg_abi": "e759846f294b89ab837de12f1ea1734db1504bfa1c950ee1d8eb365ccbc5440c",
+        "status": "installed/vcpkg/status: install ok installed",
+        "runtime_probe": "ass_library_version() = 0x1705000（渲染测试里打印）",
+        "artifacts": [
+          {
+            "path": "../tools/vcpkg/installed/x64-windows/bin/ass-9.dll",
+            "sha256": "aa81be5ed592eb8fa6cef044410204a702f27fc124be686494780f1d5000bcb5",
+            "size_bytes": 249344
+          },
+          {
+            "path": "../tools/vcpkg/installed/x64-windows/lib/ass.lib",
+            "sha256": "c7defaff294d2bf6fe034a68284b29cfc6b89ceb661c272c26ad6ed1edea9402"
+          },
+          {
+            "path": "../tools/vcpkg/installed/x64-windows/include/ass/ass.h",
+            "sha256": "04582aa925d4ed2d1206f21915d382584e8b49c50a6b88419d4112f4f88d24da"
+          },
+          {
+            "path": "../tools/vcpkg/installed/x64-windows/include/ass/ass_types.h",
+            "sha256": "b3ac4ad4d655f4d90e5e8d05cc2868ce17e5ff89ef1fe76cabcc8f3093e6134b"
+          }
+        ],
+        "note": "产物本体不入库（体积与许可分发问题，21 §7）；这里锁哈希是为了门阶失败时能断定\"是哪一份 DLL\"。渲染门阶 render-real 用 STK_LIBASS_DLL 指到它。"
+      }
+    },
+    {
+      "name": "oxideav-sub-image",
+      "role": "PGS 字段级 golden（段头宽度、PDS 5 字节、ODS 分片头、RLE 码型）",
+      "license": "见 crate 清单",
+      "source": "crates.io index",
+      "version": "0.0.7",
+      "local_path": "C:/Users/Administrator/.cargo/registry/src/index.crates.io-*/oxideav-sub-image-0.0.7",
+      "note": "registry 校验和由 cargo 保证；差分测试在 crates/codec-pgs/tests/differential.rs",
+      "divergences_recorded_in": "docs/ISSUES.md §G（C16/C17/C18）"
+    },
+    {
+      "name": "ass2bdnxml (Masaiki)",
+      "role": "BDN 时间码约定与 PGS 分片常量的行为参考（GPL-3.0：只读行为，不复制代码进 core，21 §7）",
+      "license": "GPL-3.0-or-later",
+      "repository": "https://github.com/Masaiki/ass2bdnxml",
+      "ref": "master",
+      "commit_sha": "6faa51e12e32baaeae1aa53e7951b6a0fea83ec2",
+      "artifact": "reference-audit/ass2bdnxml-master.tgz",
+      "artifact_sha256": "e1faeb2b57e50551d43b4336246abbbde54d4564cf5fc13a9be00f0cb7404830",
+      "reproduce": "curl -sSL https://codeload.github.com/Masaiki/ass2bdnxml/tar.gz/refs/heads/master | sha256sum",
+      "verified_claims": [
+        "BDN InTC/OutTC 是帧号时间码而不是墙上时钟：mk_timecode()（ass2bdnxml.c:495-519）对帧号依次取模 frames = tc % fps; tc /= fps; s = tc % 60; ...，所以 SS 字段来自帧号除以 nominal",
+        "帧号来自精确有理数：get_frame_total_ass()（同文件 220-228）= max_time_point(ms) / fps_den * fps_num / 1000，整数赋值即 trunc",
+        "parse_tc()（601-630）是同一套算术的逆运算，因此帧网格上往返必然精确",
+        "超过 99:59:59:99 直接报错退出，不回绕（我们返回 STK-BDN-0007）",
+        "13 §4 转述的 ODS 分片首片 65508 / 续片 65515 与 palette Y,Cr,Cb,T 顺序得到 sup.c 确认（等价于单 segment payload 上限 65519）"
+      ]
+    }
+  ],
+  "not_yet_locked": [
+    "pinterf/xy-VSFilter、sorayuki/VSFilterMod、SupMover、Aegisub csri.h",
+    "真实 .sup 设备语料（E3 仍未答复）：没有它，第 7 层设备兼容与 Strict 徽章都只能保持「未覆盖」"
+  ],
+  "verification_tools": {
+    "purpose": "本机用于交叉验证的外部工具版本；不是随包分发的依赖，但门阶结论依赖它们（24 §QA）",
+    "python": "3.11.9 (MSC v.1938 64 bit)",
+    "pillow": "12.3.0",
+    "zlib": "Python 标准库 zlib（CRC-32/ISO-HDLC 与 deflate 的参考实现）",
+    "cargo-deny": "0.20.2",
+    "sup_container_reader": {
+      "kind": "external-verifier",
+      "tool": "ffmpeg/ffprobe 自带 sup demuxer（raw HDMV PGS）与 hdmv_pgs_subtitle 解码器（pgssub）",
+      "what_it_proves": "我们写的 .sup 段头 PG(2)+PTS(4)+DTS(4)+type(1)+len(2)=13 能被另一个独立实现读出同样的段数与同样的 90 kHz 时钟（ISSUES G4）",
+      "measured": "真 CLI 产物 49558 字节：pgs validate data.segments=40 / ffprobe packets=40；ffmpeg -f sup -c copy -f null - 退出码 0；编码造的 .sup 里 90000 ticks 被读成 pts_time=1.000000",
+      "test": "crates/media-probe/tests/real_probe.rs::ffprobe_reads_our_pgs_container_with_the_same_clocks（含截断反向对照）",
+      "not_proved": "设备/播放器对 C19（PCS 第 5 字节）、C16（调色板范围）、C17（图末标记）的接受度仍等 E3 真盘语料"
+    },
+    "ffprobe_external": {
+      "path": "tools/bin/ffprobe.exe（仓库旁，不随包分发）",
+      "version": "ffprobe version 2023-02-13-git-2296078397-essentials_build www.gyan.dev",
+      "license": "GPL-3.0（仅作为本机交叉验证工具，通过固定 argv 的子进程调用；不链接、不 redistribution）",
+      "sha256": "f28c4751e7367205267025aaf0fcfc921e34d9b7edaa46bd9c8abaf367fc9051",
+      "provenance": "npm 镜像 @ffprobe-installer/win32-x64@5.1.0（cdn.npmmirror.com），tarball sha1=87841123e8b903cc327f1e5b9aa69e5d2fbe6d7b 与 registry 一致",
+      "used_by": "门阶 probe-real 与 crates/media-probe/tests/real_probe.rs；fixtures 由 tools/make_probe_fixtures.sh 生成"
+    },
+    "ffmpeg_external": {
+      "path": "tools/bin/ffmpeg.exe（只用来生成合成语料，不参与产品运行）",
+      "version": "ffmpeg version N-92722-gf22fcd4483 (2018)",
+      "license": "GPL-3.0（同上：仅本机工具，不进产物）",
+      "sha256": "c8abc49e7be62dde8e12972af373959e0076a7b8dc8040eb45978e0608f8781e"
+    },
+    "cargo-nextest": "0.9.146",
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "gate_command": "STK_REQUIRE_LIBASS=1 STK_REQUIRE_FFPROBE=1 STK_REQUIRE_FONTS=1 RELEASE=1 bash tools/check_all.sh --strict",
+    "last_full_run": "2026-10-06 23:00 +0800：20 阶全 PASS，fail=0 skip=0 strict=1，退出码 0；nextest 808 run / 808 passed / 0 skipped（150.266s，门阶 162s）；doc-claims 三段：297 处标识符存在、268 个点名测试全在本次执行集合、问题清单 263（已解决 233 / 开着 30）、0 矛盾、引用断链 0、--ref-selftest 通过；render-real 438s；font-scan 111s；release-build 31s；本梯含 AK17 第一批（三条 check id 的双向用例）与 rule_coverage 匹配式的修正。墙钟约 15 分钟。",
+    "renderer_host_binary": "target/{debug,release}/subtitletool-render-host.exe（28 §2 产物；位数路由与崩溃取证由 crates/renderer-host/tests/host_isolation.rs 实测）",
+    "system_font_dir": "C:\\Windows\\Fonts（本机字体库，不锁哈希：它是运行机器自己的环境，不是随包分发的依赖）。门阶 font-scan 与 crates/font-service/tests/real_fonts.rs 直接读它的字体表；实测 154 个文件 → 196 条 face、192 条 note（多数是 .fon 位图字体，本层不解析）。用户自装字体的目录 C:\\Users\\<user>\\AppData\\Local\\Microsoft\\Windows\\Fonts 也在默认扫描之列（17 §2）。缺目录时该阶 SKIP，--strict 即 FAIL",
+    "libass_binary": "tools/vcpkg/installed/x64-windows/bin/ass-9.dll（libass 0.17.5，vcpkg 本机构建；render-real 门阶用它真渲染）",
+    "font_parser": "skrifa 0.48 + read-fonts 0.45 + font-types 0.12（fontations，MIT OR Apache-2.0）。替换掉 ttf-parser 0.25：RUSTSEC-2026-0192 判其 unmaintained 且无可安全升级版本（ISSUES AG15）。迁移后本机扫描结果与迁移前逐项相同（196 face / 154 file / 192 note / 同一批评级与缺字），cargo deny check advisories 现在 ok，deny.toml 的 ignore 仍然为空",
+    "font_library_cache": "STK_FONTCACHE 指定文件位置（默认 %LOCALAPPDATA%\\\\subtitletool\\\\fontdb-v1.json）；门阶用自己的路径并在跑之前删除，因此\"冷扫 45709ms → 命中 42ms（196 face 整座库；四梯分别 45024→62、44722→42、44963→42、45709→42）。另一对 311/301ms 是 4 face 的窄作用域，不与 42ms 同比（ISSUES AK13）、render_identity 摘要相同 f5a6dc3e1ca7df45…\"是这一次梯子的实测",
+    "libass_header": "ass.h（vcpkg 0.17.5，随 ass-9.dll 一起锁版本）：L813 `void ass_add_font(ASS_Library*, const char *name, const char *data, int data_size)` —— 返回 void、长度是 int；L815-822 `ass_clear_fonts` 要求先释放全部 track/renderer，因此不作为能力提供；字体注入的可用性由导出符号判定（本机 ass-9.dll 导出 ass_add_font @0x1cc30）",
+    "embedded_fonts": "17 §7 的 [Fonts] 走我们自己的解析器：主语法照 libass 的 `fontname: X` + 逐行 base64（AK10 之前只认自造的 `P:` 形状，那份形状在真实文件里不存在），`P:` 作为在野写法保留兼容；单份上限 64 MiB / 合计 256 MiB（23 §健壮性）；不引 base64 依赖（与 15 §2 的 glob 同一判断，E6）；每一份内嵌字体都进 render_identity 摘要，同一批字节跨来源只交一次。门阶用 tools/make_embedded_fixture.py 现场把 marlett base64 成真语法样本（字体二进制不入库），并要求去掉 [Fonts] 的同一份脚本算出不同摘要。",
+    "injection_report_checker": "tools/check_injection_report.py：门阶用它按语义核对 render --json 的 font_injection 段，取代原先 grep JSON 文本的做法（serde_json 按字母序排键，加字段会挤掉 enabled 的位置造成假红，AK7）。反证过三种伪造报告（说没开但台账有字节 / sha 写成 ZZZ / 台账清空）都 rc=1"
+  }
+}

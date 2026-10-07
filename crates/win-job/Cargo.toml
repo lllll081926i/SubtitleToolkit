@@ -1,0 +1,8 @@
+[package]
+name = "win-job"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Windows Job Object 子进程树约束（23 §外部进程）：media-probe 与 renderer-host 共用"
+
+[dependencies]

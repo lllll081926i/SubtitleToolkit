@@ -1,0 +1,10 @@
+[package]
+name = "codec-srt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "SRT 解析/写出与文本字幕 IR"
+
+[dependencies]
+core-model = { workspace = true }
+serde = { workspace = true }

@@ -1,0 +1,19 @@
+[package]
+name = "pgs-author"
+version.workspace = true
+edition.workspace = true
+rust-version = "1.85"
+license.workspace = true
+description = "PGS authoring 规划层（13 §4 必须项 + 13 §5 的重复视觉事件消除）：渲染采样 → 变化检测 → bbox 局部化 → Basic Encoder → 自检"
+
+[dependencies]
+core-model = { workspace = true }
+image-core = { workspace = true }
+codec-pgs = { workspace = true }
+validator = { workspace = true }
+sha2 = { workspace = true }
+
+[dev-dependencies]
+# 整链路测试要真的合成位图并读回段流
+image-core = { workspace = true }
+render-libass = { workspace = true }

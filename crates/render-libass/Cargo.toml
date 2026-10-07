@@ -1,0 +1,12 @@
+[package]
+name = "render-libass"
+version.workspace = true
+edition.workspace = true
+rust-version = "1.85"
+license.workspace = true
+description = "libass 位图合成层（12 §1A、09 §3）：ASS_Image 链表 → 完整 16:9 RGBA 画布。native 依赖用运行时加载，不在编译期链接"
+
+[dependencies]
+core-model = { workspace = true }
+image-core = { workspace = true }
+sha2 = { workspace = true }

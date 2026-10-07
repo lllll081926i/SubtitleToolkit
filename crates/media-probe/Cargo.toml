@@ -1,0 +1,16 @@
+[package]
+name = "media-probe"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "目标视频辅助探测（ffprobe adapter）：只填建议，不接管主流程"
+
+[dependencies]
+core-model = { workspace = true }
+win-job = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+
+[dev-dependencies]
+# 容器层的外部裁判（G4）：用真 ffprobe 验我们写的 .sup，测试代码需要生成它
+codec-pgs = { workspace = true }

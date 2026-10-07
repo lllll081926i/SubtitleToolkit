@@ -1,0 +1,20 @@
+# BDN（Blu-ray Disc Native）XML + PNG 交换格式层（13 §7）。
+# quick-xml 是 MIT/Apache-2.0，符合 21 §1 的宽松许可原则；XML 解析不自写（23 §健壮性）。
+
+[package]
+name = "codec-bdn"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "BDN（Blu-ray Disc Native：XML + PNG 交换格式）读写层；13 §7 的三条硬约束在此落地"
+
+[dependencies]
+core-model = { workspace = true }
+serde = { workspace = true }
+# 23 §XML：解析交给 mature parser，不自写；quick-xml 不解外部实体、不联网。
+quick-xml = "0.42"
+
+[dev-dependencies]
+# 只为验证 IR 的 serde 往返；登记后同样改成 { workspace = true }。
+serde_json = { workspace = true }

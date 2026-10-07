@@ -1,0 +1,11 @@
+[package]
+name = "transform-resolution"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "ASS 脚本分辨率重写（09_CANVAS）：Preserve 零改动，Rewrite 只缩放证明过属于脚本坐标空间的量"
+
+[dependencies]
+core-model = { workspace = true }
+codec-ass = { workspace = true }
+serde = { workspace = true }

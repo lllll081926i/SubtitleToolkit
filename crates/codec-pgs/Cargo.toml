@@ -1,0 +1,16 @@
+[package]
+name = "codec-pgs"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "PGS/SUP 段级解析、有状态 display set 解码、Fast Path 无损变换"
+
+[dependencies]
+core-model = { workspace = true }
+serde = { workspace = true }
+sha2 = { workspace = true }
+
+# Phase 0 bake-off（29 §"当前最值得直接验证的 Rust 复用候选"）：
+# 用 oxideav 的 PGS 编码器产出参考流，与我们的解析器/RLE 解码器做双向差分。
+[dev-dependencies]
+oxideav-sub-image = "0.0.7"

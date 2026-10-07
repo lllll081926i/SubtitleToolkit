@@ -1,0 +1,19 @@
+[package]
+name = "renderer-host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "renderer-host 进程隔离（12 §2-§3）：第三方渲染 DLL 永远不进主进程"
+
+[[bin]]
+name = "subtitletool-render-host"
+path = "src/main.rs"
+
+[dependencies]
+core-model = { workspace = true }
+image-core = { workspace = true }
+render-libass = { workspace = true }
+win-job = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }

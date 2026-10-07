@@ -1,0 +1,22 @@
+[Script Info]
+Title: Unknown tags
+ScriptType: v4.00+
+PlayResX: 1280
+PlayResY: 720
+
+[V4+ Styles]
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Style: Default,Arial,48,&H00FFFFFF,&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,1,2,20,20,20,1
+
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:01.00,0:00:04.00,Default,,0,0,0,,{\anm fade-in \be 12 \blur\3a&HFF&\fr 45}VSFilterMod private
+Dialogue: 0,0:00:05.00,0:00:08.00,Default,,0,0,0,,{\c&H00FFFF&H&HFF00FF&H}gradient colour
+Dialogue: 0,0:00:09.00,0:00:12.00,Default,,0,0,0,,{\t(0,700,30,\c&H0000FF&H)\t(700,1400,\bord9\fnArial Black)}nested anim
+Dialogue: 0,0:00:13.00,0:00:16.00,Default,,0,0,0,,{\clip(0,0,640,360)}rect clip
+Dialogue: 0,0:00:17.00,0:00:20.00,Default,,0,0,0,,{\iclip(\p1 m 0 0 l 100 0 l 100 100\p0)}inverted vector clip
+Dialogue: 0,0:00:21.00,0:00:24.00,Default,,0,0,0,,{\p1}m 4 12 l 30 40 l 90 12 l 90 100{\p0} with spaces
+Dialogue: 0,0:00:25.00,0:00:28.00,Default,,0,0,0,,{\pos(320,480)\org(640,360)\move(10,20,30,40,100,900)}coords
+Dialogue: 0,0:00:29.00,0:00:32.00,Default,,0,0,0,,{\bord4\xbord3\ybord5\shad2\xshad1\yshad6\fscx150\fscy90\frz12\frx3\fry7\fnConsolas}geometry
+Dialogue: 0,0:00:33.00,0:00:36.00,Default,,0,0,0,,{\k37}ka{\kf24}ra{\ko11}o{\kt9\an5\alpha&H88&}ke
+Dialogue: 0,0:00:37.00,0:00:40.00,Default,,0,0,0,,{\zzz weird\q2\h\fe0}tail

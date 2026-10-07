@@ -1,0 +1,69 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/core-model",
+  "crates/format-detect",
+  "crates/codec-srt",
+  "crates/codec-ass",
+  "crates/codec-bdn",
+  "crates/transform-time",
+  "crates/codec-pgs",
+  "crates/transform-hdr",
+  "crates/transform-resolution",
+  "crates/image-core",
+  "crates/render-api",
+  "crates/task-engine",
+  "crates/media-probe",
+  "crates/cli",
+  "crates/validator",
+  "crates/pgs-author",
+  "crates/render-libass",
+  "crates/win-job",
+  "crates/renderer-host",
+  "crates/font-service",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+# 平台策略：Windows-only（ADR-001）。唯一正式 target：x86_64-pc-windows-msvc。
+
+[workspace.dependencies]
+core-model = { path = "crates/core-model", version = "0.1.0" }
+format-detect = { path = "crates/format-detect", version = "0.1.0" }
+codec-srt = { path = "crates/codec-srt", version = "0.1.0" }
+codec-ass = { path = "crates/codec-ass", version = "0.1.0" }
+codec-bdn = { path = "crates/codec-bdn", version = "0.1.0" }
+codec-pgs = { path = "crates/codec-pgs", version = "0.1.0" }
+transform-time = { path = "crates/transform-time", version = "0.1.0" }
+transform-hdr = { path = "crates/transform-hdr", version = "0.1.0" }
+transform-resolution = { path = "crates/transform-resolution", version = "0.1.0" }
+image-core = { path = "crates/image-core", version = "0.1.0" }
+validator = { path = "crates/validator", version = "0.1.0" }
+task-engine = { path = "crates/task-engine", version = "0.1.0" }
+media-probe = { path = "crates/media-probe", version = "0.1.0" }
+pgs-author = { path = "crates/pgs-author", version = "0.1.0" }
+render-libass = { path = "crates/render-libass", version = "0.1.0" }
+win-job = { path = "crates/win-job", version = "0.1.0" }
+renderer-host = { path = "crates/renderer-host", version = "0.1.0" }
+font-service = { path = "crates/font-service", version = "0.1.0" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# 13 §3.1 的 ODS payload 不变量与 12 §4 的 provider 身份都需要密码学哈希（Apache-2.0，21 §1 允许）
+sha2 = "0.10"
+# PNG 的 IDAT 必须是真压缩流（I001/B001：旧工程写 stored 块，体积失控）。
+# flate2 = MIT/Apache-2.0，纯 Rust 后端 miniz_oxide（MIT/Zlib），符合 21 §1；不自写 deflate（23 §健壮性同 XML 的取向）。
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+# 字体表读取：skrifa + read-fonts（fontations 一系，Apache-2.0 OR MIT，符合 21 §1）。
+# 早先用 ttf-parser，被 RustSec 判为 unmaintained（RUSTSEC-2026-0192，无可升级的安全版）。
+# 这里的输入是任意用户字体文件与 ASS 内嵌字体，不可信字节必须依赖还在收修复的解析器；
+# deny.toml 的 [advisories] ignore 是故意留空的，所以走迁移而不是豁免（ISSUES AG15）。
+read-fonts = "0.45"
+skrifa = "0.48"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"

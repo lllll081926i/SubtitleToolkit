@@ -7,6 +7,8 @@
 - Windows 构建优先使用 DirectWrite font provider。
 - 不承诺所有 VSFilterMod 私有特效像素等价。
 
+当前 Rust 绑定已实现；运行仍需要外部 native DLL。2026-10-08 已纳入用户提供的 `third_party/libass-9.dll` 与其 UCRT64 依赖，并通过真实 host/像素测试，见[运行库说明](../../third_party/README.md#libass-开发期运行库)。这不表示产品安装包已完成许可审计。
+
 #### libass 初始化硬要求（源码审计新增）
 在第一次 render 前至少：
 1. `ass_library_init()`；
@@ -23,6 +25,7 @@
 libass API 对 Windows filename encoding 有特别说明。主程序不应把任意 Windows `PathBuf` 直接窄化后传给 `ass_read_file()`：
 - Rust 使用 Win32/WTF-16 安全路径 API 读取文件；
 - 将字幕 bytes 传给 `ass_read_memory()`；
+- 第四参数是 codepage，当前显式传 `UTF-8`，不能传 track 名；
 - 外部/附件字体读取 bytes 后用 `ass_add_font()` 注入；
 - `[Fonts]` 可通过 `ass_set_extract_fonts()` 处理；
 - renderer-host 的 IPC 传文件内容或受控 staging path，而不是未经校验的 ANSI path。

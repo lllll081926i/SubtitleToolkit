@@ -299,9 +299,14 @@ impl Provider {
     pub fn load_script(&self, ass: &[u8]) -> Result<Script<'_>> {
         let mut buffer: Vec<c_char> = ass.iter().map(|b| *b as c_char).collect();
         buffer.push(0);
-        let name = CString::new("subtitle").map_err(|e| bad("track 名含 NUL", &e.to_string()))?;
+        let codepage = c"UTF-8";
         let track = unsafe {
-            (self.symbols.read_memory)(self.library, buffer.as_mut_ptr(), ass.len(), name.as_ptr())
+            (self.symbols.read_memory)(
+                self.library,
+                buffer.as_mut_ptr(),
+                ass.len(),
+                codepage.as_ptr(),
+            )
         };
         if track.is_null() {
             return Err(bad(

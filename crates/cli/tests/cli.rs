@@ -91,7 +91,11 @@ fn doctor_json_is_one_line_and_names_missing_capabilities() {
     if rh["available"] == serde_json::json!(true) {
         let hs = &rh["handshake"];
         assert_eq!(hs["provider"], "libass", "{rh}");
-        assert_eq!(hs["api_version"], 1, "{rh}");
+        assert_eq!(
+            hs["api_version"],
+            renderer_host::protocol::API_VERSION,
+            "{rh}"
+        );
         assert_eq!(hs["pixel_format"], "RGBA8", "{rh}");
         assert_eq!(
             hs["provider_arch"], hs["host_arch"],

@@ -54,7 +54,7 @@
 
 | 组件 | License | 来源 | 角色 |
 |---|---|---|---|
-| libass | ISC | https://github.com/libass/libass | external（native provider；本机已装，哈希逐条实测列在下方的锁表里） |
+| libass | ISC | https://github.com/libass/libass | third_party/libass-9.dll（用户授权纳入 MSYS2 开发期运行库；真实渲染已验证，产品分发审计仍待完成） |
 | VSFilterMod.dll | GPL-3.0（按上游项目推定；本 DLL 的源码映射未核实） | https://github.com/sorayuki/VSFilterMod | third_party/VSFilterMod.dll（项目内候选文件；未接入产品或安装包） |
 | Pillow | MIT-CMU | https://python-pillow.org | dev-only（PNG 第三方交叉验证，不随安装包分发） |
 | pysubs2 | MIT | https://github.com/timo0/pysubs2 | dev-only（ASS/SRT 语义交叉验证，不随安装包分发） |
@@ -66,8 +66,8 @@
 
 | 组件 | 版本/提交 | License | 许可附加说明 | 来源 | 归档 | 锁定 SHA-256 | 本机实测 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| libass | 0.17.5 | ISC | 仓库主代码 COPYING 为 ISC；libass/wyhash.h 声明 Unlicense，libass/dwrite_c.h 声明 Public Domain，checkasm/ 文件声明 BSD-2-Clause，libass/x86/x86inc.asm 有独立 ISC 声明；compare/test/font1.ttf 与 font2.otf 的 name 表都标注 CC0-1.0。 | https://github.com/libass/libass | third_party/sources/libass-master.tar.gz | d2b2561cc8fb655451e8… | d2b2561cc8fb655451e8… | match |
-| ass2bdnxml (Masaiki) | 6faa51e12e32baaeae1aa53e7951b6a0fea83ec2 | GPL-3.0-or-later | 源文件头声明 GPL-3.0-or-later，COPYING 提供 GPL-3.0 正文；x86inc.asm 自带独立 ISC 许可声明。 | https://github.com/Masaiki/ass2bdnxml | third_party/sources/ass2bdnxml-master.tgz | e1faeb2b57e50551d43b… | e1faeb2b57e50551d43b… | match |
+| libass | 0.17.5 | ISC | 仓库主代码 COPYING 为 ISC；libass/wyhash.h 声明 Unlicense，libass/dwrite_c.h 声明 Public Domain，checkasm/ 文件声明 BSD-2-Clause，libass/x86/x86inc.asm 有独立 ISC 声明；compare/test/font1.ttf 与 font2.otf 的 name 表都标注 CC0-1.0。 | https://github.com/libass/libass | third_party/sources/libass-master.tar.gz | d2b2561cc8fb655451e8… | — | absent |
+| ass2bdnxml (Masaiki) | 6faa51e12e32baaeae1aa53e7951b6a0fea83ec2 | GPL-3.0-or-later | 源文件头声明 GPL-3.0-or-later，COPYING 提供 GPL-3.0 正文；x86inc.asm 自带独立 ISC 许可声明。 | https://github.com/Masaiki/ass2bdnxml | third_party/sources/ass2bdnxml-master.tgz | e1faeb2b57e50551d43b… | — | absent |
 
 ## native 与外部二进制的哈希锁（21 §8/§9，W3）
 
@@ -82,12 +82,32 @@
 | libass | 0.17.5 | ISC | ../tools/vcpkg/installed/x64-windows/include/ass/ass.h | 04582aa925d4ed2d1206… | — | absent-here |
 | libass | 0.17.5 | ISC | ../tools/vcpkg/installed/x64-windows/include/ass/ass_types.h | b3ac4ad4d655f4d90e5e… | — | absent-here |
 | VSFilterMod.dll | ProductVersion 2.5.2.2；FileVersionRaw/ProductVersionRaw 2.5.2.1 | GPL-3.0 (source mapping unverified) | third_party/VSFilterMod.dll | 87a9c3c1ab7614eda22b… | 87a9c3c1ab7614eda22b… | match |
+| libass-9.dll | libass-0.17.5-1 | 包声明：ISC | third_party/libass-9.dll | cb2b46133b3bd9630384… | cb2b46133b3bd9630384… | match |
+| libbrotlicommon.dll | brotli-1.2.0-1 | 包声明：MIT | third_party/libbrotlicommon.dll | c62c08223e450dfc2fff… | c62c08223e450dfc2fff… | match |
+| libbrotlidec.dll | brotli-1.2.0-1 | 包声明：MIT | third_party/libbrotlidec.dll | e270b6e576594ee8ee6e… | e270b6e576594ee8ee6e… | match |
+| libbz2-1.dll | bzip2-1.0.8-3 | 包声明：custom | third_party/libbz2-1.dll | 669a4bf9266d5f020e84… | 669a4bf9266d5f020e84… | match |
+| libexpat-1.dll | expat-2.8.1-2 | 包声明：MIT | third_party/libexpat-1.dll | 2b8f2c669a062c4d0ee1… | 2b8f2c669a062c4d0ee1… | match |
+| libfontconfig-1.dll | fontconfig-2.18.1-1 | 包声明：custom | third_party/libfontconfig-1.dll | e97e4a41142dd99b25b2… | e97e4a41142dd99b25b2… | match |
+| libfreetype-6.dll | freetype-2.14.3-1 | 包声明：GPL-2.0-or-later OR FTL | third_party/libfreetype-6.dll | a3271784f8366b3c6412… | a3271784f8366b3c6412… | match |
+| libfribidi-0.dll | fribidi-1.0.16-1 | 包声明：LGPL-2.1-or-later | third_party/libfribidi-0.dll | 73a712fd51fa0085e866… | 73a712fd51fa0085e866… | match |
+| libgcc_s_seh-1.dll | gcc-libs-16.1.0-5 | 包声明：GPL-3.0-or-later WITH GCC-exception-3.1 AND LGPL-2.1-or-later | third_party/libgcc_s_seh-1.dll | ff139cfe956709283f7b… | ff139cfe956709283f7b… | match |
+| libglib-2.0-0.dll | glib2-2.88.1-1 | 包声明：LGPL-2.1-or-later | third_party/libglib-2.0-0.dll | 75164119231988002ef0… | 75164119231988002ef0… | match |
+| libgraphite2.dll | graphite2-1.3.15-1 | 包声明：LGPL-2.1-or-later | third_party/libgraphite2.dll | 93953e4744bcfce9a7bc… | 93953e4744bcfce9a7bc… | match |
+| libharfbuzz-0.dll | harfbuzz-14.2.1-1 | 包声明：MIT | third_party/libharfbuzz-0.dll | 2e1523eddd3a7c5be5fb… | 2e1523eddd3a7c5be5fb… | match |
+| libiconv-2.dll | libiconv-1.19-1 | 包声明：LGPL-2.1-or-later; documentation:GPL-3.0-or-later | third_party/libiconv-2.dll | 94ec68fb8d342b6c91b6… | 94ec68fb8d342b6c91b6… | match |
+| libintl-8.dll | gettext-runtime-1.0-1 | 包声明：GPL-3.0-or-later AND LGPL-2.1-or-later | third_party/libintl-8.dll | 0e5a178731e6be6d1154… | 0e5a178731e6be6d1154… | match |
+| libpcre2-8-0.dll | pcre2-10.47-1 | 包声明：BSD-3-Clause | third_party/libpcre2-8-0.dll | 52ccc7e4ec5ad0aecf30… | 52ccc7e4ec5ad0aecf30… | match |
+| libpng16-16.dll | libpng-1.6.58-1 | 包声明：custom | third_party/libpng16-16.dll | 5c1dd5410af563f4a3c4… | 5c1dd5410af563f4a3c4… | match |
+| libstdc++-6.dll | gcc-libs-16.1.0-5 | 包声明：GPL-3.0-or-later WITH GCC-exception-3.1 AND LGPL-2.1-or-later | third_party/libstdc++-6.dll | d9a58184f6bb27936ef0… | d9a58184f6bb27936ef0… | match |
+| libunibreak-7.dll | libunibreak-7.0-1 | 包声明：Zlib | third_party/libunibreak-7.dll | f1f4bb5b5bb3dbf8d142… | f1f4bb5b5bb3dbf8d142… | match |
+| libwinpthread-1.dll | libwinpthread-14.0.0.r98.g19f5121a2-1 | 包声明：MIT AND BSD-3-Clause-Clear | third_party/libwinpthread-1.dll | 36d6e2e68c705141e7c4… | 36d6e2e68c705141e7c4… | match |
+| zlib1.dll | zlib-1.3.2-2 | 包声明：Zlib | third_party/zlib1.dll | 11cd91171765cd65f1c3… | 11cd91171765cd65f1c3… | match |
 | ffprobe | ffprobe version 2023-02-13-git-2296078397-essentials_build www.gyan.dev | GPL-3.0（仅作为本机交叉验证工具，通过固定 argv 的子进程调用；不链接、不 redistribution） | tools/bin/ffprobe.exe（仓库旁，不随包分发） | f28c4751e73672052670… | — | absent-here |
 | ffmpeg | ffmpeg version N-92722-gf22fcd4483 (2018) | GPL-3.0（同上：仅本机工具，不进产物） | tools/bin/ffmpeg.exe（只用来生成合成语料，不参与产品运行） | c8abc49e7be62dde8e12… | — | absent-here |
 
 ## 更新策略
 
-- crates.io 依赖：锁 `Cargo.lock`，升级走一次完整的 `bash tools/check_all.sh --strict`；
-- native provider（libass 等）：不入库（体积与许可分发，21 §7），但每次换版本都要在 `SOURCE_AUDIT_LOCK.json` 里记 commit + 下载 URL + SHA-256，本文件的锁表随之重算；
+- crates.io 依赖：锁 `Cargo.lock`；升级运行受影响的 Rust 行为测试与工作区检查，可选综合门阶不替代真实依赖验证；
+- native provider：常规本机构建产物不入库；用户明确纳入的运行库登记来源、版本、SHA-256 与许可状态，libass 的逐 DLL/包锁见 `third_party/LIBASS_RUNTIME_LOCK.json`；产品分发仍需独立审计；
 - 外部可执行文件（ffprobe/ffmpeg 已锁；mkvtoolnix 尚未接入，接的那天要同样锁哈希）：不自动更新，随版本锁定并记录 build 来源与配置（21 §8/§9）。
 

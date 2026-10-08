@@ -8,6 +8,7 @@ Iced：锁版本并在发布前再次核对 license/dependency tree。
 
 ## 3. ASS
 - libass：ISC，可作为 native core：https://github.com/libass/libass
+- 当前 MSYS2 UCRT64 开发期 DLL 与运行依赖已纳入[来源锁](../../third_party/LIBASS_RUNTIME_LOCK.json)并真实测试；依赖包含 LGPL 等声明，不能把整组二进制统一归为 ISC。公开打包义务仍需逐文件复核。
 - ass-rs / oxideav-ass：作为 parser bake-off 候选；进入 hard dep 前要跑 corpus。
 
 ## 4. PGS

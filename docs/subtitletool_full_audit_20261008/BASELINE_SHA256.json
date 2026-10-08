@@ -1,0 +1,263 @@
+{
+  "audit_date": "2026-10-08",
+  "baseline_dir": "subtitle_tool_rust_planning_v3_1",
+  "files": [
+    {
+      "name": "00_README.md",
+      "lines": 90,
+      "bytes": 6256,
+      "sha256": "76e759cebaa0077f5eaa8f7a792f154a724e99458ea09ddbb1c8d64e984a1196"
+    },
+    {
+      "name": "01_PRODUCT_VISION_SCOPE.md",
+      "lines": 83,
+      "bytes": 2940,
+      "sha256": "0c26b05db64d93e38bb206fd8ce18079c7b34a094920b08992be95ad8c2129f4"
+    },
+    {
+      "name": "02_USER_WORKFLOWS.md",
+      "lines": 77,
+      "bytes": 3186,
+      "sha256": "1c20c0afb5bf6fc2eabb1cd2ac61c9cda312013b2929510f98a1f5b5afb23e02"
+    },
+    {
+      "name": "03_FEATURE_MATRIX.md",
+      "lines": 43,
+      "bytes": 2061,
+      "sha256": "df1512374783b7569a19fe63addc993231d3699810509968997aebafb8b47b16"
+    },
+    {
+      "name": "04_UI_INFORMATION_ARCHITECTURE.md",
+      "lines": 63,
+      "bytes": 2578,
+      "sha256": "1f93ab840358162db254e6518cfc0b329a28c5ec2ea2175c20ee7bb26993e22f"
+    },
+    {
+      "name": "05_UI_SCREEN_SPEC.md",
+      "lines": 110,
+      "bytes": 3621,
+      "sha256": "a62dfae6c4d164f2ae8a82ef5f54f2cc4d161f54547a8db5293bb927dfca7cb5"
+    },
+    {
+      "name": "06_TECHNOLOGY_DECISIONS_WINDOWS.md",
+      "lines": 44,
+      "bytes": 2048,
+      "sha256": "278f2cdafd8c42d77218b4539421d6d92d0f6f63819ff8a515b674a732ce17ed"
+    },
+    {
+      "name": "07_SYSTEM_ARCHITECTURE.md",
+      "lines": 83,
+      "bytes": 2236,
+      "sha256": "f40626f9b2dd1bf8e293da1ffc57010e082a7b73c45f3ab6c0b266f248a5d046"
+    },
+    {
+      "name": "08_FORMATS_AND_IR.md",
+      "lines": 51,
+      "bytes": 1297,
+      "sha256": "0431b6aa40173df966b1d1c79710733ecfec52ff81aca64cbb39c4df5ec27353"
+    },
+    {
+      "name": "09_CANVAS_RESOLUTION_MULTI_OUTPUT.md",
+      "lines": 97,
+      "bytes": 5163,
+      "sha256": "6b708fd146fcc94e1f6a4e4c5e32acec4229507139c9dcfc963f353b40da71eb"
+    },
+    {
+      "name": "10_TIME_FPS_SYNC.md",
+      "lines": 37,
+      "bytes": 2145,
+      "sha256": "1c9875e5d902e90ddaa5465b6008579cb54c3789235ea2c6bab611012727b727"
+    },
+    {
+      "name": "11_HDR_COLOR.md",
+      "lines": 37,
+      "bytes": 1409,
+      "sha256": "d111951357516a19160bca303e313974c1736d51a40cc1062463e4af1dc75d22"
+    },
+    {
+      "name": "12_RENDERER_FILTERS_WINDOWS.md",
+      "lines": 112,
+      "bytes": 5797,
+      "sha256": "134c20953ddf626828e39b31245dcd01b2b926df195e10a27e1c95963c9d39aa"
+    },
+    {
+      "name": "13_PGS_BDN_BLURAY.md",
+      "lines": 120,
+      "bytes": 5576,
+      "sha256": "40f6c5c7c11d3ddb8c898c7000b50d62e639a0e98bacbdea67792bf297be6834"
+    },
+    {
+      "name": "14_CONVERSION_PIPELINES.md",
+      "lines": 31,
+      "bytes": 1634,
+      "sha256": "cb4016aa1eedd5c58288d3c4c815cf3656bf2986e2393329d7f9457a25400334"
+    },
+    {
+      "name": "15_BATCH_TASK_ENGINE.md",
+      "lines": 36,
+      "bytes": 1135,
+      "sha256": "6815ef5a75fe9027131b68afd869df08f2930fcc0545206d9eed07e813405df8"
+    },
+    {
+      "name": "16_MEDIA_PROBE_SMART_ASSIST.md",
+      "lines": 27,
+      "bytes": 992,
+      "sha256": "cba98bca8ef1b646a815e68519d4b8e44f49ee7b94833edae123d4fed5759791"
+    },
+    {
+      "name": "17_FONT_MANAGEMENT.md",
+      "lines": 83,
+      "bytes": 3104,
+      "sha256": "c46b23d1b456ef23e5b0517ff8f60e403eed2a7d9b49cb729ba257733e6beba2"
+    },
+    {
+      "name": "18_CONTAINER_HELPER.md",
+      "lines": 20,
+      "bytes": 464,
+      "sha256": "d72a93918f32c3d62f9157ef63cf513713a7bba3777c796a19f69f3d3fcaffe1"
+    },
+    {
+      "name": "19_OCR_OPTIONAL.md",
+      "lines": 15,
+      "bytes": 545,
+      "sha256": "72d9a08bdf55dc0de7ebb8dd672f5e9a21408d4479757e531911e0fb213f062a"
+    },
+    {
+      "name": "20_CLI_AUTOMATION.md",
+      "lines": 24,
+      "bytes": 554,
+      "sha256": "4244eab616879a7ec302f88ba77f3a6d55661386fc2e3a1330d4035df38d931a"
+    },
+    {
+      "name": "21_DEPENDENCIES_LICENSES.md",
+      "lines": 50,
+      "bytes": 3127,
+      "sha256": "2917d7d1a91a65d6bae15b7c3bd71ca8d861580bd9691b3ac7721fe9d2b41fb8"
+    },
+    {
+      "name": "22_LOGGING_DIAGNOSTICS.md",
+      "lines": 19,
+      "bytes": 809,
+      "sha256": "49f9b040b6a778511d1eb81a50962af370b5ae3f1d2e8599e2424632ce36bc9d"
+    },
+    {
+      "name": "23_SECURITY_ROBUSTNESS.md",
+      "lines": 24,
+      "bytes": 883,
+      "sha256": "fa5167a57747006a4275bc3d9fa27220b750705dc16979e1b26b1f84f470dcf0"
+    },
+    {
+      "name": "24_TEST_QA_CORPUS.md",
+      "lines": 75,
+      "bytes": 2614,
+      "sha256": "2e2a8d4eebe5000a3a0cb1d368dd3edfc88e2efe54451ec24a626eb0a57dac93"
+    },
+    {
+      "name": "25_ACCEPTANCE_TESTS.md",
+      "lines": 28,
+      "bytes": 1932,
+      "sha256": "7d0925d4fa9e5919cf3094d22add484187353192f78a9a3084abef6b11646f35"
+    },
+    {
+      "name": "26_DEVELOPMENT_PHASES.md",
+      "lines": 39,
+      "bytes": 1435,
+      "sha256": "48fa6f31017fafd2bbe3225dd129519302af0d0df65ec8b634f37d792f7367a8"
+    },
+    {
+      "name": "27_WBS_DEPENDENCIES.md",
+      "lines": 69,
+      "bytes": 1560,
+      "sha256": "1029b4e223c7f38529b8f6dc4733d1c48d96c12cbd2eb502057db65ed4cfd9e9"
+    },
+    {
+      "name": "28_WINDOWS_BUILD_RELEASE.md",
+      "lines": 38,
+      "bytes": 1371,
+      "sha256": "eab050e86920efd04d07d5fca711c4d355d31bff7df769ee705108e9b7f81994"
+    },
+    {
+      "name": "29_OPEN_SOURCE_RESEARCH.md",
+      "lines": 219,
+      "bytes": 10255,
+      "sha256": "b53fc05e70bde721231bb0b8239702121ece39aad4c5db5124e478fc419ff0cd"
+    },
+    {
+      "name": "30_RESEARCH_SOURCES.md",
+      "lines": 51,
+      "bytes": 2375,
+      "sha256": "16e5e2fa25c83671d43c6aafb11b77d61ea10b4e0fedd5eef9deeb01610cba11"
+    },
+    {
+      "name": "31_AUDIT_REPORT.md",
+      "lines": 69,
+      "bytes": 4716,
+      "sha256": "5677e4f93d2fcbd153e1781a95aa328219878642a9714817d9238a35127703c9"
+    },
+    {
+      "name": "32_ADR_DECISIONS.md",
+      "lines": 37,
+      "bytes": 1136,
+      "sha256": "2b2a79f5830c72e641969a3dc1e6335199475b4fd216d96ead7d29cc56a17eec"
+    },
+    {
+      "name": "33_GLOSSARY.md",
+      "lines": 18,
+      "bytes": 1050,
+      "sha256": "5cfd69b94067a48dfa766f5341add8bd1786ca842fcdf9b7add85a5a3e397776"
+    },
+    {
+      "name": "34_V3_CHANGELOG.md",
+      "lines": 14,
+      "bytes": 711,
+      "sha256": "740ab9761480708a3ace1bd1ab31577d37a31c8cf81fdae370be34b922e83355"
+    },
+    {
+      "name": "35_UI_STATE_INTERACTION.md",
+      "lines": 63,
+      "bytes": 2247,
+      "sha256": "1319e4c704317d9dc1bbabf7fccb8eaeeac6f72e808d729ab8f8af8710a9ad13"
+    },
+    {
+      "name": "36_PRESET_CONFIG_SCHEMA.md",
+      "lines": 41,
+      "bytes": 1104,
+      "sha256": "017995be8b4326c469247413cdfa308c0af60fa16192c0a84ad60ff4e960c6f0"
+    },
+    {
+      "name": "37_PERFORMANCE_CAPACITY.md",
+      "lines": 32,
+      "bytes": 1418,
+      "sha256": "820ce0c32134459df1f3e481a24d14e0763a24d548fad0404b231ce01457f77a"
+    },
+    {
+      "name": "38_FAILURE_RECOVERY.md",
+      "lines": 26,
+      "bytes": 1194,
+      "sha256": "5a3b07076ed9f7096423f4db4fa73526123b84845ce3e1357aa049ad58b4819a"
+    },
+    {
+      "name": "39_IMPLEMENTATION_CHECKLIST.md",
+      "lines": 73,
+      "bytes": 2350,
+      "sha256": "0fe6763fae2729d0bf72444ff2cfc662619d3818ce38d48949959a56a65cba92"
+    },
+    {
+      "name": "40_SOURCE_CODE_AUDIT.md",
+      "lines": 192,
+      "bytes": 8897,
+      "sha256": "23db3dcaace008c466fa2ac04a32f4197a03c683b5908cff11fdc5beb466be25"
+    },
+    {
+      "name": "41_V3_1_CHANGELOG.md",
+      "lines": 12,
+      "bytes": 700,
+      "sha256": "546576c7cf9e7e8b9c29e1b302fd79f85722a6bb7b8eb64bc7c010b8ab483db7"
+    }
+  ],
+  "issue_counts": {
+    "P0": 10,
+    "P1": 22,
+    "P2": 6
+  }
+}

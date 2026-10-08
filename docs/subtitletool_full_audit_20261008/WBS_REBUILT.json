@@ -1,0 +1,585 @@
+[
+  {
+    "id": "C001",
+    "milestone": "M0",
+    "deps": [],
+    "deliverable": "Result/ErrorCode/Report types",
+    "acceptance": "typed errors+JSON snapshots"
+  },
+  {
+    "id": "C002",
+    "milestone": "M0",
+    "deps": [
+      "C001"
+    ],
+    "deliverable": "Rational Time i128 + rounding",
+    "acceptance": "23.976 long-run and overflow fixtures"
+  },
+  {
+    "id": "C003",
+    "milestone": "M0",
+    "deps": [
+      "C001"
+    ],
+    "deliverable": "Canvas/PlayRes/LayoutRes/Storage/PAR model",
+    "acceptance": "16:9 and anamorphic unit tests"
+  },
+  {
+    "id": "C004",
+    "milestone": "M0",
+    "deps": [
+      "C001",
+      "C002",
+      "C003"
+    ],
+    "deliverable": "Profile/Preset schema + validation",
+    "acceptance": "TOML parser test / migration"
+  },
+  {
+    "id": "C005",
+    "milestone": "M0",
+    "deps": [
+      "C001"
+    ],
+    "deliverable": "ColorPolicy domain model",
+    "acceptance": "color assumption & HDR restrictions"
+  },
+  {
+    "id": "F001",
+    "milestone": "M0",
+    "deps": [
+      "C001"
+    ],
+    "deliverable": "File signature/probe",
+    "acceptance": "text/PG/BDN/IDX probes"
+  },
+  {
+    "id": "F002",
+    "milestone": "M0",
+    "deps": [
+      "F001"
+    ],
+    "deliverable": "Source encoding with BOM & no silent loss",
+    "acceptance": "GB18030/Shift-JIS/UTF16 fixtures"
+  },
+  {
+    "id": "F010",
+    "milestone": "M1",
+    "deps": [
+      "C002",
+      "F002"
+    ],
+    "deliverable": "SRT reader/writer",
+    "acceptance": "SRT Golden and invalid encoding"
+  },
+  {
+    "id": "F020",
+    "milestone": "M0",
+    "deps": [
+      "C002",
+      "F002"
+    ],
+    "deliverable": "ASS token/span parser bakeoff",
+    "acceptance": "100+ ASS byte exact corpus"
+  },
+  {
+    "id": "F021",
+    "milestone": "M1",
+    "deps": [
+      "F020"
+    ],
+    "deliverable": "ByteRangePatch ASS serializer",
+    "acceptance": "byte-identical unchanged roundtrip"
+  },
+  {
+    "id": "T010",
+    "milestone": "M1",
+    "deps": [
+      "C002",
+      "F020"
+    ],
+    "deliverable": "FPS/offset/two-point mappings",
+    "acceptance": "time error below chosen tick bound"
+  },
+  {
+    "id": "T020",
+    "milestone": "M1",
+    "deps": [
+      "C005",
+      "F020",
+      "F021"
+    ],
+    "deliverable": "ASS SDR/HDR color transforms",
+    "acceptance": "unit/color/alpha/override corpus"
+  },
+  {
+    "id": "T030",
+    "milestone": "M1",
+    "deps": [
+      "C003",
+      "F020",
+      "F021"
+    ],
+    "deliverable": "ASS preserve/rewrite resolution",
+    "acceptance": "PlayRes/LayoutRes differential"
+  },
+  {
+    "id": "T040",
+    "milestone": "M1",
+    "deps": [
+      "F020",
+      "F010"
+    ],
+    "deliverable": "ASS→SRT text projection",
+    "acceptance": "drawing/linebreak/overlap semantics"
+  },
+  {
+    "id": "T050",
+    "milestone": "M2",
+    "deps": [
+      "F020",
+      "F021"
+    ],
+    "deliverable": "ASS multi-file merge",
+    "acceptance": "StyleMap and inline r override"
+  },
+  {
+    "id": "U001",
+    "milestone": "M0",
+    "deps": [
+      "C001"
+    ],
+    "deliverable": "Iced 0.14 Windows PoC",
+    "acceptance": "drag-drop+native dialog+build reproducible"
+  },
+  {
+    "id": "U002",
+    "milestone": "M1",
+    "deps": [
+      "U001",
+      "F001",
+      "C004"
+    ],
+    "deliverable": "Manual-first tool shell & params",
+    "acceptance": "input validation/value origins"
+  },
+  {
+    "id": "U003",
+    "milestone": "M2",
+    "deps": [
+      "U002",
+      "J002"
+    ],
+    "deliverable": "Queue drawer + progress/error cards",
+    "acceptance": "headless E2E cancel partial success"
+  },
+  {
+    "id": "U004",
+    "milestone": "M2",
+    "deps": [
+      "U002",
+      "C004",
+      "J001"
+    ],
+    "deliverable": "Multi-output profile table",
+    "acceptance": "collision/errors/disabled combos"
+  },
+  {
+    "id": "A000",
+    "milestone": "M0",
+    "deps": [
+      "C001"
+    ],
+    "deliverable": "Absolute-path process adapter & cancellation",
+    "acceptance": "timeout/exit/status/stdout bounds"
+  },
+  {
+    "id": "A001",
+    "milestone": "M2",
+    "deps": [
+      "A000"
+    ],
+    "deliverable": "ffprobe Windows adapter",
+    "acceptance": "FPS/HDR metadata info only"
+  },
+  {
+    "id": "A002",
+    "milestone": "M4",
+    "deps": [
+      "A000"
+    ],
+    "deliverable": "mkvmerge/mkvextract adapter",
+    "acceptance": "track/attachment metadata preserved"
+  },
+  {
+    "id": "A003",
+    "milestone": "M4",
+    "deps": [
+      "F020"
+    ],
+    "deliverable": "Windows DirectWrite font resolver",
+    "acceptance": "localized/TTC/face matches"
+  },
+  {
+    "id": "H001",
+    "milestone": "M0",
+    "deps": [
+      "C001"
+    ],
+    "deliverable": "versioned named-pipe host protocol",
+    "acceptance": "fuzz + bounded IPC"
+  },
+  {
+    "id": "H002",
+    "milestone": "M0",
+    "deps": [
+      "H001"
+    ],
+    "deliverable": "PE bitness & export/capability probe",
+    "acceptance": "actual x86/x64 provider smoke"
+  },
+  {
+    "id": "H003",
+    "milestone": "M3",
+    "deps": [
+      "H001",
+      "H002"
+    ],
+    "deliverable": "Isolated renderer-host x64/x86",
+    "acceptance": "host crash no GUI crash"
+  },
+  {
+    "id": "H004",
+    "milestone": "M3",
+    "deps": [
+      "H003"
+    ],
+    "deliverable": "CSRI production adapter",
+    "acceptance": "diff corpus and capability fail-closed"
+  },
+  {
+    "id": "H005",
+    "milestone": "M4",
+    "deps": [
+      "H003",
+      "A000"
+    ],
+    "deliverable": "Legacy VSScript/AviSynth adapters",
+    "acceptance": "official ABI, clean diagnostics"
+  },
+  {
+    "id": "R001",
+    "milestone": "M0",
+    "deps": [
+      "F020",
+      "C003"
+    ],
+    "deliverable": "libass native memory & fonts wrapper",
+    "acceptance": "native build and memory lifetime tests"
+  },
+  {
+    "id": "R002",
+    "milestone": "M2",
+    "deps": [
+      "R001",
+      "T010",
+      "C003",
+      "C005"
+    ],
+    "deliverable": "RenderGroupKey & Timeline planner",
+    "acceptance": "no cross-profile RGBA reuse"
+  },
+  {
+    "id": "R003",
+    "milestone": "M2",
+    "deps": [
+      "R001",
+      "R002"
+    ],
+    "deliverable": "Frame composite + bbox/hash",
+    "acceptance": "animated frame/detect_change corpus"
+  },
+  {
+    "id": "R004",
+    "milestone": "M3",
+    "deps": [
+      "R003",
+      "H004"
+    ],
+    "deliverable": "Renderer differential harness",
+    "acceptance": "libass vs special provider metrics"
+  },
+  {
+    "id": "I001",
+    "milestone": "M2",
+    "deps": [
+      "R003"
+    ],
+    "deliverable": "RGBA/frame/PNG encoder",
+    "acceptance": "lossless RGBA/alpha golden"
+  },
+  {
+    "id": "I002",
+    "milestone": "M3",
+    "deps": [
+      "I001"
+    ],
+    "deliverable": "quantizer policy + palette vectors",
+    "acceptance": "palette coverage/no transparent block"
+  },
+  {
+    "id": "B001",
+    "milestone": "M2",
+    "deps": [
+      "C002",
+      "C003",
+      "I001"
+    ],
+    "deliverable": "BDN XML+PNG writer",
+    "acceptance": "frame TC, actual PNG size correct"
+  },
+  {
+    "id": "J001",
+    "milestone": "M1",
+    "deps": [
+      "C004"
+    ],
+    "deliverable": "Immutable JobSnapshot & Plan schema",
+    "acceptance": "CLI/Preset snapshot equivalence"
+  },
+  {
+    "id": "J002",
+    "milestone": "M2",
+    "deps": [
+      "J001",
+      "C001"
+    ],
+    "deliverable": "Bounded task scheduler & cancellation",
+    "acceptance": "100-job queue no UI blocking"
+  },
+  {
+    "id": "J003",
+    "milestone": "M2",
+    "deps": [
+      "J002",
+      "R002"
+    ],
+    "deliverable": "Cache with dependency hashes & memory budgets",
+    "acceptance": "cache invalidation/capacity tests"
+  },
+  {
+    "id": "J004",
+    "milestone": "M2",
+    "deps": [
+      "J002"
+    ],
+    "deliverable": "Verified output transaction & collision detection",
+    "acceptance": "staged file/folder output atomicity tests"
+  },
+  {
+    "id": "J005",
+    "milestone": "M4",
+    "deps": [
+      "J003",
+      "J004"
+    ],
+    "deliverable": "Resume / partial success recovery",
+    "acceptance": "power loss/retry/cancel integration"
+  },
+  {
+    "id": "K001",
+    "milestone": "M1",
+    "deps": [
+      "J001",
+      "F010",
+      "F021",
+      "T010",
+      "T020"
+    ],
+    "deliverable": "CLI core verbs/repro JSON contract",
+    "acceptance": "golden command outputs and exit codes"
+  },
+  {
+    "id": "F030",
+    "milestone": "M3",
+    "deps": [
+      "C002",
+      "C003"
+    ],
+    "deliverable": "BDN parser/validator IR",
+    "acceptance": "XML XXE off and coords/PNG checks"
+  },
+  {
+    "id": "F040",
+    "milestone": "M0",
+    "deps": [
+      "C002"
+    ],
+    "deliverable": "PGS segment parser/state model",
+    "acceptance": "third-party SUP and fuzz"
+  },
+  {
+    "id": "P001",
+    "milestone": "M3",
+    "deps": [
+      "F040"
+    ],
+    "deliverable": "PGS RLE/stateful decoder",
+    "acceptance": "independent decode/diff"
+  },
+  {
+    "id": "P002",
+    "milestone": "M3",
+    "deps": [
+      "F040",
+      "C002"
+    ],
+    "deliverable": "PGS no-ODS-reencode transforms",
+    "acceptance": "ODS invariant+PTS/DTS checks"
+  },
+  {
+    "id": "V001",
+    "milestone": "M3",
+    "deps": [
+      "F040"
+    ],
+    "deliverable": "PGS structural validator",
+    "acceptance": "PDS/ODS/PCS/WDS golden vectors"
+  },
+  {
+    "id": "V002",
+    "milestone": "M3",
+    "deps": [
+      "V001",
+      "C002"
+    ],
+    "deliverable": "PGS time/lifecycle validator",
+    "acceptance": "PTS/DTS/erase/palette case fixtures"
+  },
+  {
+    "id": "P003",
+    "milestone": "M3",
+    "deps": [
+      "I002",
+      "F040",
+      "V001"
+    ],
+    "deliverable": "PGS basic encoder",
+    "acceptance": "fragmentation+player smoke"
+  },
+  {
+    "id": "V003",
+    "milestone": "M5",
+    "deps": [
+      "V002"
+    ],
+    "deliverable": "Decoder/buffer/bitrate model validator",
+    "acceptance": "golden inputs and model source trace"
+  },
+  {
+    "id": "P010",
+    "milestone": "M5",
+    "deps": [
+      "P003",
+      "V003",
+      "R003"
+    ],
+    "deliverable": "Advanced PGS author policies",
+    "acceptance": "epoch/acquisition/ahead/buffer regression"
+  },
+  {
+    "id": "V004",
+    "milestone": "M5",
+    "deps": [
+      "V003",
+      "P010"
+    ],
+    "deliverable": "Device-corpus validation report",
+    "acceptance": "device models/firmware outcomes logged"
+  },
+  {
+    "id": "FNT01",
+    "milestone": "M4",
+    "deps": [
+      "A003",
+      "F020",
+      "R001"
+    ],
+    "deliverable": "Font coverage/subset/embedding",
+    "acceptance": "font license + shaping equivalence"
+  },
+  {
+    "id": "MKV01",
+    "milestone": "M4",
+    "deps": [
+      "A002",
+      "FNT01",
+      "J004"
+    ],
+    "deliverable": "New MKV subtitle/attachment assistant",
+    "acceptance": "source MKV unchanged incl chapters/tracks"
+  },
+  {
+    "id": "SEC01",
+    "milestone": "M0",
+    "deps": [
+      "H001",
+      "A000"
+    ],
+    "deliverable": "Renderer native/DLL threat model",
+    "acceptance": "job object != sandbox; permission policy"
+  },
+  {
+    "id": "QA001",
+    "milestone": "M0",
+    "deps": [
+      "C001"
+    ],
+    "deliverable": "Golden fixtures+licensing manifest",
+    "acceptance": "each fixture has oracle and usage rights"
+  },
+  {
+    "id": "QA002",
+    "milestone": "M2",
+    "deps": [
+      "QA001",
+      "U002",
+      "J002"
+    ],
+    "deliverable": "GUI E2E Windows DPI & IME",
+    "acceptance": "1366x768/200%DPI keyboard paths"
+  },
+  {
+    "id": "QA003",
+    "milestone": "M3",
+    "deps": [
+      "QA001",
+      "R003",
+      "P001"
+    ],
+    "deliverable": "PGS/Renderer differential suite",
+    "acceptance": "byte and pixel reference reports"
+  },
+  {
+    "id": "REL01",
+    "milestone": "M4",
+    "deps": [
+      "K001",
+      "QA002",
+      "J004"
+    ],
+    "deliverable": "Portable & Inno Setup smoke",
+    "acceptance": "fresh Win11 VM verify + notices"
+  },
+  {
+    "id": "REL02",
+    "milestone": "M5",
+    "deps": [
+      "REL01",
+      "V004",
+      "QA003"
+    ],
+    "deliverable": "Advanced Blu-ray release gate",
+    "acceptance": "strict caveats, signing and SBOM"
+  }
+]

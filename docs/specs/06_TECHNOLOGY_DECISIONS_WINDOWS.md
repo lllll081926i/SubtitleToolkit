@@ -1,5 +1,7 @@
 # Windows-only 技术选型
 
+本页定义技术方向。GUI、DirectWrite 权威字体匹配、MKV 与安装器尚未交付；当前 workspace 见[系统架构](07_SYSTEM_ARCHITECTURE.md)。上游研究记录不代表本机验证结果。
+
 ## 1. GUI：Iced 0.14
 最终选择 Iced，而不是 V2 的 Slint。
 
@@ -10,11 +12,11 @@
 - 状态机和 Task 模型适合任务队列型工具；
 - 不需要额外 UI DSL 与归属许可处理。
 
-来源：https://github.com/iced-rs/iced/blob/master/CHANGELOG.md
+候选版本依据：[Iced 0.14.0 release](https://github.com/iced-rs/iced/releases/tag/0.14.0)。实施时锁定版本，不以漂移的 master 接口作为 0.14 合同。
 
 ## 2. 平台
 - `x86_64-pc-windows-msvc` 唯一主 target。
-- Windows 10 22H2 / Windows 11 作为测试基线。
+- Windows 11 为主要验收目标；Windows 10 22H2 为兼容性测试目标。仅在完成适用版本的实际测试后加入发行支持矩阵，不从编译 target 推断所有系统版本已受支持。
 - 不做 Linux/macOS 条件编译；减少 path/font/plugin/installer 分支。
 - x86 只用于 `renderer-host-x86.exe` 兼容 32-bit CSRI/VSFilter DLL。
 
@@ -32,7 +34,7 @@
 
 ## 7. 安装器
 V3 推荐：**Inno Setup 7 + Portable ZIP 双轨**。
-- Inno Setup 7.1.0 已于 2026-08 发布；
+- 具体 Inno Setup 版本与许可在引入打包流程时固定；
 - 对传统 Win32/Rust 桌面工具、文件关联、可选组件、升级最简单；
 - 商业分发时需重新核对其商业许可条款。
 来源：https://jrsoftware.org/isdl.php

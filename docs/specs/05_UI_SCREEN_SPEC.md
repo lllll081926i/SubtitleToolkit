@@ -1,5 +1,7 @@
 # UI 页面级详细规格
 
+本文定义未实现 GUI 的目标控件。每项启用条件须联合[35 状态与交互](35_UI_STATE_INTERACTION.md)、[36 配置模型](36_PRESET_CONFIG_SCHEMA.md)和实际 capability；[11](11_HDR_COLOR.md)定义颜色模式，不能把 nit 控件视为物理亮度保证。
+
 ## 1. 通用控件规则
 - 所有数值输入同时支持下拉 preset + 手输。
 - 参数旁有 `?` tooltip，解释“会不会改时长/是否有损”。
@@ -23,8 +25,8 @@
 
 ## 3. ASS/HDR 页
 - HDR Mode：Off / Compatibility / Percentage / Reference White。
-- Percentage：0–100；常用 preset 33.3/40/50/60。
-- Reference White：100/120/150/203/custom nit。
+- Percentage：当前核心为线性光百分比，0.01–100%；常用 preset 33.3/40/50/60。
+- Reference White：100/120/150/203/custom 的近似预调整参数；203 当前不改 RGB，不保证显示器实际 nit。
 - 作用范围：Style colors / inline colors / VSFilterMod gradient colors。
 - Alpha：锁定不改。
 - Resolution Adapt：保持 / 720 / 1080 / 2160 / custom 16:9。

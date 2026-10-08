@@ -1,9 +1,10 @@
-# SubtitleToolkit-RS V3.1：产品与工程规划基线（Windows-only）
+# SubtitleToolkit-RS：产品与工程规划总纲（Windows-only）
 
 > 文档审计日期：2026-10-05\
 > V3.1 源码级复核：2026-10-05\
 > 2026-10-07 复核：原始阶段顺序和状态表已调整；当前导航见 [`../README.md`](../README.md)，当前进度见 [`../STATUS.md`](../STATUS.md)。
-> 平台：**Windows 10/11 x64 首发与唯一正式平台**；仅为兼容旧式字幕滤镜提供可选 x86 helper。\
+> 2026-10-08 修订：新增文档审查建议按[采纳记录](AUDIT_ADOPTION_20261008.md)进入维护规格；原始 V3.1 内容保留在[导入基线](../subtitle_tool_rust_planning_v3_1/00_README.md)。
+> 平台：**Windows x64 为唯一正式目标**；Windows 11 主验收、Windows 10 兼容目标；x86 helper 为后续可选能力。\
 > GUI：**Rust + Iced 0.14**。\
 > 产品定位：个人使用、面向具备字幕基础知识的用户，以**手动选择参数为首选**，视频自动探测/自动同步为辅助能力。\
 > 非目标：不做字幕创作、不做逐句编辑、不做波形打轴、不做 Aegisub/Subtitle Edit 的编辑器替代品。
@@ -31,13 +32,11 @@
 
 旧序列把尚未裁决的 CSRI/x86/MKV 和 GUI 原型设成核心链的前置条件，已由 [`26_DEVELOPMENT_PHASES.md`](26_DEVELOPMENT_PHASES.md) 修订。当前先收口现有 CLI、渲染隔离、输出事务和回归测试；PGS 互操作、GUI 与可选适配器分别按证据门槛推进。
 
-## 5. 关键联网核验结论
+## 5. 外部研究与实施证据
 
-- Iced 0.14 增加 hot reload、time-travel debugging、headless/E2E、table/grid，适合本项目长期调试：https://github.com/iced-rs/iced/blob/master/CHANGELOG.md
-- libass 最新稳定 0.17.5（2026-06-24），ISC：https://github.com/libass/libass
-- VSFilterMod 提供 `TextSubMod`，x86/x64 都存在；现代 xy-VSFilter 分支已经支持外部 CSRI renderer：https://github.com/sorayuki/VSFilterMod / https://github.com/Masaiki/xy-VSFilter/releases
-- VapourSynth 当前文档 R80，VSScript4 应按正式 API 使用，禁止旧工程硬编码函数表：https://www.vapoursynth.com/doc/
-- ass2bdnxml 明确 2160p 只属于 exotic output，**不符合 Blu-ray；UHD BD 的 PGS 不能超过 2K**：https://github.com/cubicibo/ass2bdnxml/releases
+上游版本、接口和许可研究集中维护在[来源清单](../research/30_RESEARCH_SOURCES.md)与[第三方来源锁](../../third_party/SOURCE_AUDIT_LOCK.json)，总纲不再维护另一份“最新版本”列表。
+
+Iced 0.14 是 GUI 目标选型；当前没有 GUI crate。CSRI 导出存在只支持接口候选判断，不证明 DLL 可以加载或像素兼容。2160p custom 输出不宣称 Blu-ray 合规，实际 Profile 与设备结论见 [PGS 规格](../specs/13_PGS_BDN_BLURAY.md)。
 
 ## 6. 追加规格
 

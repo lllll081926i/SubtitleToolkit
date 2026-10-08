@@ -1,11 +1,13 @@
 # 特效字幕画布、坐标空间、分辨率适配与多输出
 
+文档修订：2026-10-08。本页规定目标语义；当前能力见[功能矩阵](03_FEATURE_MATRIX.md)。渲染分组决定见 [ADR-013](../decisions/32_ADR_DECISIONS.md#adr-013-按完整渲染条件分组)。
+
 ## 1. 全局硬规则：输出画布始终是完整 16:9
 所有特效字幕输出都以完整 16:9 视频帧作为 **Output Canvas**：
 - 1280×720；
 - 1920×1080；
 - 3840×2160；
-- 其他自定义输出默认要求保持 16:9，除非用户明确选择实验性自定义画布。
+- 其他自定义特效输出也必须保持 16:9。
 
 即使正片内容为 2.35:1/2.39:1 且带上下黑边，也**不得**自动把字幕逻辑画布缩到有效画面高度。字幕位置仍属于完整视频帧坐标。
 
@@ -64,14 +66,38 @@
 - PGS strict level；
 - output suffix/path template。
 
-## 6. Render Timeline Planner（V3.1 新增）
-同一输入生成多个输出时，先求所有输出所需采样时间点的并集：
+## 6. RenderGroupKey 与时间采样
+
+`RenderGroupKey` 是目标概念，不是当前已有的 Rust 类型。渲染分组至少比较以下字段：
+
+| 字段 | 包含的内容 |
+|---|---|
+| 脚本身份 | 输入摘要、全部时间/颜色/分辨率变换及最终脚本摘要 |
+| 渲染器身份 | provider、版本、二进制 SHA-256、架构、影响结果的参数 |
+| 几何 | OutputCanvas、StorageSize、PixelAspect、PlayRes/LayoutRes 策略 |
+| 字体环境 | 字体文件内容、face/index、附件与注入顺序、匹配策略 |
+| 颜色策略 | 映射算法版本、模式、参数、alpha 与色域假设 |
+| 采样策略 | 精确 FPS、时间映射、动态标签与事件边界策略 |
+
+未知依赖或无法证明相同的字段按不同组处理。已有 `CacheKeyParts` 将部分信息放在 `transform_sha256` 和 `render_options_sha256` 中；调用方仍需证明这些摘要覆盖上述条件，不能只比较 canvas/fps。
+
+只在同组内求输出所需采样时间点的并集：
 - BDN：视频帧边界；
 - 普通 SUP：目标 PGS 采样点；
 - High Precision SUP：帧边界 + ASS event 精确 start/end + 动态特效需要的采样；
 - 预览：用户请求的 timestamp。
 
-统一 timeline 只渲染一次，然后由不同 sink 消费。静态相邻样本可通过 **visible composited-frame hash/pixel diff** 去重；不能只相信 libass `detect_change`。
+同组时间点排序去重后，每个时间点渲染一次，再由各 sink 按自己的时间网格消费。事件使用半开区间 `[start,end)`；动态标签按帧或经过验收的自适应策略采样。静态相邻样本按最终可见 RGBA 比较；`detect_change` 只作提示。去重必须保留 bbox 与完整画布位置。
+
+| 输出组合 | 可共享 | 必须分开 |
+|---|---|---|
+| 同组 BDN + SUP | RGBA、可见帧检测 | writer 状态与输出事务 |
+| 1080p + 2160p | 原始 AST、可证明相同的分析结果 | RGBA 与 bbox |
+| SDR + 颜色变换后的 ASS | 原始 AST | 已修改脚本与渲染结果 |
+| libass + VSFilterMod | 原始输入 | 字形布局、RGBA、provider 状态 |
+| 字体内容或匹配策略变化 | 原始字幕 | 字体环境摘要与渲染缓存 |
+
+当前批处理跨 profile 的共享计数仍需验收，不能将本节目标表述为已交付性能指标。
 
 ## 7. 典型组合
 一次输入同时输出：
@@ -84,8 +110,8 @@
 其中 ASS 多分辨率可以选择 Preserve Script / Rewrite Script 两种策略；PGS/BDN 均由统一 16:9 composition canvas 派生局部 object bbox。
 
 ## 8. 2160p 与 Blu-ray 的标签
-- 2160p ASS：支持。
-- 2160p BDN XML/PNG：支持为 custom/exotic output。
+- 2160p ASS：现有分辨率变换路径可用，视觉等价仍按语料验收。
+- 2160p BDN XML/PNG：作为 custom/exotic 输出；依赖真实 renderer 验收。
 - 2160p PGS：仅 custom/non-standard 实验性输出；绝不标 Blu-ray/UHD-BD compliant。
 - UHD Blu-ray strict profile：使用规范允许的 PGS 画布/编码约束，不把视频 3840×2160 等同于字幕 bitmap 3840×2160。
 
@@ -95,3 +121,4 @@
 - Rewrite Script 必须在 corpus 中达到目标 renderer 的视觉等价阈值。
 - LayoutRes corpus 必须单独测试 libass / VSFilterMod / CSRI。
 - bbox 裁剪前后在完整 canvas 上 composite 的 RGBA 结果必须像素等价（允许量化阶段另定义误差阈值）。
+- 跨画布、渲染器、字体环境与颜色策略不得复用 RGBA；同组共享次数由 `AT-MULTI-002` 的实际调用计数证明。

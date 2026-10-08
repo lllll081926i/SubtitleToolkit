@@ -1,9 +1,9 @@
 # PGS / SUP / BDN / Blu-ray 兼容
 
 ## 1. 分阶段能力
-Level 0 Probe → Level 1 Parser/Decoder → Level 2 Fast Transform → Level 3 Basic Encoder → Level 4 Advanced Author → Level 5 Strict Validator。
+作者链按 Probe、Parser/Decoder、Fast Transform、Basic Encoder、Advanced Author 分阶段。验证器独立开发：Parser → 结构验证 → 时间/生命周期验证 → 缓冲模型验证；Advanced Author 消费验证结果，不作为开发验证器的前置条件。
 
-UI 与文件 metadata 必须记录输出的真实 level，禁止 Basic Encoder 输出显示为“已过大金”。
+目标报告分别记录作者链能力与已完成的验证项。Basic Encoder 的存在不推导结构、时间、模型或设备验证全部通过。
 
 ## 2. PGS parser / decoder 是有状态机
 至少正确处理 PCS/WDS/PDS/ODS/END，并跨 display set 维护：
@@ -29,7 +29,7 @@ UI 与文件 metadata 必须记录输出的真实 level，禁止 Basic Encoder �
 - crop metadata（在可证明不改 ODS 的场景）。
 
 ### 3.1 ODS invariant
-只要 transform 宣称“无损快速路径”，输出前后：
+产品称“无位图重编码快速路径”。时间、位置、Forced 和调色板修改可能改变观看结果。输出前后：
 - 所有 ODS payload SHA-256 必须相同；
 - object fragmentation 顺序不变；
 - 只允许修改白名单 segment/field。
@@ -110,6 +110,7 @@ SUPer 当前 README 明确：Maximum bitrate 是**输出后的测试阈值**，�
 
 ## 8. 多输出共享渲染
 ASS→BDN+SUP 时采用统一 Render Timeline Planner：
+- 先按 [RenderGroupKey](09_CANVAS_RESOLUTION_MULTI_OUTPUT.md#6-rendergroupkey-与时间采样)分组；以下共享规则仅在同组内成立；
 - BDN 只消费 `xml_frame=true` 的帧采样；
 - SUP 可以消费 frame samples + exact event boundaries；
 - 同一个 timestamp 的 RGBA 只 render/composite 一次；
@@ -119,7 +120,7 @@ ASS→BDN+SUP 时采用统一 Render Timeline Planner：
 UI 主名称：`Blu-ray Compatibility / 严格兼容化`。
 帮助页：说明社区常称“大金过水”。
 
-只有 Level 5 validator + device corpus 通过后才允许 Strict badge。外部 Scenarist 可作为最终人工/实验室对照，但不能成为用户日常必要依赖。
+当前不得显示 Strict badge。后续报告分别显示结构、时间、生命周期、Profile、缓冲模型与列明设备的结果；每项附规则版本、样本摘要、依赖版本和未覆盖范围。设备实测只支持列明型号与固件的结论。外部 Scenarist 可作为人工/实验室对照，不作为用户日常必要依赖。
 
 ## 10. 尚未裁决的互操作字段
 

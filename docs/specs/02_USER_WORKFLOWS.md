@@ -1,5 +1,7 @@
 # 用户工作流（Manual-first）
 
+本文为目标用户流程，不代表全部能力已交付。当前可执行命令见[20](20_CLI_AUTOMATION.md)；GUI、曲线 preset、特效 provider 与 Strict 按实际 capability 启用。颜色模式的计算与 203 基准见[11](11_HDR_COLOR.md)。
+
 ## 1. 基础转换
 1. 拖入/选择一个或多个字幕文件。
 2. 选择目标格式。
@@ -10,7 +12,7 @@
 ## 2. ASS HDR 适配
 1. 选择 ASS。
 2. 手动选择目标：HDR10/PQ 使用场景。
-3. 选择亮度 preset：Compatibility / 203 nit / 百分比 / 自定义曲线。
+3. 选择颜色预调整模式：Compatibility / 线性光百分比 / ReferenceWhite 近似参数。自定义曲线是后续目标，未实现时不显示为可执行选项。
 4. 选择是否处理 inline override colors 和 VSFilterMod 扩展颜色。
 5. 可同时添加 1080p HDR ASS、2160p HDR ASS 两个 output profiles。
 6. 输出前执行 AST round-trip 与视觉 smoke test。
@@ -32,7 +34,7 @@
 | Profile | 画布 | FPS | HDR | Format | Renderer | Strict |
 |---|---:|---:|---|---|---|---|
 | Web-1080 | 1920×1080 | 23.976 | SDR | ASS | none | - |
-| HDR-4K | 3840×2160 | 23.976 | 203nit | ASS | none | - |
+| HDR-4K | 3840×2160 | 24000/1001 | ReferenceWhite 近似参数 | ASS | none | - |
 | BD-SUP | 1920×1080 | 23.976 | SDR | SUP | VSFilterMod | Blu-ray |
 | UHD-BD-SUP | 1920×1080 | 23.976 | HDR dim | SUP | VSFilterMod | UHD-BD |
 | Archive-SRT | text | same | n/a | SRT | none | - |

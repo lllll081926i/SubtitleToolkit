@@ -2,7 +2,7 @@
 
 面向 Windows 的 Rust 字幕转换与适配工具箱。输入现有字幕，通过 CLI 完成文本转换、时间调整、颜色调整、字体检查和批量处理。
 
-**当前处于开发阶段，不是正式发布版本。** GUI、CSRI/VSFilterMod、字体子集、MKV 助手和安装包尚未完成。当前实现状态、已知限制与本轮修复记录见[当前状态](docs/STATUS.md)和[审查报告](docs/reviews/2026-10-07.md)。
+**当前处于开发阶段，不是正式发布版本。** GUI、CSRI/VSFilterMod、字体子集、MKV 助手和安装包尚未完成。现有实现与验证范围见[当前状态](docs/STATUS.md)和[2026-10-08 代码审查](docs/reviews/2026-10-08.md)。新增规划与文档审查建议的处理结果见[文档审查采纳记录](docs/planning/AUDIT_ADOPTION_20261008.md)。
 
 ## 快速开始
 
@@ -11,6 +11,7 @@
 PowerShell 开发会话先点源 `. .\tools\set_build_cache.ps1`，让 Cargo、vcpkg、sccache/ccache、pip 缓存、构建输出和临时目录使用非 C 盘路径。
 
 ```powershell
+. .\tools\set_build_cache.ps1
 cargo build --workspace --release
 cargo run -p cli -- doctor --json
 cargo run -p cli -- --help
@@ -19,6 +20,8 @@ cargo run -p cli -- --help
 未设置 `CARGO_TARGET_DIR` 时，CLI 位于 `target/release/subtitletool-cli.exe`，渲染宿主位于 `target/release/subtitletool-render-host.exe`。自定义构建目录以 `cargo metadata --no-deps --format-version 1` 的 `target_directory` 为准。
 
 可通过 `STK_LIBASS_DLL`、`STK_FFPROBE`、`STK_FONTS_DIR` 指定依赖。构建产物和私有字体不随源码提交；`third_party/VSFilterMod.dll` 是尚未接入产品的候选文件，来源和分发许可仍需核实。当前不能将“编译成功”解释为“BDN/PGS 已兼容外部播放器”。
+
+项目已登记用户提供的 libass 0.17.5 开发期运行库与依赖。启用真实渲染时设置 `$env:STK_LIBASS_DLL = (Resolve-Path '.\third_party\libass-9.dll').Path`；版本、哈希、测试命令与分发边界见[第三方说明](third_party/README.md#libass-开发期运行库)。
 
 ## 目录
 

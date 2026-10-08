@@ -1,71 +1,88 @@
 # WBS 与依赖 DAG
 
-## CORE
-- C001 error/model/result
-- C002 rational/time
-- C003 canvas/profile
-- C004 plan schema
+修订：2026-10-08。保留本仓库原任务编号，补齐缺失节点。表内“依赖”只引用本表任务；`—` 表示无工程依赖。外部 DLL、语料与设备属于验收条件，不能伪装成未声明的任务。
 
-## FORMAT
-- F001 detector -> C001
-- F010 SRT -> C002
-- F020 ASS parser -> C002
-- F021 ASS lossless writer -> F020
-- F030 BDN -> C002,C003
-- F040 PGS parser -> C002
-- F041 PGS writer -> F040
+导入审查包的 59 项 WBS 是另一套建议编号，例如其中 `R010` 与本表不能自动互换。本表按[当前阶段](26_DEVELOPMENT_PHASES.md)执行，不按导入包 M0–M5 重做已有功能。任务列明目标职责，不表示未实现或已验收。
 
-## TRANSFORM
-- T010 FPS -> C002
-- T020 HDR -> F020
-- T030 resolution -> F020,C003
-- T040 safe normalize -> F010/F020
+## 模型、格式与变换
 
-## GUI
-- U001 Iced shell -> C001
-- U002 drag/drop -> U001,F001
-- U003 tool forms -> U001,C003
-- U004 output profile table -> U003,C004
-- U005 queue drawer -> task engine
+| ID | 交付职责 | 依赖 |
+|---|---|---|
+| C001 | 错误、结果与诊断模型 | — |
+| C002 | 精确时间、FPS 与舍入边界 | C001 |
+| C003 | 画布、几何与 profile 约束 | C001 |
+| C004 | Plan/config schema 与校验 | C002, C003 |
+| C005 | 颜色模式、算法版本与假设 | C001 |
+| F001 | 格式探测 | C001 |
+| F002 | 编码、BOM 与原始字节策略 | F001 |
+| F010 | SRT 编解码 | C002, F002 |
+| F020 | ASS AST 与动态 Format | C002, F002 |
+| F021 | ASS 局部改写与字节往返 | F020 |
+| F030 | BDN 编解码与字段模型 | C002, C003 |
+| F040 | PGS 段解析与状态模型 | C002 |
+| F041 | PGS 字节写出 | F040 |
+| T010 | 时间变换与边界校验 | C002 |
+| T020 | ASS 颜色预调整 | C005, F021 |
+| T030 | Preserve/Rewrite 分辨率策略 | C003, F021 |
+| T040 | 文本投影与显式规范化 | F010, F020 |
+| T050 | ASS 合并与完整样式引用映射 | F021 |
 
-## RENDER
-- R001 libass FFI -> F020,C003
-- R010 host protocol -> C001
-- R011 host x64 -> R010
-- R012 host x86 -> R010（仅在支持 x86 provider 时）
-- R020 CSRI adapter -> R011/R012（独立可选 provider，不是 libass/BDN 前置）
-- R030 VapourSynth -> R011（legacy 可选）
-- R031 AviSynth -> R011/R012（legacy 可选）
+## 渲染、图像与 PGS
 
-## IMAGE/BDN
-- I001 RGBA/bbox -> R001
-- I002 quantizer -> I001
-- B001 PNG -> I002
-- B002 BDN writer -> F030,B001
+| ID | 交付职责 | 依赖 |
+|---|---|---|
+| R001 | libass 内存输入、字体注入与合成 | F020, C003 |
+| R010 | 版本化、有界 host 协议 | C001 |
+| R011 | x64 host 与超时退出 | R010, A000 |
+| R012 | 可选 x86 host | R010, A000 |
+| R013 | provider 位数、身份与能力探测 | R010 |
+| R020 | 可选 CSRI adapter；支持 x86 时另接 R012 | R011, R013 |
+| R030 | 可选 VapourSynth adapter | R011, R013 |
+| R031 | 可选 AviSynth adapter；支持 x86 时另接 R012 | R011, R013 |
+| R040 | RenderGroupKey 与采样时间并集 | R001, C003, C005, T010 |
+| I001 | RGBA/bbox 与增量可见事件规划 | R001 |
+| I002 | 索引图像、调色板与量化策略 | I001 |
+| B001 | PNG 写出；目标消费者决定 RGBA/索引色 | I001 |
+| B002 | BDN XML/PNG 发布与交叉校验 | F030, B001, J004 |
+| P001 | PGS RLE 与状态解码 | F040 |
+| P002 | PGS 无位图重编码变换 | F041, T010, P004, V002 |
+| P003 | Basic PGS 作者链 | I002, F041, P004 |
+| P004 | 基础 PGS 结构验证；相当于建议包 V001 的职责 | F040 |
+| V002 | 时间、生命周期与 Profile 验证 | P004, C002, C003 |
+| P011 | 缓冲/码率模型验证；保留旧 strict validator 编号 | V002 |
+| P010 | Advanced Author 消费已验证的模型 | P003, P011 |
+| V004 | 独立设备与消费者覆盖报告 | P011, QA001 |
 
-## PGS
-- P001 decode -> F040
-- P002 fast transform -> F040
-- P003 basic author -> I002,F041
-- P004 validator basic -> F040
-- P010 advanced author -> P003 + research corpus
-- P011 strict validator -> P010
+`P011` 不依赖 `P010`。缓冲模型可用外部合法样本独立验证；Advanced Author 依赖模型。设备报告也可先验证外部流，不必等自研高级编码器。
 
-## TASK
-- J001 job model -> C004
-- J002 scheduler -> J001
-- J003 cache -> J002
-- J004 transaction/verify -> J002
-- J005 resume -> J003/J004
+## 调度、辅助与界面
 
-## ADAPTER
-- A001 ffprobe -> process runner
-- A002 mkvtoolnix -> process runner
-- A003 font service -> Windows 字体目录/注册表枚举 + 字体表解析；DirectWrite 权威解析尚未实现
+| ID | 交付职责 | 依赖 |
+|---|---|---|
+| J001 | Job、profile 与不可变参数 | C004 |
+| J002 | 有界调度、取消与逐 profile 报告 | J001 |
+| J003 | 分组缓存、依赖摘要与容量限制 | J002, R040 |
+| J004 | 输出预检、文件/目录事务与验证失败恢复 | C001 |
+| J005 | 重启恢复、凭据核对与失败项重试 | J003, J004 |
+| A000 | 外部进程参数、输出上限、deadline 与进程树收尾 | C001 |
+| A001 | ffprobe adapter；仅提供建议 | A000 |
+| A002 | 可选 MKVToolNix adapter | A000, J004 |
+| A003 | 字体扫描、匹配与环境身份；DirectWrite 权威仍为目标 | C001 |
+| FNT01 | 可选字体子集与复杂 shaping 等价验收 | A003, F020, R001 |
+| U001 | Iced 窗口原型 | C001 |
+| U002 | 拖放与输入发现 | U001, F001 |
+| U003 | 参数表单、来源与能力校验 | U001, C003, C005 |
+| U004 | 输出 profile 表与冲突提示 | U003, C004 |
+| U005 | 队列、进度、取消与部分成功 | U002, J002 |
+| K001 | CLI 参数、错误码、JSON 与重放契约 | F010, F021, T010, T020, J004 |
+| SEC01 | 外部 DLL 权限边界与威胁模型 | R010, A000 |
+| QA001 | 语料许可、判定依据与回归定位 | C001 |
+| QA002 | GUI 键盘、IME、DPI 与长任务验收 | U005, QA001 |
+| REL01 | CLI portable 与发布材料 | K001, R011, J004, QA001, SEC01 |
+| REL02 | GUI 安装与升级验收 | REL01, QA002 |
 
-## Critical Path
-CLI 文本路径：`C001/C002 -> F010/F020/F021 -> T010/T020/T030 -> J004 -> CLI verify`。
+## 关键路径与验收
 
-渲染交付路径：`F020/C003 -> R001 + R010/R011 -> I001/I002 -> B001/B002 或 P003 -> validator`。
+CLI 文本路径为 `C001/C002 → F010/F020/F021 → T010/T020/T030 → J004 → K001`。渲染路径为 `R001 + R010/R011 → I001 → B001/B002`，或 `I002 → P003`。CSRI、x86、GUI、MKV 与 Strict 设备结论不阻塞这两条路径。
 
-PGS Strict、CSRI、x86、legacy adapter、GUI 和 MKV 不属于上述核心路径。它们各自有独立证据门槛；外部裁决未完成时，不得把 Basic 输出升级成 Strict 合规声明。
+验收定位见[正式用例](../specs/25_ACCEPTANCE_TESTS.md)和[实施检查表](39_IMPLEMENTATION_CHECKLIST.md)。图校验只证明任务 ID 和依赖一致，不证明代码、原生 ABI 或输出正确；功能完成仍需行为测试与适用的外部验证。

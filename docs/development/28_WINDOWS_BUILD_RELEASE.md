@@ -4,6 +4,8 @@
 
 以下文件名是发行包候选命名；目前没有打包流程。Cargo 产物名以各 crate 的 `[[bin]]` 配置为准，不能把下方候选名当作已经生成的文件。
 
+当前构建命令见[开发说明](../../CONTRIBUTING.md)。PowerShell 先点源 `tools/set_build_cache.ps1`，所有构建、下载与临时缓存使用非 C 盘。原生 libass 开发期运行库已登记并实测，来源与产品分发边界见[第三方说明](../../third_party/README.md)。
+
 ## 1. Toolchain
 - Rust stable MSVC x64；
 - Visual Studio Build Tools + Windows SDK；
@@ -13,7 +15,7 @@
 ## 2. Artifacts
 - `SubtitleToolkit.exe`
 - `subtitletool-cli.exe`
-- `renderer-host-x64.exe`
+- `subtitletool-render-host.exe`（当前 x64 Cargo 产物）
 - `renderer-host-x86.exe`（可选组件）
 - bundled permissive DLLs
 - installer `.exe`
@@ -40,3 +42,5 @@
 
 ## 7. CI
 Windows x64 runner：fmt/clippy/test/nextest/fuzz smoke/build/E2E。x86 helper 单独 job。Nightly corpus test 可较重。
+
+本节为 CI 目标，不代表已有 nextest/fuzz/GUI E2E 或 x86 job。仅将实际实现与验收的功能加入对应发行物清单；CLI portable 可独立于 GUI 安装包推进。

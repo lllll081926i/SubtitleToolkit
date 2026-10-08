@@ -1,11 +1,13 @@
 # 系统架构
 
+文档修订：2026-10-08。当前结构以 `Cargo.toml` 与源码为准；本页将现有结构与目标契约分开。相关规格：[数据模型](08_FORMATS_AND_IR.md)、[画布与共享边界](09_CANVAS_RESOLUTION_MULTI_OUTPUT.md)、[任务引擎](15_BATCH_TASK_ENGINE.md)、[配置模型](36_PRESET_CONFIG_SCHEMA.md)。
+
 ## 1. 进程拓扑
 
 ```
 subtitletool-cli.exe
  ├─ core crates (parse/transform/plan/cache/verify)
- ├─ renderer-host.exe  <-- 当前 libass 动态库唯一加载位置
+ ├─ subtitletool-render-host.exe  <-- 当前 libass 动态库唯一加载位置
  └─ ffprobe process adapter
 
 SubtitleToolkit.exe (Iced, planned)
@@ -14,29 +16,19 @@ SubtitleToolkit.exe (Iced, planned)
 
 CLI 的 render/pgs encode 通过 renderer-host 渲染。GUI 尚未实现。CSRI、VSFilterMod、x86 host、MKVToolNix adapter 目前都未交付，不能按上图中的目标结构当成现有能力。
 
-## 2. Workspace
-- `app`：Iced shell + view-model。
-- `core-model`：时间、颜色、画布、错误、Job/Profile。
-- `format-detect`。
-- `codec-srt`。
-- `codec-ass`。
-- `codec-bdn`。
-- `codec-pgs`。
-- `transform-time`。
-- `transform-hdr`。
-- `transform-resolution`。
-- `transform-text`。
-- `render-api`。
-- `render-libass`。
-- `render-host-protocol`。
-- `image-core`。
-- `pgs-author`。
-- `validator`。
-- `task-engine`。
-- `media-probe`。
-- `font-service`。
-- `container-adapter`。
-- `cli`。
+## 2. 当前 Workspace
+
+| 职责 | 已存在的 crate |
+|---|---|
+| 共享模型与探测 | `core-model`、`format-detect` |
+| 格式编解码 | `codec-srt`、`codec-ass`、`codec-bdn`、`codec-pgs` |
+| 字幕变换 | `transform-time`、`transform-hdr`、`transform-resolution` |
+| 渲染与进程隔离 | `render-api`、`render-libass`、`renderer-host`、`win-job` |
+| 图像与 PGS 作者链 | `image-core`、`pgs-author`、`validator` |
+| 调度与辅助 | `task-engine`、`media-probe`、`font-service` |
+| 用户入口 | `cli` |
+
+共 20 个成员。`app`、`transform-text`、`container-adapter` 属于旧规划的候选拆分，当前没有这些 crate。宿主协议位于 `renderer-host` 内，不存在独立的 `render-host-protocol` crate。新增模块应根据实际职责决定是否拆分，不能以旧目录清单作为构建前置条件。
 
 ## 3. 核心接口
 
@@ -53,7 +45,7 @@ CLI 的 render/pgs encode 通过 renderer-host 渲染。GUI 尚未实现。CSRI�
 `validate(bytes/IR, level) -> issues + metrics + verified_level`。
 
 ## 4. Planner
-用户选 profile 后先生成不可变 `Plan`：
+目标流程：用户选 profile 后生成不可变 `Plan`：
 - decode；
 - transforms；
 - renderer；
@@ -62,17 +54,20 @@ CLI 的 render/pgs encode 通过 renderer-host 渲染。GUI 尚未实现。CSRI�
 - validator；
 - output transaction。
 
-Plan 必须能导出 JSON，用于 bug report 和 CLI 重放。
+`core-model` 已有 Plan 的 JSON 序列化模型。完整 GUI/preset 到执行 DAG 的共用规划器仍是目标；当前 `batch` 使用自己的 JSON 规格并调用单命令执行链，不能据此声称目标 Planner 全部接通。
 
 ## 5. 多输出 DAG
-同一个 ASS：
-- Parse AST 共享；
-- HDR/Resolution transform 按 profile 分支；
-- 若多个 profile renderer/canvas/fps 相同，render frame cache 共享；
-- BDN 和 SUP 可共享 rendered bitmaps；
-- 量化参数相同则 indexed bitmap/palette 共享。
+目标 DAG 对每个 profile 先确定时间与脚本变换，再按 [RenderGroupKey 契约](09_CANVAS_RESOLUTION_MULTI_OUTPUT.md#6-rendergroupkey-与时间采样)分组。共享规则如下：
+
+- 原始输入和未修改 AST 可共享；修改后的脚本按变换结果分支。
+- 仅同一渲染组可合并采样并复用 RGBA；同一时间戳不足以证明像素相同。
+- 同组 BDN/SUP 共享渲染结果，各自维护事件、调色板和 PGS 状态。
+- 索引图像只有量化算法、参数和输入像素相同才可复用。
+
+当前有 `CacheKey`、采样规划和逐帧事件规划模块。完整渲染分组与跨输出复用验收仍需实现调用链与实际计数证据，不能用这些模块的存在证明一次批处理只渲染一次。
 
 ## 6. 任务线程
+以下是 GUI 与扩展调度的目标要求：
 - GUI 主线程只处理 UI；
 - CPU task 进 Rayon/custom pool；
 - process IO 用 async task；

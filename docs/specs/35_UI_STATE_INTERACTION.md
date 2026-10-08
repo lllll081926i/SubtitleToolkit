@@ -1,5 +1,7 @@
 # UI 状态机、交互与排错规范
 
+本文为未实现 GUI 的目标规格。须联合阅读[页面控件](05_UI_SCREEN_SPEC.md)、[配置模型](36_PRESET_CONFIG_SCHEMA.md)与[任务状态](15_BATCH_TASK_ENGINE.md)。有页面或按钮设计不等于对应核心 stage 已交付。
+
 ## 1. 页面状态统一模型
 每个工具页统一五态：`Empty -> Probing -> Ready -> Running -> Result/Error`。
 
@@ -8,6 +10,8 @@
 - Ready：输入合法，显示手动参数和建议。
 - Running：参数快照锁定；允许 Cancel，不允许悄悄改变正在运行的 Job。
 - Result/Error：显示产物、验证等级、日志入口。
+
+页面五态描述当前输入草稿；后台任务独立保存 Queued、Running、Cancelling、Cancelled、PartialSuccess、Failed 等状态。切换页面不取消任务，部分成功不显示为全部成功。开始按钮由与 CLI 同源的参数和能力校验驱动，未实现的功能不能提交执行。
 
 ## 2. 参数来源标记
 每个参数值保存 `ValueOrigin`：
@@ -61,3 +65,9 @@ Iced 0.14 `FileDropped(PathBuf)` 逐文件触发。
 - external process commands（敏感路径可脱敏）；
 - layout bounds / DPI。
 利用 Iced time-travel/debug tools，复现 UI 状态问题。
+
+## 9. 交互验收条件
+
+纯键盘可到达输入、输出、开始、取消与错误详情；焦点可见并提供可访问性名称。IME 组合输入期间不提交半成品参数。1366×768 与 100%/150%/200% DPI 下，面板可折叠或滚动，开始与取消始终可到达。输入发现与递归扫描在后台执行并可取消。
+
+每个控件登记配置字段、ValueOrigin、启用条件、验证错误、核心 stage 和验收项。导入包的[界面审查建议](../subtitletool_full_audit_20261008/07_UI_AND_INTERACTION_AUDIT.md)可作为细化依据，其中 VTT、MKV、x86 自动路由等控件必须按实际 capability 决定是否提供。

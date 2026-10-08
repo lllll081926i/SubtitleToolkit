@@ -1,7 +1,7 @@
 # 依赖与许可证审计
 
 ## 1. Core 允许原则
-默认安装包核心优先 MIT/Apache/BSD/ISC/zlib 等宽松许可；GPL 组件采用外部程序/插件边界或在决定项目整体许可证后再集成。
+默认安装包核心优先 MIT/Apache/BSD/ISC/zlib 等宽松许可。GPL 组件不复制进核心；仓库内研究源码和候选二进制单独列明来源、许可证与哈希。进程边界不自动解决分发许可义务。
 
 ## 2. GUI
 Iced：锁版本并在发布前再次核对 license/dependency tree。
@@ -20,6 +20,8 @@ OxideAV 的 Rust subtitle/image 项目可作为 MIT 参考/候选；但 Advanced
 GPL-3.0；默认设计为用户提供/可选外部 renderer provider，通过 renderer-host/CSRI 调用。是否随安装包分发要在最终项目许可证确定后由法务/许可证审计决定。
 来源：https://github.com/sorayuki/VSFilterMod
 
+当前工作区保存了 `third_party/VSFilterMod.dll` 候选文件。PE 静态信息显示为 x64、ProductVersion 2.5.2.2，并导出 CSRI 符号；但文件未签名，版本资源原始值为 2.5.2.1。PDB 路径和版本时间与 `sorayuki/VSFilterMod` 上游项目相符，但还没有把文件哈希对应到官方 release 资产或源码提交。来源锁记录文件哈希和这些限制。该文件尚未接入 renderer-host，也未通过真实 provider 渲染测试；在来源、许可证和真实集成测试核实前，不纳入产品安装包。
+
 ## 7. GPL/AGPL 研究对象边界
 - SUPer：GPL-3.0，行为/测试参考；默认不嵌入非 GPL core。
 - ass2bdnxml（Masaiki/cubicibo 系）：GPL-3.0-or-later，行为/测试参考。
@@ -28,6 +30,7 @@ GPL-3.0；默认设计为用户提供/可选外部 renderer provider，通过 re
 - VSFilterMod：GPL-3.0；用户提供/可选 provider 的进程边界。
 
 注意：把 GPL/AGPL 程序作为独立外部 executable 的具体分发方式仍需在发布前做最终许可证审计；“进程边界”不是自动免除许可义务的法律结论。
+当前仓库还保存了 `ass2bdnxml` 的 GPL-3.0-or-later 源码归档。归档自带 `COPYING`；该归档是独立的研究材料，不是默认安装包依赖。源码归档及其许可证在 `THIRD_PARTY_NOTICES.md` 单独列出。
 
 ## 8. ffprobe/FFmpeg
 FFmpeg 官方不直接提供 Windows EXE，只链接第三方 builds；如果随包分发，需要锁定 build 来源、配置与 LGPL/GPL feature set，并提供 license/source obligations。

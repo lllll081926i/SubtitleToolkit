@@ -32,13 +32,13 @@
 - R001 libass FFI -> F020,C003
 - R010 host protocol -> C001
 - R011 host x64 -> R010
-- R012 host x86 -> R010
-- R020 CSRI adapter -> R011/R012
-- R030 VapourSynth -> R011
-- R031 AviSynth -> R011/R012
+- R012 host x86 -> R010（仅在支持 x86 provider 时）
+- R020 CSRI adapter -> R011/R012（独立可选 provider，不是 libass/BDN 前置）
+- R030 VapourSynth -> R011（legacy 可选）
+- R031 AviSynth -> R011/R012（legacy 可选）
 
 ## IMAGE/BDN
-- I001 RGBA/bbox -> R001/R020
+- I001 RGBA/bbox -> R001
 - I002 quantizer -> I001
 - B001 PNG -> I002
 - B002 BDN writer -> F030,B001
@@ -61,9 +61,11 @@
 ## ADAPTER
 - A001 ffprobe -> process runner
 - A002 mkvtoolnix -> process runner
-- A003 font service -> Windows font API
+- A003 font service -> Windows 字体目录/注册表枚举 + 字体表解析；DirectWrite 权威解析尚未实现
 
 ## Critical Path
-`C002 -> F020/F021 -> T020/T030 -> R001 -> I001/I002 -> B002 -> P003 -> P010/P011`。
+CLI 文本路径：`C001/C002 -> F010/F020/F021 -> T010/T020/T030 -> J004 -> CLI verify`。
 
-特效兼容并行关键路径：`R010 -> R011/R012 -> R020`。
+渲染交付路径：`F020/C003 -> R001 + R010/R011 -> I001/I002 -> B001/B002 或 P003 -> validator`。
+
+PGS Strict、CSRI、x86、legacy adapter、GUI 和 MKV 不属于上述核心路径。它们各自有独立证据门槛；外部裁决未完成时，不得把 Basic 输出升级成 Strict 合规声明。

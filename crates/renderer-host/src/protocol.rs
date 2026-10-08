@@ -11,10 +11,11 @@
 
 use std::io::{self, Read, Write};
 
+use core_model::loss::LossReport;
 use serde::{Deserialize, Serialize};
 
 /// 协议版本：主进程与 host 必须一致，否则直接拒绝而不是"尽力而为"。
-pub const API_VERSION: u32 = 1;
+pub const API_VERSION: u32 = 2;
 
 pub const TAG_TEXT: u8 = 1;
 pub const TAG_BLOB: u8 = 2;
@@ -22,6 +23,7 @@ pub const TAG_BLOB: u8 = 2;
 /// 单条消息的上限。帧本身（1080p RGBA = 8 337 920 字节）远小于它，
 /// 而恶意/错乱的长度字段绝不允许换来一次巨型分配（25 AT-SEC-001 的同一纪律）。
 pub const MAX_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
+pub const FRAME_CHUNK_BYTES: usize = 16 * 1024 * 1024;
 
 /// 握手结果：12 §2 要求逐项交代 provider 类型、名字、版本、PE 位数、API 版本、像素格式。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,6 +58,10 @@ pub enum Request {
     },
     /// 后面必须紧跟一条 `TAG_BLOB`，内容是 ASS 脚本字节。
     LoadScript,
+    /// 必须在 LoadScript 之前发送，后面紧跟一条字体字节负载。
+    AddFont {
+        family: String,
+    },
     Render {
         /// 整数毫秒：libass 的 `ass_render_frame` 只接受整毫秒
         pts_ms: i64,
@@ -74,15 +80,20 @@ pub enum Response {
     ScriptLoaded {
         bytes: usize,
     },
+    FontAdded {
+        bytes: usize,
+    },
     /// 后面必须紧跟一条 `TAG_BLOB`，内容是 RGBA（长度 = width*height*4）。
     /// `digest` 是那份 RGBA 的 SHA-256：主进程可以先核摘要再信像素（12 §8 的去重纪律）。
     Frame {
         width: u32,
         height: u32,
+        bytes: usize,
         digest: String,
         /// libass 的 `detect_change` 原值：只是提示，不作为唯一去重依据（12 §8）
         detect_change: i32,
         images: usize,
+        loss: LossReport,
     },
     /// host 出错：错误码与标题原样带回主进程（12 §5 "provider load failure 独立错误码"）。
     Error {
@@ -134,6 +145,12 @@ pub fn read_message(r: &mut impl Read) -> io::Result<Option<Message>> {
             Err(e) => return Err(e),
         }
     }
+    if !matches!(header[0], TAG_TEXT | TAG_BLOB) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("未知的消息标签 {}", header[0]),
+        ));
+    }
     let len = u32::from_le_bytes([header[1], header[2], header[3], header[4]]) as usize;
     if len > MAX_MESSAGE_BYTES {
         return Err(io::Error::new(
@@ -144,9 +161,14 @@ pub fn read_message(r: &mut impl Read) -> io::Result<Option<Message>> {
     let mut body = vec![0u8; len];
     r.read_exact(&mut body)?;
     match header[0] {
-        TAG_TEXT => Ok(Some(Message::Text(
-            String::from_utf8_lossy(&body).into_owned(),
-        ))),
+        TAG_TEXT => String::from_utf8(body)
+            .map(|text| Some(Message::Text(text)))
+            .map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("协议文本不是合法 UTF-8：{e}"),
+                )
+            }),
         TAG_BLOB => Ok(Some(Message::Blob(body))),
         other => Err(io::Error::new(
             io::ErrorKind::InvalidData,
@@ -222,9 +244,20 @@ mod tests {
     #[test]
     fn unknown_tag_is_rejected() {
         let mut buf = vec![9u8];
-        buf.extend_from_slice(&0u32.to_le_bytes());
-        let err = read_message(&mut std::io::Cursor::new(buf)).unwrap_err();
+        buf.extend_from_slice(&(MAX_MESSAGE_BYTES as u32).to_le_bytes());
+        let mut cursor = std::io::Cursor::new(buf);
+        let err = read_message(&mut cursor).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
         assert!(err.to_string().contains("未知的消息标签"), "{err}");
+        assert_eq!(cursor.position(), 5, "未知标签不得读取或分配负载");
+    }
+
+    #[test]
+    fn invalid_utf8_is_rejected_without_replacing_bytes() {
+        let bytes = [TAG_TEXT, 3, 0, 0, 0, b'"', 0xff, b'"'];
+        let err = read_message(&mut std::io::Cursor::new(bytes)).unwrap_err();
+        assert_eq!(err.kind(), io::ErrorKind::InvalidData);
+        assert!(err.to_string().contains("UTF-8"), "{err}");
     }
 
     #[test]
@@ -239,6 +272,6 @@ mod tests {
             pixel_format: "RGBA8".to_string(),
             provider_binary_sha256: "0".repeat(64),
         };
-        assert_eq!(hs.api_version, 1, "协议版本变了就必须同时改两侧");
+        assert_eq!(hs.api_version, 2, "协议版本变了就必须同时改两侧");
     }
 }

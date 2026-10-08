@@ -109,7 +109,7 @@ fn serve() -> Result<(), String> {
     let provider_sha = hex(&sh.finalize());
 
     // 到这里才真的 LoadLibrary（render-libass 里那套 LOAD_LIBRARY_SEARCH_*，不搜当前目录）
-    let provider =
+    let mut provider =
         render_libass::Provider::open(&dll_path, storage_canvas, output_canvas, &default_font)
             .map_err(|e| {
                 let _ = reply_err(&mut writer, &e.code_string(), &e.title);
@@ -137,9 +137,11 @@ fn serve() -> Result<(), String> {
     )
     .map_err(|e| e.to_string())?;
 
-    let mut script: Option<render_libass::Script<'_>> = None;
-    // EOF 就是循环的结束条件：读线程那边（主进程）关掉控制面即代表会话结束
-    while let Some(msg) = protocol::read_message(&mut reader).map_err(|e| e.to_string())? {
+    let mut pending_fonts: Vec<(String, Vec<u8>)> = Vec::new();
+    let ass = loop {
+        let Some(msg) = protocol::read_message(&mut reader).map_err(|e| e.to_string())? else {
+            return Ok(());
+        };
         let req: Request = protocol::from_json(&msg).map_err(|e| e.to_string())?;
         match req {
             Request::Hello { .. } => {
@@ -159,46 +161,130 @@ fn serve() -> Result<(), String> {
                     .map_err(|e| e.to_string())?;
                     continue;
                 };
-                let bytes = ass.len();
-                match provider.load_script(&ass) {
-                    Ok(s) => {
-                        script = Some(s);
-                        reply(&mut writer, &Response::ScriptLoaded { bytes })
-                            .map_err(|e| e.to_string())?;
-                    }
-                    Err(e) => {
-                        reply_err(&mut writer, &e.code_string(), &e.title)
-                            .map_err(|e| e.to_string())?;
-                    }
-                }
+                break ass;
             }
-            Request::Render { pts_ms } => match render_at(script.as_ref(), pts_ms, output_canvas) {
-                Ok((frame, digest, detect_change, images)) => {
-                    let (width, height) = (frame.canvas.width, frame.canvas.height);
-                    reply(
+            Request::AddFont { family } => {
+                let blob = protocol::read_message(&mut reader)
+                    .map_err(|e| e.to_string())?
+                    .ok_or("AddFont 之后没有负载")?;
+                let Message::Blob(font) = blob else {
+                    reply_err(&mut writer, "STK-RND-0205", "AddFont 的负载必须是原始字节")
+                        .map_err(|e| e.to_string())?;
+                    continue;
+                };
+                let bytes = font.len();
+                if family.len() > 1024 || pending_fonts.len() >= 4096 {
+                    reply_err(
                         &mut writer,
-                        &Response::Frame {
-                            width,
-                            height,
-                            digest,
-                            detect_change,
-                            images,
-                        },
+                        "STK-RND-0205",
+                        "字体名称或字体条目数超过会话上限",
                     )
                     .map_err(|e| e.to_string())?;
-                    protocol::write_message(&mut writer, &Message::Blob(frame.rgba))
+                    continue;
+                }
+                let pending_bytes = pending_fonts
+                    .iter()
+                    .try_fold(bytes, |total, (_, item)| total.checked_add(item.len()));
+                if pending_bytes.is_none_or(|total| total > 256 * 1024 * 1024) {
+                    reply_err(&mut writer, "STK-RND-0205", "会话字体总量超过 256 MiB 上限")
                         .map_err(|e| e.to_string())?;
-                    writer.flush().map_err(|e| e.to_string())?;
+                    continue;
                 }
-                Err((code, title)) => {
-                    reply_err(&mut writer, &code, &title).map_err(|e| e.to_string())?;
-                }
-            },
+                pending_fonts.push((family, font));
+                reply(&mut writer, &Response::FontAdded { bytes }).map_err(|e| e.to_string())?;
+            }
+            Request::Render { .. } => {
+                reply_err(&mut writer, "STK-RND-0205", "LoadScript 之前不能渲染")
+                    .map_err(|e| e.to_string())?;
+            }
             Request::Poison { how } => poison(&how),
             Request::Bye => {
                 reply(&mut writer, &Response::ByeOk).map_err(|e| e.to_string())?;
                 writer.flush().map_err(|e| e.to_string())?;
-                break;
+                return Ok(());
+            }
+        }
+    };
+
+    for (family, font) in pending_fonts {
+        if let Err(e) = provider.add_font(&family, &font) {
+            reply_err(&mut writer, &e.code_string(), &e.title).map_err(|reply_error| {
+                format!("字体注入失败：{}；发送错误响应失败：{reply_error}", e.title)
+            })?;
+            return Ok(());
+        }
+    }
+    let script = match provider.load_script(&ass) {
+        Ok(script) => script,
+        Err(e) => {
+            reply_err(&mut writer, &e.code_string(), &e.title).map_err(|reply_error| {
+                format!("脚本加载失败：{}；发送错误响应失败：{reply_error}", e.title)
+            })?;
+            return Ok(());
+        }
+    };
+    reply(&mut writer, &Response::ScriptLoaded { bytes: ass.len() }).map_err(|e| e.to_string())?;
+    serve_render_requests(&mut reader, &mut writer, &script, output_canvas)
+}
+
+fn serve_render_requests(
+    reader: &mut impl std::io::Read,
+    writer: &mut impl Write,
+    script: &render_libass::Script<'_>,
+    output: Canvas,
+) -> Result<(), String> {
+    while let Some(msg) = protocol::read_message(reader).map_err(|e| e.to_string())? {
+        let req: Request = protocol::from_json(&msg).map_err(|e| e.to_string())?;
+        match req {
+            Request::Hello { .. } => {
+                reply_err(writer, "STK-RND-0205", "已经握手，重复的 Hello 被拒绝")
+                    .map_err(|e| e.to_string())?;
+            }
+            Request::LoadScript => {
+                let _ = protocol::read_message(reader)
+                    .map_err(|e| e.to_string())?
+                    .ok_or("重复 LoadScript 之后没有负载")?;
+                reply_err(writer, "STK-RND-0205", "一个 host 会话只能加载一个脚本")
+                    .map_err(|e| e.to_string())?;
+            }
+            Request::AddFont { .. } => {
+                let _ = protocol::read_message(reader)
+                    .map_err(|e| e.to_string())?
+                    .ok_or("AddFont 之后没有负载")?;
+                reply_err(writer, "STK-RND-0205", "字体必须在 LoadScript 之前注入")
+                    .map_err(|e| e.to_string())?;
+            }
+            Request::Render { pts_ms } => match render_at(Some(script), pts_ms, output) {
+                Ok((frame, digest, detect_change, images, loss)) => {
+                    let bytes = frame.rgba.len();
+                    reply(
+                        writer,
+                        &Response::Frame {
+                            width: frame.canvas.width,
+                            height: frame.canvas.height,
+                            bytes,
+                            digest,
+                            detect_change,
+                            images,
+                            loss,
+                        },
+                    )
+                    .map_err(|e| e.to_string())?;
+                    for chunk in frame.rgba.chunks(protocol::FRAME_CHUNK_BYTES) {
+                        protocol::write_message(writer, &Message::Blob(chunk.to_vec()))
+                            .map_err(|e| e.to_string())?;
+                    }
+                    writer.flush().map_err(|e| e.to_string())?;
+                }
+                Err((code, title)) => {
+                    reply_err(writer, &code, &title).map_err(|e| e.to_string())?
+                }
+            },
+            Request::Poison { how } => poison(&how),
+            Request::Bye => {
+                reply(writer, &Response::ByeOk).map_err(|e| e.to_string())?;
+                writer.flush().map_err(|e| e.to_string())?;
+                return Ok(());
             }
         }
     }
@@ -209,11 +295,20 @@ fn serve() -> Result<(), String> {
 ///
 /// 摘要在 host 侧算，是为了让主进程能核"管道里这段字节就是我说的那一帧"；
 /// 它同时也是 12 §8 变化检测的输入单位（RGBA hash），不是凭文件名或时间戳猜。
+type RenderAtOutput = (
+    image_core::Frame,
+    String,
+    i32,
+    usize,
+    core_model::loss::LossReport,
+);
+type RenderAtError = (String, String);
+
 fn render_at(
     script: Option<&render_libass::Script<'_>>,
     pts_ms: i64,
     output: Canvas,
-) -> Result<(image_core::Frame, String, i32, usize), (String, String)> {
+) -> Result<RenderAtOutput, RenderAtError> {
     let script = script.ok_or((
         "STK-RND-0205".to_string(),
         "还没加载脚本就要求出帧".to_string(),
@@ -222,7 +317,13 @@ fn render_at(
     let r = render_libass::render(script, t, output).map_err(|e| (e.code_string(), e.title))?;
     let mut h = Sha256::new();
     h.update(&r.frame.rgba);
-    Ok((r.frame, hex(&h.finalize()), r.detect_change, r.images))
+    Ok((
+        r.frame,
+        hex(&h.finalize()),
+        r.detect_change,
+        r.images,
+        r.loss,
+    ))
 }
 
 /// 测试用的自伤开关：每种都对应一类"第三方 provider 会怎么死"。

@@ -15,7 +15,7 @@ pub enum ColorMatrix {
 
 impl ColorMatrix {
     /// 蓝光侧经验：SD/720 一档用 BT.601，1080 及以上用 BT.709（ass2bdnxml 也按 SD/HD 分流）。
-    /// 本函数的选择必须用真盘语料验证后才写进 golden（语料缺口 docs/ISSUES.md E3，色彩口径家族见 C16）。
+    /// 本函数的选择必须用真盘语料验证后才写进 golden（语料缺口 docs/history/2026-10-06/ISSUES.md E3，色彩口径家族见 C16）。
     pub fn for_canvas(height: u32) -> ColorMatrix {
         if height <= 576 {
             ColorMatrix::Bt601
@@ -245,7 +245,7 @@ mod tests {
     #[test]
     fn rgb_ycbcr_roundtrip_stays_close() {
         // 整数矩阵必然带舍入误差；这里的阈值只保证"没有量级错误"。
-        // 真正的矩阵/范围选择要用真盘语料与播放器差分确认（docs/ISSUES.md E3；范围问题记在 C16）。
+        // 真正的矩阵/范围选择要用真盘语料与播放器差分确认（docs/history/2026-10-06/ISSUES.md E3；范围问题记在 C16）。
         for m in [ColorMatrix::Bt601, ColorMatrix::Bt709] {
             for (r, g, b) in [
                 (255, 255, 255),

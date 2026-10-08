@@ -19,7 +19,7 @@ if hasattr(__import__('sys').stdout, 'reconfigure'):
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-DOCS = ["docs/TRACEABILITY.md", "docs/REVIEW_GATES.md"]
+DOCS = ["docs/history/2026-10-06/TRACEABILITY.md", "docs/history/2026-10-06/REVIEW_GATES.md"]
 IDENT = re.compile(r"`([a-z0-9_]{6,})`")
 
 

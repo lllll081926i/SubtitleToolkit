@@ -292,7 +292,7 @@ pub fn encode(frames: &[Frame], opts: &EncodeOptions) -> Result<(Vec<Segment>, E
             palette_id: opts.palette_id,
             objects: placements,
         };
-        push(&mut segments, SEG_PCS, &write_pcs(&pcs), frame.pts, dts)?;
+        push(&mut segments, SEG_PCS, &write_pcs(&pcs)?, frame.pts, dts)?;
 
         // WDS：一个覆盖完整 canvas 的窗口（对象坐标相对画布，见 13 §4）
         let window = Window {
@@ -307,7 +307,13 @@ pub fn encode(frames: &[Frame], opts: &EncodeOptions) -> Result<(Vec<Segment>, E
         } else {
             vec![window]
         };
-        push(&mut segments, SEG_WDS, &write_wds(&windows), frame.pts, dts)?;
+        push(
+            &mut segments,
+            SEG_WDS,
+            &write_wds(&windows)?,
+            frame.pts,
+            dts,
+        )?;
 
         if !(frame.erase && frame.objects.is_empty()) {
             let pds = write_pds(&palette_of(&table, opts.palette_id))?;

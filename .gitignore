@@ -1,9 +1,11 @@
 target/
+.cargo-home/
 # Cargo.lock 必须入库：本工程产出可执行文件（28 §2 的 checksums/SBOM 与
 # 21 §7 的"锁版本"都要求依赖图可复现），忽略它等于放弃复现能力（ISSUES O7）
 *.tmp
 *.tmp.*
-# 开发期外部工具与它的构建产物不入库（28 §构建：来源与哈希记在 reference-audit/SOURCE_AUDIT_LOCK.json）
+# 开发期外部工具与它的构建产物不入库（28 §构建：来源与哈希记在 third_party/SOURCE_AUDIT_LOCK.json）
 tools/vcpkg/
 tools/**/*.log
 __pycache__/
+.trash/

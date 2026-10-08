@@ -6,7 +6,7 @@
 # 校验不过 vcpkg 会报错，所以"镜像抓来的东西"不会悄悄变成信任链的一环。
 set -u
 VCPKG="${VCPKG:-../tools/vcpkg/vcpkg.exe}"
-DL="$(dirname "$VCPKG")/downloads"
+DL="${VCPKG_DOWNLOADS:-$(dirname "$VCPKG")/downloads}"
 PORT="${VCPKG_PACKAGE:-libass:x64-windows}"
 PORT_NAME="${PORT%%:*}"
 

@@ -7,3 +7,9 @@ registry = "sparse+https://rsproxy.cn/index/"
 
 [net]
 git-fetch-with-cli = true
+
+# 编译器、链接器和 build script 的临时文件放到仓库所在磁盘。
+[env]
+TEMP = { value = "target/tmp", relative = true, force = true }
+TMP = { value = "target/tmp", relative = true, force = true }
+TMPDIR = { value = "target/tmp", relative = true, force = true }

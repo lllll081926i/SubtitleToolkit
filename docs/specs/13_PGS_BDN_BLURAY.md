@@ -62,6 +62,8 @@ SupMover 的 tonemap 仅修改 limited-range Y，并且项目文档明确提醒�
 
 源码参考中，Masaiki ass2bdnxml 的 `sup.c` 已明确按 `Y, Cr, Cb, T` 写 palette，并对大 RLE 用首片 65508 / 后续 65515 字节级分片；这些应进入我们的 golden vectors，而不是复制其 C 代码。
 
+本节是实现要求，不构成播放器互操作结论。当前 Basic Encoder 使用 limited-range YCbCr，SD 选择 BT.601、HD 选择 BT.709；选择依据和设备接受度仍需真实 SUP/播放器语料裁决。内部往返和 `ffprobe` 容器读取不能证明这些图像字段对设备正确。
+
 ## 5. Advanced Author
 参考 SUPer 的行为模型，但独立实现：
 - object reuse / object redefinition；
@@ -118,3 +120,11 @@ UI 主名称：`Blu-ray Compatibility / 严格兼容化`。
 帮助页：说明社区常称“大金过水”。
 
 只有 Level 5 validator + device corpus 通过后才允许 Strict badge。外部 Scenarist 可作为最终人工/实验室对照，但不能成为用户日常必要依赖。
+
+## 10. 尚未裁决的互操作字段
+
+- 调色板 full/limited range 与 SD/HD 矩阵：现行编码按 limited range、576 行及以下 BT.601、以上 BT.709 写入；待真盘样本与播放器对照后再定验收值。
+- PCS 第 5 字节：编码器默认写 0，也允许调用者指定；字段取值表没有真盘证据，严格验证器不得把默认值当成已裁决值。
+- ODS 图末标记：当前编码器在末行行结束符后写 `00 00 FF FF`，解码器也接受没有该标记的流；参考实现之间存在差异，需真盘与播放器语料决定兼容策略。
+
+只有 SUP 容器段布局和时钟已由真实 ffprobe 验证。上述图像语义仍是待决项，见历史问题记录 C16、C17、C19 与 E3。

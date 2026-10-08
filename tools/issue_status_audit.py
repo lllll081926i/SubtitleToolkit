@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """问题清单与状态文档必须互相自洽（目标第 3 步）。
 
-`docs/ISSUES.md` 是"这件事什么状态"的唯一口径，`docs/STATUS.md` §4 与
-`docs/TRACEABILITY.md` 各节的"没做（不要当成已完成）"是"交付面到哪了"的口径。
+`docs/history/2026-10-06/ISSUES.md` 是"这件事什么状态"的唯一口径，`docs/history/2026-10-06/STATUS.md` §4 与
+`docs/history/2026-10-06/TRACEABILITY.md` 各节的"没做（不要当成已完成）"是"交付面到哪了"的口径。
 两边各写各的就会撞出 AJ1 那类事：一边已经交付、另一边还写着没做。
 
 两类矛盾分别检查：
@@ -73,7 +73,7 @@ def not_done_lines(text):
 
 
 # 第四类检查：**引用必须指得到东西**。
-# 代码注释里写"见 docs/ISSUES.md C14"，而 C14 这一行早在某次重排里没了 —— 下一个读代码的
+# 代码注释里写"见 docs/history/2026-10-06/ISSUES.md C14"，而 C14 这一行早在某次重排里没了 —— 下一个读代码的
 # 人就会去找一条不存在的裁决，或者更糟：以为那个问题没人管过。本轮就是这么挖出 4 处断链
 # （segment.rs 两处指 C14、palette.rs 两处指 C15），而前三类检查都看不见这个方向，
 # 因为它们只看 ISSUES 与 STATUS/TRACEABILITY 之间的引用。
@@ -125,9 +125,9 @@ def dangling_references(table_ids, tree_dirs):
 
 
 def main():
-    iss = load("docs/ISSUES.md")
-    status = load("docs/STATUS.md")
-    trace = load("docs/TRACEABILITY.md")
+    iss = load("docs/history/2026-10-06/ISSUES.md")
+    status = load("docs/history/2026-10-06/STATUS.md")
+    trace = load("docs/history/2026-10-06/TRACEABILITY.md")
 
     table = issues(iss)
     if not table:
@@ -216,13 +216,13 @@ def main():
     # 把关器自己要有牙：解析器坏了的表现是"零断链=通过"。
     if "--ref-selftest" in sys.argv:
         sample = (
-            "见 docs/ISSUES.md Z9 那行；另有一处写着（docs/ISSUES.md Q77）是编的，"
+            "见 docs/history/2026-10-06/ISSUES.md Z9 那行；另有一处写着（docs/history/2026-10-06/ISSUES.md Q77）是编的，"
             "还有一处 `ISSUES W42` 也是编的。"
         )
         caught = refs_in(sample, {"Z9"})
         assert caught == ["Q77", "W42"], "断链自测失败，抓到的是：{}".format(caught)
         # 反向：真编号不许被当成断链（否则第四类检查本身会造假红）
-        assert refs_in("见 docs/ISSUES.md Z9", {"Z9"}) == [], "合法引用被误判"
+        assert refs_in("见 docs/history/2026-10-06/ISSUES.md Z9", {"Z9"}) == [], "合法引用被误判"
         print("REF SELFTEST OK（一条假引用被抓住、一条真引用没被误伤）")
 
     return 0 if not invisible and not stale and not broken else 2

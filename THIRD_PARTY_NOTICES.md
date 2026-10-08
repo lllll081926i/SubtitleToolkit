@@ -2,7 +2,7 @@
 
 > 由 `python tools/notices.py` 生成，数据取自 `Cargo.lock` 与本机 registry 缓存：
 > 版本号、SPDX 表达式、`.crate` 的 SHA-256 都不是手抄（21 §11）。
-> 许可证政策见 21 §1：核心只收宽松许可；GPL/AGPL 项目只做行为参考或外部可执行文件（21 §7）。
+> 核心只收宽松许可；仓库内研究源码与候选二进制按各自来源和许可证单独列示，不代表它们已进入默认安装包。
 
 | 包 | 版本 | License | 仓库 | .crate SHA-256 | 分发 |
 |---|---|---|---|---|---|
@@ -55,26 +55,35 @@
 | 组件 | License | 来源 | 角色 |
 |---|---|---|---|
 | libass | ISC | https://github.com/libass/libass | external（native provider；本机已装，哈希逐条实测列在下方的锁表里） |
+| VSFilterMod.dll | GPL-3.0（按上游项目推定；本 DLL 的源码映射未核实） | https://github.com/sorayuki/VSFilterMod | third_party/VSFilterMod.dll（项目内候选文件；未接入产品或安装包） |
 | Pillow | MIT-CMU | https://python-pillow.org | dev-only（PNG 第三方交叉验证，不随安装包分发） |
 | pysubs2 | MIT | https://github.com/timo0/pysubs2 | dev-only（ASS/SRT 语义交叉验证，不随安装包分发） |
 | cargo-deny | MIT OR Apache-2.0 | https://github.com/EmbarkStudios/cargo-deny | dev-only（许可与 RustSec 通告门阶） |
 | cargo-nextest | Apache-2.0 OR MIT | https://github.com/nextest-rs/nextest | dev-only（测试门阶执行器） |
 | vcpkg | MIT | https://github.com/microsoft/vcpkg | dev-only（构建 native 依赖的开发期工具，不随安装包分发） |
 
-## native / 外部可执行文件的哈希锁（21 §8/§9，W3）
+## 仓库内第三方源码归档
 
-> 这张表不是抄来的：`tools/notices.py` 读 `reference-audit/SOURCE_AUDIT_LOCK.json` 里锁定的哈希，
+| 组件 | 版本/提交 | License | 许可附加说明 | 来源 | 归档 | 锁定 SHA-256 | 本机实测 | 状态 |
+|---|---|---|---|---|---|---|---|---|
+| libass | 0.17.5 | ISC | 仓库主代码 COPYING 为 ISC；libass/wyhash.h 声明 Unlicense，libass/dwrite_c.h 声明 Public Domain，checkasm/ 文件声明 BSD-2-Clause，libass/x86/x86inc.asm 有独立 ISC 声明；compare/test/font1.ttf 与 font2.otf 的 name 表都标注 CC0-1.0。 | https://github.com/libass/libass | third_party/sources/libass-master.tar.gz | d2b2561cc8fb655451e8… | d2b2561cc8fb655451e8… | match |
+| ass2bdnxml (Masaiki) | 6faa51e12e32baaeae1aa53e7951b6a0fea83ec2 | GPL-3.0-or-later | 源文件头声明 GPL-3.0-or-later，COPYING 提供 GPL-3.0 正文；x86inc.asm 自带独立 ISC 许可声明。 | https://github.com/Masaiki/ass2bdnxml | third_party/sources/ass2bdnxml-master.tgz | e1faeb2b57e50551d43b… | e1faeb2b57e50551d43b… | match |
+
+## native 与外部二进制的哈希锁（21 §8/§9，W3）
+
+> 这张表不是抄来的：`tools/notices.py` 读 `third_party/SOURCE_AUDIT_LOCK.json` 里锁定的哈希，
 > 再对**本机那个文件**重算一遍 SHA-256。`match` 是实测相等；`absent-here` 是这台机器上没有那个文件，
 > 哈希仍是锁定的事实但没在这里实测过 —— 这两种状态必须分开写，混起来就是假证据。
 
 | 组件 | 版本 | License | 产物 | 锁定的 SHA-256 | 本机实测 | 状态 |
 |---|---|---|---|---|---|---|
-| libass | 0.17.5 | ISC | ../tools/vcpkg/installed/x64-windows/bin/ass-9.dll | aa81be5ed592eb8fa6ce… | aa81be5ed592eb8fa6ce… | match |
-| libass | 0.17.5 | ISC | ../tools/vcpkg/installed/x64-windows/lib/ass.lib | c7defaff294d2bf6fe03… | c7defaff294d2bf6fe03… | match |
-| libass | 0.17.5 | ISC | ../tools/vcpkg/installed/x64-windows/include/ass/ass.h | 04582aa925d4ed2d1206… | 04582aa925d4ed2d1206… | match |
-| libass | 0.17.5 | ISC | ../tools/vcpkg/installed/x64-windows/include/ass/ass_types.h | b3ac4ad4d655f4d90e5e… | b3ac4ad4d655f4d90e5e… | match |
-| ffprobe | ffprobe version 2023-02-13-git-2296078397-essentials_build www.gyan.dev | GPL-3.0（仅作为本机交叉验证工具，通过固定 argv 的子进程调用；不链接、不 redistribution） | tools/bin/ffprobe.exe（仓库旁，不随包分发） | f28c4751e73672052670… | f28c4751e73672052670… | match |
-| ffmpeg | ffmpeg version N-92722-gf22fcd4483 (2018) | GPL-3.0（同上：仅本机工具，不进产物） | tools/bin/ffmpeg.exe（只用来生成合成语料，不参与产品运行） | c8abc49e7be62dde8e12… | c8abc49e7be62dde8e12… | match |
+| libass | 0.17.5 | ISC | ../tools/vcpkg/installed/x64-windows/bin/ass-9.dll | aa81be5ed592eb8fa6ce… | — | absent-here |
+| libass | 0.17.5 | ISC | ../tools/vcpkg/installed/x64-windows/lib/ass.lib | c7defaff294d2bf6fe03… | — | absent-here |
+| libass | 0.17.5 | ISC | ../tools/vcpkg/installed/x64-windows/include/ass/ass.h | 04582aa925d4ed2d1206… | — | absent-here |
+| libass | 0.17.5 | ISC | ../tools/vcpkg/installed/x64-windows/include/ass/ass_types.h | b3ac4ad4d655f4d90e5e… | — | absent-here |
+| VSFilterMod.dll | ProductVersion 2.5.2.2；FileVersionRaw/ProductVersionRaw 2.5.2.1 | GPL-3.0 (source mapping unverified) | third_party/VSFilterMod.dll | 87a9c3c1ab7614eda22b… | 87a9c3c1ab7614eda22b… | match |
+| ffprobe | ffprobe version 2023-02-13-git-2296078397-essentials_build www.gyan.dev | GPL-3.0（仅作为本机交叉验证工具，通过固定 argv 的子进程调用；不链接、不 redistribution） | tools/bin/ffprobe.exe（仓库旁，不随包分发） | f28c4751e73672052670… | — | absent-here |
+| ffmpeg | ffmpeg version N-92722-gf22fcd4483 (2018) | GPL-3.0（同上：仅本机工具，不进产物） | tools/bin/ffmpeg.exe（只用来生成合成语料，不参与产品运行） | c8abc49e7be62dde8e12… | — | absent-here |
 
 ## 更新策略
 

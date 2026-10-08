@@ -6,7 +6,7 @@
 # fields.rs 的单测拿那份真输出当 fixture，就不可能再按想象中的 schema 猜错（ISSUES AF1）。
 #
 # 用法：FFMPEG=/path/to/ffmpeg.exe bash tools/make_probe_fixtures.sh
-# 两个二进制的来源与哈希记在 reference-audit/SOURCE_AUDIT_LOCK.json（不进仓库，属本机工具）。
+# 两个二进制的来源与哈希记在 third_party/SOURCE_AUDIT_LOCK.json（不进仓库，属本机工具）。
 set -eu
 cd "$(dirname "$0")/.."
 

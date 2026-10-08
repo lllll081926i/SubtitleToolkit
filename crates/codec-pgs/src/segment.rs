@@ -1,4 +1,4 @@
-//! PGS 段级读写（13 §2）。段内各字段的布局以真实实现取证为准，见 docs/ISSUES.md C3
+//! PGS 段级读写（13 §2）。段内各字段的布局以真实实现取证为准，见 docs/history/2026-10-06/ISSUES.md C3
 //! （PDS 条目、ODS 长度、WDS、PCS）；段头本身是
 //! `PG`(2) + PTS(4) + DTS(4) + segment_type(1) + segment_length(2)，length 只覆盖 payload ——
 //! 这一布局不只是我们的读写自洽，真 ffprobe 的 `sup` demuxer 也按同样的段数与时钟读出来
@@ -74,7 +74,7 @@ impl Segment {
 
 /// PTS/DTS 落在 4 字节大端字段里，可表示范围是 0..2^32-1。
 /// 规范文本说的 33bit 属于 PES/流层（core-model 的 `PTS_MAX_TICKS`），而 .sup **容器**这个字段只有
-/// 4 字节，所以写文件的硬上限是 2^32 —— 两者是不同量程，不是互相矛盾（裁决与外部证据见 docs/ISSUES.md G4）。
+/// 4 字节，所以写文件的硬上限是 2^32 —— 两者是不同量程，不是互相矛盾（裁决与外部证据见 docs/history/2026-10-06/ISSUES.md G4）。
 pub const CLOCK_FIELD_MAX: i64 = 1i64 << 32;
 
 fn check_clock(v: i64) -> Result<()> {
@@ -271,7 +271,7 @@ mod tests {
         b[12] = 0xff;
         assert_eq!(parse_stream(&b).unwrap_err().code_string(), "STK-PGS-0008");
         // 4 字节字段能表示的最大值必须正常解析（ parse 侧的超范围分支不可达，
-        // 因为 4 字节读出必然 < 2^32；该检查保留给未来字段拓宽时用，量程口径见 docs/ISSUES.md G4）
+        // 因为 4 字节读出必然 < 2^32；该检查保留给未来字段拓宽时用，量程口径见 docs/history/2026-10-06/ISSUES.md G4）
         let mut b2 = vec![0u8; 13];
         b2[0] = b'P';
         b2[1] = b'G';

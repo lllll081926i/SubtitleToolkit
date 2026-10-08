@@ -35,6 +35,7 @@ CSRI 是一个独立 provider ABI，不能在文档中与“任意 VSFilterMod D
 - renderer-host 必须先枚举/探测 provider 的 CSRI 导出与 capability；
 - 只有确实暴露标准 CSRI / `csri_stream_ext` 的 provider 才走这条链；
 - 2026 xy-VSFilter 的 release 说明表明其 external CSRI backend 使用标准 `csri_stream_ext` + `CSRI_F_BGRA`，并指出 Masaiki 的 VSFilterMod r5.3.0 可作为兼容 provider；这证明“特定 VSFilterMod build 可以是 CSRI provider”，不是证明所有历史 VSFilterMod.dll 都可以。
+- 当前工作区的 `third_party/VSFilterMod.dll` 静态导出表含 `csri_*` 符号，但来源提交未核实。导出名存在不等于 ABI 或输出行为兼容；该文件尚未由本项目加载或通过真实画面对照。
 
 ### C. VSFilterMod / VapourSynth / AviSynth+ Legacy Adapter
 用于没有 CSRI provider 但有 TextSubMod/TextSub/VapourSynth interface 的旧式特效滤镜。
@@ -43,15 +44,16 @@ CSRI 是一个独立 provider ABI，不能在文档中与“任意 VSFilterMod D
 - 此路径独立于 CSRI，不能在 capability probe 中混淆。
 
 ## 2. renderer-host 进程隔离
-第三方 DLL 永远不进入 GUI 主进程：
-- `renderer-host-x64.exe` / `renderer-host-x86.exe`；
-- named pipe 控制面；
-- shared memory / file mapping 传大 RGBA frame；
-- handshake：provider type、name、version、PE arch、API version、pixel formats、special capabilities；
-- Job Object 限制 child tree；
-- timeout、heartbeat、cancel；
-- crash code/minidump/provider log 返回主进程；
-- 可设置一次任务一进程 / provider pool 两种隔离级别。
+
+第三方渲染 DLL 不得加载到 CLI/GUI 主进程。当前已实现的隔离范围是 libass：CLI 的 `render` 与 `pgs encode` 经 renderer-host 执行；host 启动时核对 PE 位数，握手报告 provider 哈希和架构，使用 Job Object、请求超时与有上限的 stderr 尾部。
+
+当前控制面和图像负载都走父子匿名管道。帧按 16 MiB 分块，每条消息上限 64 MiB；协议版本为 2。该实现支持 4K RGBA 帧，但会复制像素并增加管道开销。共享内存/file mapping 是后续性能选项，不是当前实现。
+
+主进程接收队列最多缓存一条消息。接收线程至多另持有一条正在读取或等待入队的消息；队列满时等待调用方消费。管道 EOF、截断或协议读取错误只上报一次，随后退出接收线程，避免退出的 host 触发错误消息循环和无界分配。
+
+接收端在分配负载之前拒绝未知消息标签。JSON 消息必须是合法 UTF-8；非法字节直接报错，不替换字符后继续处理路径或请求。
+
+当前未实现：CSRI/VSFilterMod provider、x86 host、heartbeat、任务取消、minidump 和 provider pool。位数不匹配时拒绝启动，不宣称自动路由到 x86。新增 provider 前必须补 capability probe、真实 provider 测试和许可记录。
 
 ## 3. x86/x64
 主程序 x64。读取 PE Machine：

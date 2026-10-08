@@ -10,10 +10,10 @@ Probe encoding → Text IR → default ASS template → time/style mapping → w
 ASS AST → color transform targeted nodes/tokens → optional resolution transform → lossless writer → round-trip compare non-target fields。
 
 ## ASS→BDN
-ASS AST → optional time/HDR/resolution transforms → Renderer → frame change detector → full-canvas RGBA → transparent bbox object crop → PNG quantization → BDN writer → XML+PNG validator。
+ASS AST → optional time/HDR/resolution transforms → renderer-host → frame change detector → streaming RGBA sample → incremental event planner/tight crop → PNG quantization → BDN writer → XML+PNG validator。完整画布帧在规划后立即释放；规划器只保留当前视觉 run 和最终事件补丁。
 
 ## ASS→SUP
-同 BDN 前半 → PGS author → validator。若同时输出 BDN+SUP，共享 render/cache。
+同 BDN 前半 → PGS author → validator。若同时输出 BDN+SUP，共享同一次 host 会话、逐帧渲染和事件规划；不缓存整段全画布 RGBA。
 
 ## SUP fast adjust
 PGS parser → mutate timestamps/PCS/WDS/PDS → binary writer preserving ODS → reopen parser → compare ODS hash unchanged。

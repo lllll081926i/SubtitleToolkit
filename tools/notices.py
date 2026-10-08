@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import sys
 import tomllib
@@ -24,13 +25,14 @@ ROOT = Path(__file__).resolve().parent.parent
 # 于是 `target/gate/notices.log` 既不好读也没法 diff（与 tools/doc_claims_check.py 同一个处理）。
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
-CARGO_HOME = Path.home() / ".cargo"
-REGISTRY = "rsproxy.cn-e3de039b2554c837"  # 本机唯一的 registry 缓存目录（.cargo/config.toml 换成国内镜像）
+CARGO_HOME = Path(os.environ.get("CARGO_HOME", Path.home() / ".cargo"))
 
 # 21 §1 之外的组件：不是 crates.io 依赖，但会随包/随验证出现，必须单独交代
 EXTRA = [
     ("libass", "ISC", "https://github.com/libass/libass",
      "external（native provider；本机已装，哈希逐条实测列在下方的锁表里）"),
+    ("VSFilterMod.dll", "GPL-3.0（按上游项目推定；本 DLL 的源码映射未核实）", "https://github.com/sorayuki/VSFilterMod",
+     "third_party/VSFilterMod.dll（项目内候选文件；未接入产品或安装包）"),
     ("Pillow", "MIT-CMU", "https://python-pillow.org",
      "dev-only（PNG 第三方交叉验证，不随安装包分发）"),
     ("pysubs2", "MIT", "https://github.com/timo0/pysubs2",
@@ -67,8 +69,8 @@ def resolve_outside_repo(spec: str) -> tuple[Path | None, str]:
 
 
 def native_rows() -> tuple[list[dict], list[str]]:
-    """从 reference-audit/SOURCE_AUDIT_LOCK.json 取 native/exe 产物，逐条实测哈希。"""
-    lock = ROOT / "reference-audit" / "SOURCE_AUDIT_LOCK.json"
+    """从 third_party/SOURCE_AUDIT_LOCK.json 取 native/二进制产物，逐条实测哈希。"""
+    lock = ROOT / "third_party" / "SOURCE_AUDIT_LOCK.json"
     if not lock.is_file():
         return ([], ["SOURCE_AUDIT_LOCK.json 不在仓库里：native 产物无人锁哈希"])
     import json
@@ -117,11 +119,64 @@ def native_rows() -> tuple[list[dict], list[str]]:
                 art.get("path", ""),
                 art.get("sha256", ""),
             )
+    for art in data.get("binary_artifacts", []):
+        add(
+            art.get("name", "?"),
+            str(art.get("version_resource", "")),
+            str(art.get("license", art.get("license_status", "来源/许可证待核验"))),
+            art.get("path", ""),
+            art.get("sha256", ""),
+        )
     tools = data.get("verification_tools", {}) or {}
     for key, label in (("ffprobe_external", "ffprobe"), ("ffmpeg_external", "ffmpeg")):
         ent = tools.get(key)
         if isinstance(ent, dict):
             add(label, str(ent.get("version", "")), str(ent.get("license", "")), ent.get("path", ""), ent.get("sha256", ""))
+    return rows, problems
+
+
+def source_archive_rows() -> tuple[list[dict], list[str]]:
+    """校验来源锁中随仓库保存的源码归档，并为声明清单生成记录。"""
+    lock = ROOT / "third_party" / "SOURCE_AUDIT_LOCK.json"
+    if not lock.is_file():
+        return ([], ["SOURCE_AUDIT_LOCK.json 不在仓库里：源码归档无人锁哈希"])
+    import json
+
+    data = json.loads(lock.read_text(encoding="utf-8"))
+    rows: list[dict] = []
+    problems: list[str] = []
+    for src in data.get("sources", []):
+        artifact = src.get("artifact")
+        expected = src.get("artifact_sha256")
+        if not artifact:
+            continue
+        if not expected:
+            problems.append("%s：源码归档 %s 没有锁 SHA-256" % (src.get("name", "?"), artifact))
+            continue
+        path = ROOT / artifact
+        actual = file_sha256(path) if path.is_file() else ""
+        status = "match" if actual == expected else ("absent" if not actual else "MISMATCH")
+        if status != "match":
+            problems.append(
+                "%s：源码归档 %s 状态为 %s（锁定 %s ｜ 实测 %s）"
+                % (src.get("name", "?"), artifact, status, expected, actual or "缺失")
+            )
+        version = src.get("release_version_file") or src.get("version") or ""
+        if not version and src.get("commit_sha"):
+            version = str(src["commit_sha"])
+        rows.append(
+            {
+                "name": src.get("name", "?"),
+                "version": version,
+                "license": src.get("license", "UNKNOWN"),
+                "license_notes": src.get("license_notes", ""),
+                "source": src.get("repository", src.get("source", "")),
+                "artifact": artifact,
+                "locked": expected,
+                "actual": actual,
+                "status": status,
+            }
+        )
     return rows, problems
 
 
@@ -132,10 +187,10 @@ def parse_lock(path: Path) -> list[dict]:
 
 def crate_license(name: str, version: str) -> tuple[str | None, str | None]:
     """从解压出来的 crate 源码里读 license / repository（这才是发布出去的那份文本）。"""
-    src = CARGO_HOME / "registry" / "src" / REGISTRY / (name + "-" + version)
-    manifest = src / "Cargo.toml"
-    if not manifest.is_file():
+    manifests = sorted((CARGO_HOME / "registry" / "src").glob(f"*/{name}-{version}/Cargo.toml"))
+    if not manifests:
         return (None, None)
+    manifest = manifests[0]
     text = manifest.read_text(encoding="utf-8", errors="replace")
     m = re.search(r'(?m)^license\s*=\s*"([^"]+)"', text)
     repo = re.search(r'(?m)^repository\s*=\s*"([^"]+)"', text)
@@ -148,9 +203,10 @@ def crate_license(name: str, version: str) -> tuple[str | None, str | None]:
 
 
 def crate_sha256(name: str, version: str) -> str | None:
-    f = CARGO_HOME / "registry" / "cache" / REGISTRY / (name + "-" + version + ".crate")
-    if not f.is_file():
+    archives = sorted((CARGO_HOME / "registry" / "cache").glob(f"*/{name}-{version}.crate"))
+    if not archives:
         return None
+    f = archives[0]
     h = hashlib.sha256()
     with f.open("rb") as fh:
         for chunk in iter(lambda: fh.read(1 << 20), b""):
@@ -212,7 +268,7 @@ def main(argv: list[str]) -> int:
         "",
         "> 由 `python tools/notices.py` 生成，数据取自 `Cargo.lock` 与本机 registry 缓存：",
         "> 版本号、SPDX 表达式、`.crate` 的 SHA-256 都不是手抄（21 §11）。",
-        "> 许可证政策见 21 §1：核心只收宽松许可；GPL/AGPL 项目只做行为参考或外部可执行文件（21 §7）。",
+        "> 核心只收宽松许可；仓库内研究源码与候选二进制按各自来源和许可证单独列示，不代表它们已进入默认安装包。",
         "",
         "| 包 | 版本 | License | 仓库 | .crate SHA-256 | 分发 |",
         "|---|---|---|---|---|---|",
@@ -222,10 +278,22 @@ def main(argv: list[str]) -> int:
     lines += ["", "## 非 crates.io 组件", "", "| 组件 | License | 来源 | 角色 |", "|---|---|---|---|"]
     for name, lic, url, role in EXTRA:
         lines.append("| %s | %s | %s | %s |" % (name, lic, url, role))
+    srows, sproblems = source_archive_rows()
+    lines += ["", "## 仓库内第三方源码归档", "", "| 组件 | 版本/提交 | License | 许可附加说明 | 来源 | 归档 | 锁定 SHA-256 | 本机实测 | 状态 |", "|---|---|---|---|---|---|---|---|---|"]
+    for r in srows:
+        actual = r["actual"] or "—"
+        lines.append(
+            "| %s | %s | %s | %s | %s | %s | %s | %s | %s |"
+            % (
+                r["name"], r["version"], r["license"], r["license_notes"], r["source"], r["artifact"],
+                r["locked"][:20] + "…", actual[:20] + ("…" if actual != "—" else ""), r["status"],
+            )
+        )
+    problems.extend(sproblems)
     nrows, nproblems = native_rows()
-    lines += ["", "## native / 外部可执行文件的哈希锁（21 §8/§9，W3）", ""]
+    lines += ["", "## native 与外部二进制的哈希锁（21 §8/§9，W3）", ""]
     lines += [
-        "> 这张表不是抄来的：`tools/notices.py` 读 `reference-audit/SOURCE_AUDIT_LOCK.json` 里锁定的哈希，",
+        "> 这张表不是抄来的：`tools/notices.py` 读 `third_party/SOURCE_AUDIT_LOCK.json` 里锁定的哈希，",
         "> 再对**本机那个文件**重算一遍 SHA-256。`match` 是实测相等；`absent-here` 是这台机器上没有那个文件，",
         "> 哈希仍是锁定的事实但没在这里实测过 —— 这两种状态必须分开写，混起来就是假证据。",
         "",
@@ -266,6 +334,12 @@ def main(argv: list[str]) -> int:
                     "清单过期：%s 的锁定哈希不在 THIRD_PARTY_NOTICES.md 里，重跑 python tools/notices.py"
                     % r["component"]
                 )
+        for r in srows:
+            if r["locked"][:20] not in body:
+                problems.append(
+                    "清单过期：%s 的源码归档锁定哈希不在 THIRD_PARTY_NOTICES.md 里，重跑 python tools/notices.py"
+                    % r["name"]
+                )
     if problems:
         print("PROBLEMS (%d):" % len(problems))
         for p in problems[:40]:
@@ -273,7 +347,7 @@ def main(argv: list[str]) -> int:
         rc = 1
     if not check:
         (ROOT / "THIRD_PARTY_NOTICES.md").write_text(text, encoding="utf-8")
-    print("NOTICES %s：%d 个第三方包 + %d 条 native/exe 哈希锁，%d 个问题" % ("FAIL" if rc else "OK", len(rows), len(nrows), len(problems)))
+    print("NOTICES %s：%d 个第三方包 + %d 个源码归档 + %d 条 native/二进制哈希锁，%d 个问题" % ("FAIL" if rc else "OK", len(rows), len(srows), len(nrows), len(problems)))
     return rc
 
 

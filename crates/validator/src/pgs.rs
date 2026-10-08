@@ -1243,7 +1243,10 @@ mod tests {
     // 而 AK10 的教训正是"夹具的形状会撒谎"。
 
     fn sev(r: &ValidationReport, id: &str) -> Option<Severity> {
-        r.findings.iter().find(|f| f.check == id).map(|f| f.severity)
+        r.findings
+            .iter()
+            .find(|f| f.check == id)
+            .map(|f| f.severity)
     }
 
     fn msg(r: &ValidationReport, id: &str) -> String {
@@ -1583,11 +1586,7 @@ mod tests {
     fn pgs_pro_02_fires_only_when_the_canvas_changes_mid_file() {
         let clean = stream();
         let p = profile(&clean, &want(ValidationLevel::Basic));
-        assert!(
-            !p.has_check("PGS.PRO.02"),
-            "夹具全程一种画布：{}",
-            dump(&p)
-        );
+        assert!(!p.has_check("PGS.PRO.02"), "夹具全程一种画布：{}", dump(&p));
         assert!(!p.has_check("PGS.PRO.01"), "夹具画布本就在 profile 内");
         let mut mixed = clean.clone();
         let first = {
@@ -1596,7 +1595,11 @@ mod tests {
         };
         let w0 = parse_pcs(&mixed[first].payload).unwrap().width;
         // 换成另一种 profile 内画布：问题不是"尺寸违规"，而是 epoch 中途换了画布
-        let (w, h): (u16, u16) = if w0 == 1280 { (1920, 1080) } else { (1280, 720) };
+        let (w, h): (u16, u16) = if w0 == 1280 {
+            (1920, 1080)
+        } else {
+            (1280, 720)
+        };
         let idx = pcs_indexes(&mixed);
         for i in idx[1..].iter() {
             mixed[*i].payload[0] = (w >> 8) as u8;

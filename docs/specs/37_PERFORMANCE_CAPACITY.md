@@ -20,7 +20,9 @@ Disk cache 默认放 `%LOCALAPPDATA%\SubtitleToolkit\cache`，设置容量上限
 - Strict validator 未完成的“verified result”。
 
 ## 4. Memory
-全画布 3840×2160 RGBA ~33MiB/帧，禁止无界 per-frame 缓存。动态特效必须流式 render→bbox→quantize→writer/cached compressed artifact。
+全画布 3840×2160 RGBA 约 31.6 MiB/帧。禁止把完整采样帧按时间轴保存在内存。当前规划器逐帧计算可见内容指纹，只保留活动 run 的 tight patch 和最终事件补丁；renderer-host 通过分块管道传输一帧，调用侧仍需为当前帧分配 RGBA 缓冲。
+
+最终事件补丁随不同视觉事件数量增长，这是输出本身所需的数据；长时间不变的帧会合并为一个事件。若长片含大量不同画面，仍需评估事件补丁总量和输出磁盘容量。完整帧的瞬时峰值还包括 host 当前帧、IPC 块和调用侧帧，不应把“逐帧”误写成固定常数内存。
 
 ## 5. 并发默认
 根据逻辑核与内存估算：

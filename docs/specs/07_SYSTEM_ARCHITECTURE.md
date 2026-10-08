@@ -3,15 +3,16 @@
 ## 1. 进程拓扑
 
 ```
-SubtitleToolkit.exe (Iced)
+subtitletool-cli.exe
  ├─ core crates (parse/transform/plan/cache/verify)
- ├─ libass adapter (可信 native dependency)
- ├─ process adapters: ffprobe / mkvmerge / mkvextract
- ├─ renderer-host-x64.exe  <-- CSRI/VSFilterMod, legacy VS/AviSynth
- └─ renderer-host-x86.exe  <-- 仅旧 32-bit provider
+ ├─ renderer-host.exe  <-- 当前 libass 动态库唯一加载位置
+ └─ ffprobe process adapter
+
+SubtitleToolkit.exe (Iced, planned)
+ └─ reuses the same core crates and job/report schema
 ```
 
-外部字幕 renderer DLL 永远不直接 LoadLibrary 到 GUI 进程。
+CLI 的 render/pgs encode 通过 renderer-host 渲染。GUI 尚未实现。CSRI、VSFilterMod、x86 host、MKVToolNix adapter 目前都未交付，不能按上图中的目标结构当成现有能力。
 
 ## 2. Workspace
 - `app`：Iced shell + view-model。
@@ -46,7 +47,7 @@ SubtitleToolkit.exe (Iced)
 纯函数优先：`input IR + settings -> output IR + report`。
 
 ### Renderer
-`open(script, canvas, fps, font_context)`；`render(timestamp)`；`capabilities()`。
+目标接口为 `open(script, canvas, fps, font_context)`、`render(timestamp)` 和 `capabilities()`。当前 CLI 的 libass 实现由独立 renderer-host 承载，host 使用版本化协议加载字体、加载脚本并返回分块 RGBA 帧。
 
 ### Validator
 `validate(bytes/IR, level) -> issues + metrics + verified_level`。
@@ -79,5 +80,4 @@ Plan 必须能导出 JSON，用于 bug report 和 CLI 重放。
 - cancellation token 贯穿所有 stage。
 
 ## 7. 输出事务
-`output.tmp.<uuid>` → write → fsync/close → reopen verify → rename final。  
-默认不覆盖；覆盖时先生成 backup/replace transaction。
+`output.tmp.<uuid>` → write → fsync/close → reopen verify → rename final。覆盖替换先备份旧目标；安装新文件失败时恢复旧目标。恢复也失败时，错误必须指出备份路径和临时文件路径。

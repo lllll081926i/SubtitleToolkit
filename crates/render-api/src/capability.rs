@@ -50,7 +50,7 @@ impl ProbeResult {
     }
 }
 
-/// CSRI 必需导出名集合。最终名单待与 csri.h 核对（见 docs/ISSUES.md C9），
+/// CSRI 必需导出名集合。最终名单待与 csri.h 核对（见 docs/history/2026-10-06/ISSUES.md C9），
 /// 这里按 CSRI C API 的公开符号取保守集合，缺任何一个即判定"不是 CSRI provider"。
 pub const CSRI_REQUIRED_EXPORTS: [&str; 4] = [
     "csri_open",

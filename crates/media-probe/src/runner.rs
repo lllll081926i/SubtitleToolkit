@@ -4,7 +4,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use core_model::error::{Domain, Result, StkError};
 
@@ -63,6 +63,7 @@ pub enum ProbeError {
     /// 超时，而且子进程树没被 Job Object 约束住（字段是附着失败的 Win32 错误码，0 = 本平台无此机制）
     TimeoutUncontained(u32),
     NonZero(i32, String),
+    OutputTooLarge(&'static str, usize),
 }
 
 impl ProbeError {
@@ -92,6 +93,13 @@ impl ProbeError {
                 StkError::simple(Domain::Dependency, 22, "ffprobe 非零退出")
                     .with_detail(format!("exit={code} {stderr}"))
             }
+            ProbeError::OutputTooLarge(stream, limit) => StkError::simple(
+                Domain::Dependency,
+                24,
+                "ffprobe 输出超过安全上限",
+            )
+            .with_detail(format!("{stream} 超过 {limit} 字节；{}", exe.display()))
+            .with_action("核对媒体文件与 ffprobe 版本，避免处理异常或损坏输入"),
         }
     }
 }
@@ -114,78 +122,125 @@ impl SystemProbe {
     }
 
     fn spawn_and_read(&self, target: &Path) -> std::result::Result<String, ProbeError> {
-        let mut child: Child = Command::new(&self.exe)
+        let child: Child = Command::new(&self.exe)
             .args(default_args(target))
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
             .map_err(|_| ProbeError::NotFound)?;
+        self.read_child(child)
+    }
+
+    fn read_child(&self, mut child: Child) -> std::result::Result<String, ProbeError> {
+        let started = Instant::now();
         // 立刻入 job：孙进程继承的管道句柄由 job 关闭来释放
         let job = job::attach(child.id());
 
-        let mut stdout = child.stdout.take().ok_or(ProbeError::NotFound)?;
+        let stdout = child.stdout.take().ok_or(ProbeError::NotFound)?;
         // stderr 也必须**一边跑一边排空**。原先是 wait() 之后才读，而管道缓冲只有几 KB：
         // 子进程写满之后就阻塞，于是永远不会退出，wait() 也就永远不返回 —— 我们等的是
         // "对方先把话说完"，而对方等的是"我们先把嘴张开"（ISSUES D10）。
         // ffprobe 恰恰是个话多的进程：坏包、反复 PS 探测、每条流一行警告。
-        let mut stderr = child.stderr.take().ok_or(ProbeError::NotFound)?;
-        let (etx, erx) = mpsc::channel::<String>();
+        let stderr = child.stderr.take().ok_or(ProbeError::NotFound)?;
+        let (etx, erx) = mpsc::channel::<(String, bool)>();
         let err_reader = std::thread::spawn(move || {
-            let mut raw = Vec::new();
-            let _ = stderr.read_to_end(&mut raw);
-            let _ = etx.send(String::from_utf8_lossy(&raw).into_owned());
+            let (text, exceeded) = read_bounded(stderr, 64 * 1024, true);
+            let _ = etx.send((text, exceeded));
         });
-        let (tx, rx) = mpsc::channel::<String>();
+        let (tx, rx) = mpsc::channel::<(String, bool)>();
         let reader = std::thread::spawn(move || {
-            let mut buf = String::new();
-            // 读侧只做字节到字符串的尽力转换，非 UTF-8 走 lossy（JSON 本应 UTF-8）
-            let mut raw = Vec::new();
-            let _ = stdout.read_to_end(&mut raw);
-            buf.push_str(&String::from_utf8_lossy(&raw));
-            let _ = tx.send(buf);
+            let result = read_bounded(stdout, 32 * 1024 * 1024, false);
+            let _ = tx.send(result);
         });
 
-        let text = match rx.recv_timeout(self.timeout) {
-            Ok(t) => t,
-            Err(_) => {
+        let mut stdout_result = None;
+        let mut stderr_result = None;
+        let mut status = None;
+        loop {
+            if stdout_result.is_none() {
+                stdout_result = rx.try_recv().ok();
+            }
+            if stderr_result.is_none() {
+                stderr_result = erx.try_recv().ok();
+            }
+            if status.is_none() {
+                status = child.try_wait().ok().flatten();
+            }
+            if stdout_result.is_some() && stderr_result.is_some() && status.is_some() {
+                break;
+            }
+            if started.elapsed() >= self.timeout {
                 let _ = child.kill();
-                // 约束住（Job 附着成功）：关闭 job → 整棵进程树终止 → 管道必然 EOF，
-                // join 有上界，读线程不会被留在进程里。
-                // 没约束住（附着失败）：孙进程可能还握着管道，join 会一直阻塞到它自己结束
-                // （实测 30 秒）。这时只给一个很短的宽限期，等不到就把线程留下，
-                // 并把"没约束住"如实报出去（ISSUES Z6）。
                 let contained = job.is_ok();
                 let job_err = job.as_ref().err().copied().unwrap_or(0);
                 drop(job);
-                let _ = child.wait();
-                let reader_done = contained || rx.recv_timeout(Duration::from_millis(200)).is_ok();
-                if reader_done {
+                // 两条管道分别等待；stdout EOF 不能证明 stderr 已被释放。
+                if stdout_result.is_some() || rx.recv_timeout(Duration::from_millis(200)).is_ok() {
                     let _ = reader.join();
+                }
+                if stderr_result.is_some() || erx.recv_timeout(Duration::from_millis(200)).is_ok() {
                     let _ = err_reader.join();
                 }
+                let _ = child.try_wait();
                 return Err(if contained {
                     ProbeError::Timeout
                 } else {
                     ProbeError::TimeoutUncontained(job_err)
                 });
             }
-        };
-        let status = child.wait().map_err(|_| {
-            drop(job);
-            ProbeError::Timeout
-        })?;
-        if !status.success() {
-            // stderr 由那条线程收全（不是从 child 上再读一次——句柄已经 take 走了）
-            let err = erx.recv().unwrap_or_default();
-            let _ = reader.join();
-            let _ = err_reader.join();
-            return Err(ProbeError::NonZero(status.code().unwrap_or(-1), err));
+            std::thread::sleep(
+                Duration::from_millis(10).min(self.timeout.saturating_sub(started.elapsed())),
+            );
         }
+        let (text, stdout_exceeded) = stdout_result.expect("循环已确认 stdout 读取完成");
+        let (mut err, stderr_exceeded) = stderr_result.expect("循环已确认 stderr 读取完成");
+        let status = status.expect("循环已确认子进程退出");
         let _ = reader.join();
         let _ = err_reader.join();
+        if stdout_exceeded {
+            return Err(ProbeError::OutputTooLarge("stdout", 32 * 1024 * 1024));
+        }
+        if !status.success() {
+            if stderr_exceeded {
+                err.insert_str(0, "[stderr 前段已截断；保留末尾 64 KiB] ");
+            }
+            return Err(ProbeError::NonZero(status.code().unwrap_or(-1), err));
+        }
         Ok(text)
     }
+}
+
+fn read_bounded(mut reader: impl Read, limit: usize, keep_tail: bool) -> (String, bool) {
+    let mut raw = Vec::with_capacity(limit.min(16 * 1024));
+    let mut buf = [0u8; 8192];
+    let mut exceeded = false;
+    loop {
+        let n = match reader.read(&mut buf) {
+            Ok(0) | Err(_) => break,
+            Ok(n) => n,
+        };
+        if keep_tail {
+            if n >= limit {
+                raw.clear();
+                raw.extend_from_slice(&buf[n - limit..n]);
+                exceeded = true;
+                continue;
+            }
+            if raw.len() + n > limit {
+                let excess = raw.len() + n - limit;
+                raw.drain(..excess);
+                exceeded = true;
+            }
+            raw.extend_from_slice(&buf[..n]);
+        } else {
+            let remaining = limit.saturating_sub(raw.len());
+            let kept = remaining.min(n);
+            raw.extend_from_slice(&buf[..kept]);
+            exceeded |= kept < n;
+        }
+    }
+    (String::from_utf8_lossy(&raw).into_owned(), exceeded)
 }
 
 impl ProbeRunner for SystemProbe {
@@ -197,6 +252,107 @@ impl ProbeRunner for SystemProbe {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    fn timeout_after_closing_output(test_name: &str, scenario: &str) {
+        const CHILD_FLAG: &str = "STK_PROBE_CLOSED_OUTPUT_CHILD";
+        if let Ok(mode) = std::env::var(CHILD_FLAG) {
+            if mode == "sleep" {
+                std::thread::sleep(Duration::from_secs(5));
+                std::process::exit(0);
+            }
+            if scenario == "stderr-descendant" {
+                #[allow(
+                    clippy::zombie_processes,
+                    reason = "测试需要父进程先退出并留下 stderr 持有者；探测器负责清理进程树"
+                )]
+                let _descendant = Command::new(std::env::current_exe().unwrap())
+                    .args(["--exact", test_name, "--nocapture"])
+                    .env(CHILD_FLAG, "sleep")
+                    .stdin(Stdio::null())
+                    .stdout(Stdio::null())
+                    .stderr(Stdio::inherit())
+                    .spawn()
+                    .unwrap();
+            }
+            use std::os::windows::io::RawHandle;
+            extern "system" {
+                fn GetStdHandle(kind: u32) -> RawHandle;
+                fn CloseHandle(handle: RawHandle) -> i32;
+            }
+            unsafe {
+                assert_ne!(CloseHandle(GetStdHandle(-11i32 as u32)), 0);
+                if scenario != "stdout" {
+                    assert_ne!(CloseHandle(GetStdHandle(-12i32 as u32)), 0);
+                }
+            }
+            if scenario == "stderr-descendant" {
+                std::thread::sleep(Duration::from_millis(100));
+                std::process::exit(0);
+            }
+            std::thread::sleep(Duration::from_secs(5));
+            std::process::exit(0);
+        }
+
+        let exe = std::env::current_exe().unwrap();
+        let child = Command::new(&exe)
+            .args(["--exact", test_name, "--nocapture"])
+            .env(CHILD_FLAG, "1")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let started = Instant::now();
+        let probe = SystemProbe::new(&exe, Duration::from_secs(1));
+        let result = probe.read_child(child);
+        assert!(matches!(
+            result,
+            Err(ProbeError::Timeout | ProbeError::TimeoutUncontained(_))
+        ));
+        assert!(
+            started.elapsed() < Duration::from_secs(3),
+            "关闭输出管道后仍须执行超时"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn timeout_covers_exit_after_stdout_is_closed() {
+        timeout_after_closing_output(
+            "runner::tests::timeout_covers_exit_after_stdout_is_closed",
+            "stdout",
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn timeout_covers_exit_after_both_output_pipes_are_closed() {
+        timeout_after_closing_output(
+            "runner::tests::timeout_covers_exit_after_both_output_pipes_are_closed",
+            "both",
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn timeout_covers_stderr_held_by_a_descendant_after_the_child_exits() {
+        timeout_after_closing_output(
+            "runner::tests::timeout_covers_stderr_held_by_a_descendant_after_the_child_exits",
+            "stderr-descendant",
+        );
+    }
+
+    #[test]
+    fn subprocess_output_is_bounded_and_stderr_keeps_its_tail() {
+        let (stdout, stdout_exceeded) = read_bounded(&b"abcdefgh"[..], 4, false);
+        assert_eq!(stdout, "abcd");
+        assert!(stdout_exceeded);
+
+        let (stderr, stderr_exceeded) = read_bounded(&b"abcdefgh"[..], 4, true);
+        assert_eq!(stderr, "efgh");
+        assert!(stderr_exceeded);
+    }
 
     #[test]
     fn args_are_a_fixed_array_ending_with_target() {

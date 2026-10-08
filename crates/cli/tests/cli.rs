@@ -818,15 +818,14 @@ fn font_copy_delivers_the_file_and_a_manifest_that_names_its_source() {
     std::fs::create_dir_all(&fonts).unwrap();
     let windir = std::env::var("WINDIR").expect("测试需要 WINDIR");
     let sys = Path::new(&windir).join("Fonts");
-    let mut src: Option<PathBuf> = None;
-    for ent in std::fs::read_dir(&sys).unwrap().flatten() {
-        let p = ent.path();
-        if p.extension().and_then(|s| s.to_str()) == Some("ttf") {
-            src = Some(p);
-            break;
-        }
-    }
-    let src = src.expect("本机没有 .ttf 可用于交付测试");
+    // ASS fixture 请求 Arial，因此复制与请求对应的真实字体；随机选系统字体会让
+    // face resolver 不命中，测试就没有覆盖字体交付路径。
+    let src = sys.join("arial.ttf");
+    assert!(
+        src.is_file(),
+        "Windows 字体目录缺少测试所需的 Arial：{}",
+        src.display()
+    );
     std::fs::copy(&src, fonts.join(src.file_name().unwrap())).unwrap();
     let ass = write(&dir, "a.ass", ASS);
 
@@ -1073,6 +1072,13 @@ fn render_reports_the_font_bytes_handed_to_the_renderer() {
 /// * `--inject-fonts` 的报告要能分出"来自本机库"与"来自脚本内嵌"。
 #[test]
 fn embedded_fonts_change_the_identity_and_are_injected() {
+    let Some(dll) = libass_dll() else {
+        if std::env::var("STK_REQUIRE_LIBASS").is_ok() {
+            panic!("STK_REQUIRE_LIBASS=1 但找不到 ass-9.dll（设 STK_LIBASS_DLL）");
+        }
+        eprintln!("SKIP 内嵌字体渲染集成：本机没有 libass DLL");
+        return;
+    };
     let dir = workspace("embedded-identity");
     let plain = write(&dir, "plain.ass", ASS);
     let bytes = std::fs::read(
@@ -1093,7 +1099,6 @@ fn embedded_fonts_change_the_identity_and_are_injected() {
     let embedded = format!("{}\n[Fonts]\nfontname: arial.ttf\n{folded}", ASS);
     let with_fonts = write(&dir, "embedded.ass", &embedded);
 
-    let dll = libass_dll().expect("这条测试要真渲染器");
     let digest_of = |file: &str, outxml: &str| -> String {
         // 必须显式交 DLL：CLI 的自动查找是相对它自己的 cwd 猜的，测试里不该依赖那条运气
         let out = run_with_dll(

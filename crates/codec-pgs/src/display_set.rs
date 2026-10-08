@@ -116,7 +116,13 @@ pub fn parse_pcs(payload: &[u8]) -> Result<Pcs> {
     })
 }
 
-pub fn write_pcs(p: &Pcs) -> Vec<u8> {
+pub fn write_pcs(p: &Pcs) -> Result<Vec<u8>> {
+    if p.objects.len() > u8::MAX as usize {
+        return Err(
+            StkError::simple(Domain::Pgs, 71, "PCS 对象数量超过 8bit 字段上限")
+                .with_detail(format!("{} 个对象，最多 255 个", p.objects.len())),
+        );
+    }
     let mut v = Vec::with_capacity(p.payload_len());
     v.extend_from_slice(&p.width.to_be_bytes());
     v.extend_from_slice(&p.height.to_be_bytes());
@@ -139,7 +145,7 @@ pub fn write_pcs(p: &Pcs) -> Vec<u8> {
             v.extend_from_slice(&cy.to_be_bytes());
         }
     }
-    v
+    Ok(v)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -177,7 +183,13 @@ pub fn parse_wds(payload: &[u8]) -> Result<Vec<Window>> {
     Ok(out)
 }
 
-pub fn write_wds(w: &[Window]) -> Vec<u8> {
+pub fn write_wds(w: &[Window]) -> Result<Vec<u8>> {
+    if w.len() > u8::MAX as usize {
+        return Err(
+            StkError::simple(Domain::Pgs, 72, "WDS 窗口数量超过 8bit 字段上限")
+                .with_detail(format!("{} 个窗口，最多 255 个", w.len())),
+        );
+    }
     let mut v = vec![w.len() as u8];
     for x in w {
         v.push(x.id);
@@ -186,7 +198,7 @@ pub fn write_wds(w: &[Window]) -> Vec<u8> {
         v.extend_from_slice(&x.width.to_be_bytes());
         v.extend_from_slice(&x.height.to_be_bytes());
     }
-    v
+    Ok(v)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -446,7 +458,7 @@ mod tests {
                 })
                 .collect(),
         };
-        write_pcs(&p)
+        write_pcs(&p).unwrap()
     }
 
     #[test]
@@ -463,7 +475,7 @@ mod tests {
             assert_eq!(p.height, 1080);
             assert_eq!(p.objects.len(), 1);
             assert_eq!(p.payload_len(), bytes.len());
-            assert_eq!(write_pcs(&p), bytes, "PCS 重写必须逐字节相同");
+            assert_eq!(write_pcs(&p).unwrap(), bytes, "PCS 重写必须逐字节相同");
         }
         let multi = pcs_payload(1920, 1080, &[(1, false, false), (2, false, false)]);
         assert_eq!(multi.len(), 11 + 16);
@@ -499,7 +511,8 @@ mod tests {
                 y: 0,
                 crop: Some((1, 1, 0, 0)),
             }],
-        });
+        })
+        .unwrap();
         cropped_missing.truncate(19);
         assert_eq!(
             parse_pcs(&cropped_missing).unwrap_err().code_string(),
@@ -528,13 +541,49 @@ mod tests {
                 height: 1080,
             },
         ];
-        let bytes = write_wds(&w);
+        let bytes = write_wds(&w).unwrap();
         assert_eq!(bytes.len(), 1 + 18);
         assert_eq!(parse_wds(&bytes).unwrap(), w);
         assert_eq!(parse_wds(&[]).unwrap_err().code_string(), "STK-PGS-0054");
         let mut bad = bytes.clone();
         bad.push(0);
         assert_eq!(parse_wds(&bad).unwrap_err().code_string(), "STK-PGS-0055");
+    }
+
+    #[test]
+    fn serializers_reject_counts_that_do_not_fit_their_wire_fields() {
+        let object = CompositionObject {
+            object_id: 1,
+            window_id: 0,
+            cropped: false,
+            forced: false,
+            x: 0,
+            y: 0,
+            crop: None,
+        };
+        let pcs = Pcs {
+            width: 1920,
+            height: 1080,
+            frame_rate: 0x10,
+            composition_number: 0,
+            state: 0,
+            palette_update: 0,
+            palette_id: 0,
+            objects: vec![object; 256],
+        };
+        assert_eq!(write_pcs(&pcs).unwrap_err().code_string(), "STK-PGS-0071");
+
+        let window = Window {
+            id: 0,
+            x: 0,
+            y: 0,
+            width: 1,
+            height: 1,
+        };
+        assert_eq!(
+            write_wds(&vec![window; 256]).unwrap_err().code_string(),
+            "STK-PGS-0072"
+        );
     }
 
     #[test]
@@ -606,7 +655,8 @@ mod tests {
                     y: 800,
                     width: 200,
                     height: 50,
-                }]),
+                }])
+                .unwrap(),
             )
             .unwrap(),
             Segment::new(
@@ -664,7 +714,8 @@ mod tests {
                 y: 0,
                 width: 10,
                 height: 10,
-            }]),
+            }])
+            .unwrap(),
         )
         .unwrap()];
         assert_eq!(

@@ -116,7 +116,7 @@
 | codec-pgs `encoder`（Level 3 Basic Encoder） | 11 | PCS/WDS/PDS/ODS/END 结构自解析回读、erase display set、DTS<PTS、>64KB RLE 分片重组、>256 可分辨颜色硬失败 |
 | codec-pgs 差分新增 | 1 | 我们 encoder 的每个段都能被 `oxideav` 的 `read_segment` 逐字节读回，其 `decode_rle` 与我们的索引图一致 |
 
-真实来源锁：`reference-audit/SOURCE_AUDIT_LOCK.json`（libass master `f61db56…`，0.17.5，tarball SHA-256 已记）→ ISSUES F11 由"待解决"转为"部分已解决"。
+真实来源锁：`third_party/SOURCE_AUDIT_LOCK.json`（libass master `f61db56…`，0.17.5，tarball SHA-256 已记）→ ISSUES F11 由"待解决"转为"部分已解决"。
 
 ## 9. CLI（20）接入后的实测状态（2026-10-05）
 
@@ -144,7 +144,7 @@
 | codec-bdn（F030/B002） | BDN XML 流式解析（quick-xml，不解外部实体/不联网）、写出、PNG IHDR 尺寸一致性、路径与文件名安全、排序守卫、尺寸/画布守卫、LossReport | `tests/xml_safety.rs` 21、`png_consistency.rs` 12、`roundtrip.rs` 12、`ordering.rs` 7、`canvas.rs` 10、`paths.rs` 4、`timecode.rs` 10 |
 | core-model 修正 | `Time::to_bdn_timecode` / `BdnTimecode::to_time` 改成帧号语义（单一量化点），新增 `from_frame_index/to_frame_index` 与 99:59:59:99 拒绝 | `bdn_timecode_is_a_frame_index_not_wall_clock`、`bdn_timecode_roundtrips_exactly_on_the_frame_grid`（两小时帧网格逐帧往返） |
 | 解析器良构性 | 结束标签名字匹配检查；诊断路径保留原样大小写并指向元素自身 | `unclosed_tag_is_error_with_position`、`missing_required_fields_report_which_field_and_where` |
-| 来源锁 | `ass2bdnxml` master `6faa51e…` + tarball SHA-256 入库 | `reference-audit/SOURCE_AUDIT_LOCK.json` |
+| 来源锁 | `ass2bdnxml` master `6faa51e…` + tarball SHA-256 入库 | `third_party/SOURCE_AUDIT_LOCK.json` |
 
 仍未做（不要当成已完成）：BDN→PGS 的 ActualTime/RepeatCount 语义细化、Style 字体字段与 font-service 对接、`validator` 的 13 §6 分层严格校验、`render-libass`/`renderer-host`、Iced `app`、`pgs encode` 的 RGBA 输入链路。
 
@@ -280,7 +280,7 @@ nextest `Starting 606 tests across 37 binaries` 全过，release 构建产出 `t
 | 第三方实现能读懂我们渲染的 ASS，且语义一致 | `tools/subs_pysubs2_check.py verify`：pysubs2 1.8.1 读 `ours_a.ass`，比较 playres/sbs/title/样式字段/每条事件的时间、layer、style、name、三边距、effect、text | `pysubs2_reads_our_ass_and_we_read_pysubs2_ass` |
 | 我们读回参考实现写的 ASS/SRT | `emit` 由 pysubs2 产出 `ref_rich.ass`/`ref_plain.ass`/`ref.srt` + 语义 sidecar | 同上测试的第二半 + `srt_semantics_match_pysubs2_too` |
 | 表示差异 ≠ 语义差异 | `num()` 规范化 float（pysubs2 把 Fontsize 60 读成 60.0）；SRT 期望取自文件文本（pysubs2 会把 `<i>` 转成 `{\i1}`） | ISSUES U2/U3 |
-| 缺依赖不假装通过 | `STK_REQUIRE_PYSUBS2=1` + 门阶 `subs-cross-check`；`--strict` 下 SKIP 即 FAIL | `docs/REVIEW_GATES.md` |
+| 缺依赖不假装通过 | `STK_REQUIRE_PYSUBS2=1` + 门阶 `subs-cross-check`；`--strict` 下 SKIP 即 FAIL | `docs/history/2026-10-06/REVIEW_GATES.md` |
 
 ## 20. 渲染位图 → PGS 的整链路（12 §1A、09 §3、13 §4，2026-10-06）
 
@@ -297,7 +297,7 @@ nextest `Starting 606 tests across 37 binaries` 全过，release 构建产出 `t
 
 `RELEASE=1 bash tools/check_all.sh --strict` = **16 门阶 PASS（fail=0 skip=0，退出码 0）**；
 `cargo nextest run --workspace` = **649 tests run: 649 passed（1 leaky，见 ISSUES Z6）**；clippy `-D warnings` = 0；fmt 干净。（§22 的 CLI 接线之后是 654，以最后一条记录为准。）
-门阶 `render-real` 现在真的调 `ass-9.dll`（libass 0.17.5，ABI 与产物哈希锁在 `reference-audit/SOURCE_AUDIT_LOCK.json` 的 `native_build`）。
+门阶 `render-real` 现在真的调 `ass-9.dll`（libass 0.17.5，ABI 与产物哈希锁在 `third_party/SOURCE_AUDIT_LOCK.json` 的 `native_build`）。
 
 | 契约 | 取证 / 现象 | 证据 |
 |---|---|---|
@@ -414,7 +414,7 @@ AD9 那套重叠的第二机制已删除（一个语义只留一个调用点）�
 | 16 §2 的色彩字段 | 读**扁平**的 `color_transfer`/`color_primaries`/`color_space`(矩阵)/`color_range`；嵌套形式仅兜底 | `parses_the_captured_real_ffprobe_payload` 直接吃 `tests/fixtures/*.ffprobe.json`（真工具抓下来的原始输出）。这一条是补 BUG 的：此前按构想的嵌套 schema 解析，真二进制读出 `transfer=None`，HDR 判定全盲（ISSUES AF1） |
 | 16 §5 的二进制身份 | `FfprobeIdentity`（路径 + 大小 + 内容哈希），CLI 与 doctor 都按内容报 | `ffprobe_identity_is_reported_by_content_not_by_name`、`identity_digest_is_stable_and_detects_change` |
 | 依赖不可用要可报告 | 找不到二进制 → `STK-DEP-*`；`doctor` 报 `ffprobe_search_paths`（找过哪几处） | `probing_a_missing_file_reports_instead_of_hanging`、`missing_binary_yields_dependency_error_not_panic` |
-| 语料可复现 | `tools/make_probe_fixtures.sh`：三条 ffmpeg 命令 + 两份 ffprobe 原始 JSON + 自检 | 本机重跑得到同尺寸文件（828 KB 三个 mp4 + 两份 JSON）；二进制来源与 SHA-256 记在 `reference-audit/SOURCE_AUDIT_LOCK.json` |
+| 语料可复现 | `tools/make_probe_fixtures.sh`：三条 ffmpeg 命令 + 两份 ffprobe 原始 JSON + 自检 | 本机重跑得到同尺寸文件（828 KB 三个 mp4 + 两份 JSON）；二进制来源与 SHA-256 记在 `third_party/SOURCE_AUDIT_LOCK.json` |
 | 子进程的 stdout 与 stderr **都要一边跑一边排空**，否则话多的进程会把我们锁死在 `wait`（D10） | `runner.rs::spawn_and_read`：两条读线程，`wait` 之后从各自通道取文本；超时分支只在 Job Object 约束住时才 join 线程，否则留下线程并如实报 `TimeoutUncontained`（Z6） | `chatty_stderr_does_not_deadlock_the_wait`（假 probe 吐 200 KB stderr，判据是 25 s 的时间上界；反向验证过：顺序改回"先 wait 后读"时该测试以 25.01 s 失败）、`timeout_kills_child`、`nonzero_exit_is_reported_with_stderr` |
 | 28 §7 CI 等价 | 新门阶 `probe-real`：无 ffprobe 时 SKIP，`--strict` 下 SKIP 即 FAIL | 梯子的第 15 条（当时的总数是 19；加进 `font-scan` 之后是 20） |
 

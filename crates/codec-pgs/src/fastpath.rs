@@ -129,7 +129,7 @@ fn move_pcs(payload: &[u8], dx: i32, dy: i32) -> Result<Vec<u8>> {
         o.x = move_coord(o.x as i64, dx)? as u16;
         o.y = move_coord(o.y as i64, dy)? as u16;
     }
-    Ok(write_pcs(&p))
+    write_pcs(&p)
 }
 
 fn move_wds(payload: &[u8], dx: i32, dy: i32, canvas: Option<(u32, u32)>) -> Result<Vec<u8>> {
@@ -161,7 +161,7 @@ fn move_wds(payload: &[u8], dx: i32, dy: i32, canvas: Option<(u32, u32)>) -> Res
         win.x = nx as u16;
         win.y = ny as u16;
     }
-    Ok(write_wds(&w))
+    write_wds(&w)
 }
 
 fn move_coord(v: i64, d: i32) -> Result<i64> {
@@ -183,7 +183,7 @@ fn set_forced(payload: &[u8], forced: bool) -> Result<Vec<u8>> {
     for o in &mut p.objects {
         o.forced = forced;
     }
-    Ok(write_pcs(&p))
+    write_pcs(&p)
 }
 
 /// 13 §3.1：任何自称无损快速路径的输出，ODS 数量、顺序与 payload 摘要必须完全一致。
@@ -331,7 +331,7 @@ mod tests {
             palette_id: 0,
             objects: objs,
         };
-        Segment::new(900_000, 900_000, SEG_PCS, write_pcs(&p)).unwrap()
+        Segment::new(900_000, 900_000, SEG_PCS, write_pcs(&p).unwrap()).unwrap()
     }
 
     fn obj(id: u16, x: u16, y: u16, forced: bool) -> CompositionObject {
@@ -357,7 +357,8 @@ mod tests {
                 y,
                 width: w,
                 height: h,
-            }]),
+            }])
+            .unwrap(),
         )
         .unwrap()
     }

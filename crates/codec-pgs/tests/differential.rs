@@ -63,7 +63,7 @@ fn our_parser_reads_reference_output() {
 #[test]
 fn palette_structure_matches_reference_and_range_difference_is_measured() {
     // 结构层面必须完全一致；数值层面发现参考实现用 full-range（Y 直映 0..255），
-    // 而 Blu-ray PGS 约定是 limited range（Y 16..235）。差异已登记 docs/ISSUES.md C16，
+    // 而 Blu-ray PGS 约定是 limited range（Y 16..235）。差异已登记 docs/history/2026-10-06/ISSUES.md C16，
     // 需要真盘语料/播放器裁决，不能靠"两家都能读自己的输出"当正确性证明。
     let bytes = ox_stream((1920, 1080), (120, 40), (0, 0), 1);
     let segs = parse_stream(&bytes).unwrap();
@@ -114,7 +114,7 @@ fn rle_interops_with_reference_in_both_directions() {
         pixels,
         "参考实现的 RLE 我们必须正确解出"
     );
-    // 参考实现既不写也不认 00 00 FF FF 图末标记（docs/ISSUES.md C17）：
+    // 参考实现既不写也不认 00 00 FF FF 图末标记（docs/history/2026-10-06/ISSUES.md C17）：
     // 去掉标记后喂给它，验证四种码型它都认同我们。
     let mut ours_no_marker = ours.clone();
     assert!(ours_no_marker.ends_with(&[0x00, 0x00, 0xFF, 0xFF]));
@@ -183,7 +183,7 @@ fn our_fast_path_output_still_parses_as_reference() {
     let out = codec_pgs::segment::write_stream(&after).unwrap();
     let re = parse_stream(&out).unwrap();
     let pcs = parse_pcs(&re.iter().find(|s| s.seg_type == SEG_PCS).unwrap().payload).unwrap();
-    // 参考实现把窗口写成整画布，因此对它的输出做 MoveBy 必然越界（见 docs/ISSUES.md C18）；
+    // 参考实现把窗口写成整画布，因此对它的输出做 MoveBy 必然越界（见 docs/history/2026-10-06/ISSUES.md C18）；
     // 平移的正确性由 fastpath 自己的单元测试覆盖。
     assert_eq!((pcs.objects[0].x, pcs.objects[0].y), (900, 980));
     assert!(pcs.objects[0].forced);
@@ -228,14 +228,16 @@ fn our_written_stream_is_readable_by_reference_decoder_api() {
             y: 900,
             crop: None,
         }],
-    });
+    })
+    .unwrap();
     let wds = codec_pgs::display_set::write_wds(&[codec_pgs::display_set::Window {
         id: 0,
         x: 40,
         y: 900,
         width: 80,
         height: 10,
-    }]);
+    }])
+    .unwrap();
     let mut ods = vec![0x00, 0x05, 0x00, 0xC0];
     let dl = (rle_bytes.len() + 4) as u32;
     ods.push(((dl >> 16) & 0xff) as u8);
@@ -273,7 +275,7 @@ fn our_written_stream_is_readable_by_reference_decoder_api() {
     }
     assert_eq!(n, 5);
     let mut theirs_input = rle_bytes.clone();
-    theirs_input.truncate(theirs_input.len() - 2); // 参考实现不认图末 FF FF（docs/ISSUES.md C17）
+    theirs_input.truncate(theirs_input.len() - 2); // 参考实现不认图末 FF FF（docs/history/2026-10-06/ISSUES.md C17）
     let decoded = oxideav_sub_image::pgs::decode_rle(&theirs_input, 80, 10).unwrap();
     assert_eq!(decoded, idx);
 }

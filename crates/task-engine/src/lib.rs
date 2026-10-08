@@ -80,7 +80,7 @@ impl NameTemplate {
         })
     }
 
-    pub const DEFAULT: &'static str = "{stem}{suffix}.{ext}";
+    pub const DEFAULT: &'static str = "{stem}.{ext}";
 
     pub fn render(&self, f: &NameFields) -> Result<String, StkError> {
         if f.stem.is_empty() {
@@ -265,21 +265,40 @@ impl AtomicOutput {
                 .with_action("核对那个临时文件后自行删除它"));
         }
 
-        if target.exists() && self.policy == OverwritePolicy::ReplaceAfterVerify {
+        let backup = if target.exists() && self.policy == OverwritePolicy::ReplaceAfterVerify {
             let backup = backup_path(&target)?;
             std::fs::rename(&target, &backup).map_err(|e| {
                 StkError::from(e).with_detail(format!("备份失败 -> {}", backup.display()))
             })?;
-        }
-        std::fs::rename(&self.tmp_path, &target).map_err(|e| {
-            StkError::from(e).with_detail(format!(
-                "rename {} -> {}",
-                self.tmp_path.display(),
-                target.display()
-            ))
-        })?;
+            Some(backup)
+        } else {
+            None
+        };
+        install_with_rollback(&self.tmp_path, &target, backup.as_deref())?;
         Ok(Commit::Written(target))
     }
+}
+
+fn install_with_rollback(tmp: &Path, target: &Path, backup: Option<&Path>) -> Result<(), StkError> {
+    if let Err(install_error) = std::fs::rename(tmp, target) {
+        let install_detail = format!("rename {} -> {}", tmp.display(), target.display());
+        return match backup {
+            Some(backup) => match std::fs::rename(backup, target) {
+                Ok(()) => Err(StkError::from(install_error).with_detail(format!(
+                    "{install_detail}；旧目标已恢复到 {}；新文件仍在临时文件：{}",
+                    target.display(),
+                    tmp.display()
+                ))),
+                Err(restore_error) => Err(StkError::from(install_error).with_detail(format!(
+                    "{install_detail}；恢复旧目标失败：{restore_error}；旧文件仍在备份：{}；新文件仍在临时文件：{}",
+                    backup.display(),
+                    tmp.display()
+                ))),
+            },
+            None => Err(StkError::from(install_error).with_detail(install_detail)),
+        };
+    }
+    Ok(())
 }
 
 #[derive(Debug)]
@@ -364,6 +383,17 @@ mod tests {
             t.render(&f).unwrap(),
             "movie.BD-SUP.1920x1080.23.976.HDR.sup"
         );
+    }
+
+    #[test]
+    fn default_template_uses_only_supported_tokens() {
+        let template = NameTemplate::new(NameTemplate::DEFAULT).unwrap();
+        let fields = NameFields {
+            stem: "movie".into(),
+            ext: "sup".into(),
+            ..Default::default()
+        };
+        assert_eq!(template.render(&fields).unwrap(), "movie.sup");
     }
 
     #[test]
@@ -520,6 +550,25 @@ mod tests {
             Commit::Written(_)
         ));
         assert_eq!(std::fs::read(&target).unwrap(), b"NEW");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn failed_install_reports_backup_when_rollback_is_blocked() {
+        let dir = tmpdir("rollback");
+        let tmp = dir.join("new.tmp");
+        let target = dir.join("out.srt");
+        let backup = dir.join("out.srt.bak-test");
+        std::fs::write(&tmp, b"NEW").unwrap();
+        std::fs::write(&backup, b"OLD").unwrap();
+        std::fs::create_dir(&target).unwrap();
+
+        let error = install_with_rollback(&tmp, &target, Some(&backup)).unwrap_err();
+        let details = error.details.join("\n");
+        assert!(details.contains(&backup.display().to_string()), "{details}");
+        assert!(details.contains(&tmp.display().to_string()), "{details}");
+        assert_eq!(std::fs::read(&backup).unwrap(), b"OLD");
+        assert!(tmp.is_file());
         std::fs::remove_dir_all(&dir).ok();
     }
 

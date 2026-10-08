@@ -96,10 +96,23 @@ pub(crate) fn render_to_plan(job: &RenderJob<'_>) -> Result<Rendered> {
         Some(p) => p.to_path_buf(),
         None => run::libass_dll(None)?,
     };
-    let mut provider =
-        render_libass::Provider::open(&dll_path, job.canvas, job.canvas, job.default_font)?;
+    let host_exe = run::renderer_host_exe().ok_or_else(|| {
+        StkError::simple(Domain::Render, 89, "找不到 renderer-host")
+            .with_detail("实际渲染必须通过 subtitletool-render-host.exe 隔离运行")
+            .with_action("构建 renderer-host 并设置 STK_RENDERER_HOST，或将它放在 CLI 同目录")
+    })?;
+    let spec = renderer_host::client::HostSpec {
+        host_exe: &host_exe,
+        dll: &dll_path,
+        storage: job.canvas,
+        output: job.canvas,
+        default_font: job.default_font,
+        timeout: std::time::Duration::from_secs(30),
+    };
+    let mut host = renderer_host::client::Host::start(&spec).map_err(render_host_error)?;
     // 17 §7：把"我们解析到并读过的那份字节"直接交给 libass。
     // 顺序有讲究：注入必须在 load_script 之前，轨道建立时才会把内存字体算进选择结果。
+    let mut injected = Vec::new();
     if let Some(list) = job.inject {
         for f in list {
             // 内嵌字体用脚本里那份字节；库里的 face 才去读盘（两条路都汇到同一个核对）
@@ -129,39 +142,61 @@ pub(crate) fn render_to_plan(job: &RenderJob<'_>) -> Result<Rendered> {
                 ))
                 .with_action("重跑 font scan 取得新身份，或去掉 --inject-fonts"));
             }
-            provider.add_font(&f.family, bytes)?;
+            let count = host.add_font(&f.family, bytes).map_err(render_host_error)?;
+            if count != bytes.len() {
+                return Err(StkError::simple(
+                    Domain::Render,
+                    90,
+                    "renderer-host 注入字体字节数不符",
+                )
+                .with_detail(format!(
+                    "{}：发送 {} 字节，host 接收 {count} 字节",
+                    f.family,
+                    bytes.len()
+                )));
+            }
+            injected.push(render_libass::InjectedFont {
+                name: f.family.clone(),
+                bytes: count,
+                sha256: now,
+            });
         }
     }
-    let injected = provider.injected().to_vec();
-    let script = provider.load_script(loaded.text.as_bytes())?;
+    host.load_script(loaded.text.as_bytes())
+        .map_err(render_host_error)?;
 
-    let mut samples = Vec::new();
+    let mut builder = pgs_author::PlanBuilder::new(pgs_author::AuthorOptions {
+        stream_end: Time::from_millis(grid.stream_end_ms)?,
+    });
+    let mut sample_count = 0usize;
     for ms in grid.render_ms() {
         let t = Time::from_millis(*ms)?;
-        let r = render_libass::render(&script, t, job.canvas)?;
+        let rendered = host.render(*ms).map_err(render_host_error)?;
         // 渲染层的量化/裁剪记账必须并进来，否则 CLI 看到的只是后半截
-        loss.merge(&r.loss);
-        samples.push(pgs_author::Sample::new(t, r.frame));
-        // 采样点数是 帧率×时长 的量，长素材会到几十万帧；这里不做隐式上限，
-        // 因为"悄悄少渲染几帧"比"慢"危险得多（37 §容量另计）
+        loss.merge(&rendered.loss);
+        let frame = Frame::new(job.canvas, rendered.rgba)?;
+        builder.push(pgs_author::Sample::new(t, frame))?;
+        sample_count += 1;
     }
-    samples.push(pgs_author::Sample::new(
+    builder.push(pgs_author::Sample::new(
         Time::from_millis(grid.blank_ms)?,
         Frame::empty(job.canvas)?,
-    ));
-    let plan = pgs_author::plan(
-        &samples,
-        &pgs_author::AuthorOptions {
-            stream_end: Time::from_millis(grid.stream_end_ms)?,
-        },
-    )?;
+    ))?;
+    sample_count += 1;
+    host.shutdown().map_err(render_host_error)?;
+    let plan = builder.finish()?;
     Ok(Rendered {
         plan,
         loss,
-        samples: samples.len(),
+        samples: sample_count,
         grid,
         injected,
     })
+}
+
+fn render_host_error(error: renderer_host::client::HostFailure) -> StkError {
+    let title = error.title();
+    StkError::simple(Domain::Render, 91, &title).with_detail(format!("{}：{error:?}", error.code()))
 }
 
 /// 一次批量任务内的渲染记忆化。

@@ -97,14 +97,16 @@ mod tests {
                 y: 900,
                 crop: None,
             }],
-        });
+        })
+        .unwrap();
         let wds = write_wds(&[Window {
             id: 0,
             x: 120,
             y: 900,
             width: 400,
             height: 70,
-        }]);
+        }])
+        .unwrap();
         let pal = write_pds(&Palette {
             id: 0,
             version: 0,

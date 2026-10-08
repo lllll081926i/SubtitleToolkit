@@ -1,6 +1,6 @@
 //! `ASS_Image` 链表 → 完整 16:9 RGBA 画布（12 §1A、09 §3）。
 //!
-//! 取证来源：`reference-audit/libass-master.tar.gz`（libass 0.17.5，SHA-256 见
+//! 取证来源：`third_party/sources/libass-master.tar.gz`（libass 0.17.5，SHA-256 见
 //! `SOURCE_AUDIT_LOCK.json`）。本模块的行为必须与下面四条一致：
 //! - `libass/ass.h:53-56`："These images have to be rendered **in-order** for the correct
 //!   screen composition"；"w/h can be zero, in this case the bitmap should not be

@@ -1,5 +1,7 @@
 # Preset、配置与可重放任务 Schema
 
+本文是目标 schema 草案。当前 CLI 不读取或写入 preset，GUI 与任务持久化也未实现。示例里的 `special-auto` renderer 和 `strict` PGS 校验表示未来配置场景，不表示当前能执行；当前能力见[功能矩阵](03_FEATURE_MATRIX.md)。
+
 ## 1. 配置分层
 - AppSettings：全局偏好；
 - ToolDefaults：每个工具默认；

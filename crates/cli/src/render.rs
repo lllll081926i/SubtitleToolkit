@@ -215,6 +215,8 @@ pub(crate) fn run_render(
     // 身份要进报告与缓存 key，注入要在 libass 读轨道之前把字节交出去。
     // 顺序不是风格问题 —— 渲染已经发生之后再算身份，那份身份只是事后追认。
     let text = pipeline::load_text(input)?.text;
+    // 缺少或错误的 DLL 应先失败，不应触发整套系统字体扫描。
+    let dll_path = crate::run::libass_dll(args.dll)?;
     let mut scanner = crate::fontenv::Scanner::with_cache(crate::fontenv::cache_mode(inv));
     let (font_env, env_ms) = scanner.env_for(&text)?;
     let plan = if inv.inject_fonts {
@@ -222,7 +224,15 @@ pub(crate) fn run_render(
     } else {
         None
     };
-    let built = build(args, shared, plan.as_deref())?;
+    let ready_args = RenderArgs {
+        input,
+        fps,
+        canvas,
+        dll: Some(&dll_path),
+        default_font: args.default_font,
+        min_axis,
+    };
+    let built = build(&ready_args, shared, plan.as_deref())?;
     let stem = input
         .file_stem()
         .and_then(|s| s.to_str())

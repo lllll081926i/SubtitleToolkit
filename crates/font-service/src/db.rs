@@ -61,7 +61,7 @@ pub struct FaceRecord {
     pub style_name: String,
     /// 所有平台/语言下的家族名（含中文本地化名，如"微软雅黑"）
     pub family_aliases: Vec<String>,
-    /// `OS/2.usWeightClass`：100…1000，400 常规、700 粗体
+    /// `OS/2.usWeightClass`：1…1000；常见等级为 100 的倍数，400 常规、700 粗体。
     pub weight: u16,
     pub italic: bool,
     /// `OS/2.usWidthClass`：1…9，**5 才是常规**。

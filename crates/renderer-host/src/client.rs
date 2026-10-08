@@ -18,6 +18,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use core_model::canvas::Canvas;
+use core_model::loss::LossReport;
 use sha2::{Digest as _, Sha256};
 
 use crate::pe::{self, PeArch};
@@ -109,6 +110,7 @@ pub struct Frame {
     /// libass 的 `detect_change` 原值，只当 fast hint 用（12 §8）
     pub detect_change: i32,
     pub images: usize,
+    pub loss: LossReport,
 }
 
 /// 一个活着的 host 会话。
@@ -161,20 +163,8 @@ impl Host {
 
         // 读线程 + 通道：这样"等回应"可以有超时，而不是把调用方挂死在 read 上。
         // 读线程同时把 EOF 变成一个明确的错误消息，让"host 崩了"与"host 还在想"区分得开。
-        let (tx, rx) = mpsc::channel();
-        std::thread::spawn(move || loop {
-            let outcome = match protocol::read_message(&mut stdout) {
-                Ok(None) => Err(io::Error::new(
-                    io::ErrorKind::UnexpectedEof,
-                    "host 关闭了控制面",
-                )),
-                Ok(Some(msg)) => Ok(msg),
-                Err(e) => Err(e),
-            };
-            if tx.send(outcome).is_err() {
-                break;
-            }
-        });
+        let (tx, rx) = mpsc::sync_channel(1);
+        std::thread::spawn(move || receive_messages(&mut stdout, tx));
         let stderr = Arc::new(Mutex::new(Vec::new()));
         let sink = Arc::clone(&stderr);
         std::thread::spawn(move || {
@@ -184,6 +174,16 @@ impl Host {
                     Ok(0) => break,
                     Ok(n) => {
                         if let Ok(mut g) = sink.lock() {
+                            const STDERR_TAIL_LIMIT: usize = 64 * 1024;
+                            if n >= STDERR_TAIL_LIMIT {
+                                g.clear();
+                                g.extend_from_slice(&buf[n - STDERR_TAIL_LIMIT..n]);
+                                continue;
+                            }
+                            if g.len() + n > STDERR_TAIL_LIMIT {
+                                let excess = g.len() + n - STDERR_TAIL_LIMIT;
+                                g.drain(..excess);
+                            }
                             g.extend_from_slice(&buf[..n]);
                         }
                     }
@@ -277,8 +277,30 @@ impl Host {
         protocol::write_message(&mut self.stdin, &Message::Blob(ass.to_vec()))?;
         match self.recv()? {
             Response::ScriptLoaded { bytes } => Ok(bytes),
+            Response::Error { code, title } => Err(HostFailure::Protocol(format!(
+                "host 拒绝加载脚本 {code}：{title}"
+            ))),
             other => Err(HostFailure::Protocol(format!(
                 "LoadScript 收到意外消息 {other:?}"
+            ))),
+        }
+    }
+
+    pub fn add_font(&mut self, family: &str, bytes: &[u8]) -> Result<usize, HostFailure> {
+        protocol::write_message(
+            &mut self.stdin,
+            &protocol::to_json(&Request::AddFont {
+                family: family.to_string(),
+            })?,
+        )?;
+        protocol::write_message(&mut self.stdin, &Message::Blob(bytes.to_vec()))?;
+        match self.recv()? {
+            Response::FontAdded { bytes } => Ok(bytes),
+            Response::Error { code, title } => Err(HostFailure::Protocol(format!(
+                "host 拒绝注入字体 {code}：{title}"
+            ))),
+            other => Err(HostFailure::Protocol(format!(
+                "AddFont 收到意外消息 {other:?}"
             ))),
         }
     }
@@ -288,14 +310,16 @@ impl Host {
             &mut self.stdin,
             &protocol::to_json(&Request::Render { pts_ms })?,
         )?;
-        let (w, h, digest, detect_change, images) = match self.recv()? {
+        let (w, h, frame_bytes, digest, detect_change, images, loss) = match self.recv()? {
             Response::Frame {
                 width,
                 height,
+                bytes,
                 digest,
                 detect_change,
                 images,
-            } => (width, height, digest, detect_change, images),
+                loss,
+            } => (width, height, bytes, digest, detect_change, images, loss),
             Response::Error { code, title } => {
                 return Err(HostFailure::Protocol(format!(
                     "host 渲染失败 {code}：{title}"
@@ -307,20 +331,35 @@ impl Host {
                 )))
             }
         };
-        let body = match self.recv_msg()? {
-            Message::Blob(b) => b,
-            Message::Text(t) => {
-                return Err(HostFailure::Protocol(format!(
-                    "期望 RGBA 负载，收到文本 {t}"
-                )))
-            }
-        };
-        let expected = (w as usize) * (h as usize) * 4;
-        if body.len() != expected {
+        let expected = (w as usize)
+            .checked_mul(h as usize)
+            .and_then(|pixels| pixels.checked_mul(4))
+            .ok_or_else(|| HostFailure::Protocol("host 帧尺寸乘法溢出".to_string()))?;
+        if frame_bytes != expected {
             return Err(HostFailure::Protocol(format!(
-                "帧长度 {} 与声明的 {w}x{h} RGBA 需要的 {expected} 不符",
-                body.len()
+                "帧长度 {frame_bytes} 与声明的 {w}x{h} RGBA 需要的 {expected} 不符"
             )));
+        }
+        let mut body = Vec::new();
+        body.try_reserve_exact(expected)
+            .map_err(|e| HostFailure::Protocol(format!("无法分配 {expected} 字节帧：{e}")))?;
+        while body.len() < expected {
+            let chunk = match self.recv_msg()? {
+                Message::Blob(b) => b,
+                Message::Text(t) => {
+                    return Err(HostFailure::Protocol(format!(
+                        "期望 RGBA 字节块，收到文本 {t}"
+                    )))
+                }
+            };
+            let remaining = expected - body.len();
+            if chunk.is_empty() || chunk.len() > remaining {
+                return Err(HostFailure::Protocol(format!(
+                    "RGBA 字节块长度非法：{}，剩余 {remaining}",
+                    chunk.len()
+                )));
+            }
+            body.extend_from_slice(&chunk);
         }
         let mut hasher = Sha256::new();
         hasher.update(&body);
@@ -340,6 +379,7 @@ impl Host {
             rgba: body,
             detect_change,
             images,
+            loss,
         })
     }
 
@@ -455,6 +495,23 @@ impl Host {
     }
 }
 
+fn receive_messages(reader: &mut impl Read, tx: mpsc::SyncSender<io::Result<Message>>) {
+    loop {
+        let outcome = match protocol::read_message(reader) {
+            Ok(None) => Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "host 关闭了控制面",
+            )),
+            Ok(Some(msg)) => Ok(msg),
+            Err(e) => Err(e),
+        };
+        let terminal = outcome.is_err();
+        if tx.send(outcome).is_err() || terminal {
+            break;
+        }
+    }
+}
+
 impl Drop for Host {
     fn drop(&mut self) {
         // 顺序要紧：先让直接子进程退出，再关 Job 句柄带走可能的孙进程
@@ -521,6 +578,51 @@ fn arch_text(a: PeArch) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(windows)]
+    #[test]
+    fn closed_pipe_reports_eof_once_and_stops_the_reader() {
+        let (tx, rx) = mpsc::sync_channel(1);
+        let reader = std::thread::spawn(move || {
+            let mut child =
+                Command::new(std::env::var_os("COMSPEC").unwrap_or_else(|| "cmd.exe".into()))
+                    .args(["/D", "/C", "exit 0"])
+                    .stdout(Stdio::piped())
+                    .spawn()
+                    .unwrap();
+            receive_messages(&mut child.stdout.take().unwrap(), tx);
+            assert!(child.wait().unwrap().success());
+        });
+        let error = rx
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
+        assert!(matches!(
+            rx.recv_timeout(Duration::from_secs(10)),
+            Err(RecvTimeoutError::Disconnected)
+        ));
+        reader.join().unwrap();
+    }
+
+    #[test]
+    fn truncated_payload_reports_one_error_and_does_not_retry_the_stream() {
+        let (tx, rx) = mpsc::sync_channel(1);
+        let reader = std::thread::spawn(move || {
+            let mut bytes = std::io::Cursor::new([protocol::TAG_BLOB, 2, 0, 0, 0, 7]);
+            receive_messages(&mut bytes, tx);
+        });
+        let error = rx
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap()
+            .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::UnexpectedEof);
+        assert!(matches!(
+            rx.recv_timeout(Duration::from_secs(10)),
+            Err(RecvTimeoutError::Disconnected)
+        ));
+        reader.join().unwrap();
+    }
 
     #[test]
     fn bitness_gate_accepts_only_matching_known_pairs() {

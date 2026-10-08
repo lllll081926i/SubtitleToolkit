@@ -338,6 +338,180 @@ impl Plan {
 }
 
 /// 规划 + 编码 + 自检（13 §6 的第 1-4、6 层）。
+struct ActiveRun {
+    start: Time,
+    digest: Digest,
+    patch: Option<Patch>,
+    samples: usize,
+}
+
+/// 增量规划器。每次只保留当前 run 的 tight patch，完整 RGBA 帧可立即释放。
+pub struct PlanBuilder {
+    options: AuthorOptions,
+    active: Option<ActiveRun>,
+    last_at: Option<Time>,
+    sample_count: usize,
+    run_count: usize,
+    events: Vec<Event>,
+    seen: Vec<Digest>,
+    stats: PlanStats,
+    loss: LossReport,
+}
+
+impl PlanBuilder {
+    pub fn new(options: AuthorOptions) -> PlanBuilder {
+        PlanBuilder {
+            options,
+            active: None,
+            last_at: None,
+            sample_count: 0,
+            run_count: 0,
+            events: Vec::new(),
+            seen: Vec::new(),
+            stats: PlanStats::default(),
+            loss: LossReport::new(),
+        }
+    }
+
+    pub fn push(&mut self, sample: Sample) -> Result<()> {
+        if let Some(prev) = self.last_at {
+            if sample.at <= prev {
+                return Err(err(111, "渲染采样时间不是严格递增")
+                    .with_detail(format!("采样 {} 不晚于前一个点", self.sample_count))
+                    .with_action(
+                        "采样必须来自 render-api 的有序时间线计划；重复或倒序点会产出非法 PTS",
+                    ));
+            }
+        }
+
+        let patch = sample.frame.crop()?;
+        let digest = patch.as_ref().map(digest_of).unwrap_or_else(empty_digest);
+        self.sample_count += 1;
+
+        if let Some(active) = self.active.as_mut() {
+            if active.digest == digest {
+                active.samples += 1;
+            } else {
+                let next = ActiveRun {
+                    start: sample.at,
+                    digest,
+                    patch,
+                    samples: 1,
+                };
+                let current = self.active.replace(next).expect("active run was checked");
+                self.finish_run(current, sample.at)?;
+            }
+        } else {
+            self.active = Some(ActiveRun {
+                start: sample.at,
+                digest,
+                patch,
+                samples: 1,
+            });
+        }
+        self.last_at = Some(sample.at);
+        Ok(())
+    }
+
+    pub fn finish(mut self) -> Result<Plan> {
+        let last = self.last_at.ok_or_else(|| err(110, "没有任何渲染采样"))?;
+        if self.options.stream_end <= last {
+            return Err(
+                err(112, "stream_end 必须晚于最后一个采样点").with_detail(format!(
+                    "最后采样 PTS {} tick，stream_end PTS {} tick",
+                    last.to_pts_ticks().unwrap_or(i64::MIN),
+                    self.options.stream_end.to_pts_ticks().unwrap_or(i64::MAX)
+                )),
+            );
+        }
+        let final_run = self.active.take().expect("a sample created an active run");
+        self.finish_run(final_run, self.options.stream_end)?;
+        self.stats.samples = self.sample_count;
+        self.stats.events = self.events.len();
+        self.stats.eliminated = self
+            .stats
+            .eliminated
+            .saturating_add(self.sample_count.saturating_sub(self.run_count));
+
+        if self.stats.eliminated > 0 {
+            self.loss.dropped(&format!(
+                "重复视觉事件消除：{} 个采样点并入相邻事件（13 §5）",
+                self.stats.eliminated
+            ));
+        }
+        if self.stats.leading_erase_dropped > 0 {
+            self.loss.dropped(&format!(
+                "开头 {} 段空白没有可擦除内容，丢弃 erase 显示集",
+                self.stats.leading_erase_dropped
+            ));
+        }
+        if self.stats.reuse_hint > 0 {
+            self.loss.user_attention(&format!(
+                "{} 次内容重复但被空白段隔开：Advanced Author 的 object reuse 未实现（13 §5），这里只提示不改流",
+                self.stats.reuse_hint
+            ));
+        }
+        if self.events.is_empty() {
+            self.loss.dropped("整条流都是空白：不产出任何显示集");
+        }
+        Ok(Plan {
+            events: self.events,
+            stats: self.stats,
+            loss: self.loss,
+        })
+    }
+
+    fn finish_run(&mut self, run: ActiveRun, end: Time) -> Result<()> {
+        self.run_count += 1;
+        if run.digest == empty_digest() {
+            if self.events.is_empty() {
+                self.stats.leading_erase_dropped += 1;
+                return Ok(());
+            }
+            if self
+                .events
+                .last()
+                .is_some_and(|event| event.kind == EventKind::Erase)
+            {
+                self.stats.eliminated = self.stats.eliminated.saturating_add(run.samples);
+                return Ok(());
+            }
+            self.stats.erase_events += 1;
+            self.events.push(Event {
+                start: run.start,
+                end,
+                kind: EventKind::Erase,
+                digest: run.digest,
+                patch: None,
+                merged_samples: run.samples,
+            });
+            return Ok(());
+        }
+
+        if self
+            .seen
+            .last()
+            .is_some_and(|previous| *previous == run.digest)
+        {
+            self.stats.reuse_hint += 1;
+        }
+        let patch = run
+            .patch
+            .ok_or_else(|| err(113, "非空指纹却没有 bbox（内部不一致）"))?;
+        self.stats.image_events += 1;
+        self.events.push(Event {
+            start: run.start,
+            end,
+            kind: EventKind::Image,
+            digest: run.digest,
+            patch: Some(patch),
+            merged_samples: run.samples,
+        });
+        self.seen.push(run.digest);
+        Ok(())
+    }
+}
+
 pub fn author(
     samples: &[Sample],
     aopt: &AuthorOptions,

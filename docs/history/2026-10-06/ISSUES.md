@@ -86,8 +86,8 @@
 | F8 | 40 §4.3 / 13 §3.3：所谓 tonemap 只是 limited-range Y 标量缩放，彩色字幕不可靠 | 旧 AssRocket 的"SUP 亮度调整"正是这个语义 | UI/CLI 名称拆成 `Brightness (Luma only)` 与 `HDR/Color-managed palette transform`；后者需 Y/Cr/Cb→linear→目标→重量化 | 未开始 | P1 |
 | F9 | 13 §5.1：SUPer 的"最大码率"是输出后测试，不是主动 shaping | 无既有代码 | 命名强制分离：`PeakBitrateValidator`（测量/报错）与未来的 `BitrateShapingPolicy`；不得出现"设了 max bitrate 就一定能压到"的暗示 | 未开始 | P2 |
 | F10 | 40 §5.2：字体 subset 必须过 GSUB/GPOS/ligature/Arabic/Indic/combining/vertical/variable/CFF2/TTC 等价测试，失败即回退整字体 | 登记时尚无 font-service。**现状更新（2026-10-06）**：`crates/font-service` 已交付 17 §2-§4 的建库/用量/评级并被门阶 `font-scan` 跑，但 subset 与它的等价 corpus 一行都没有（AG2），`font subset` 仍是占位命令 | 列入 Phase 6 门禁；"子集体积最小"永远让位于"渲染等价" | 未解决（subset 部分未开始） | P1 |
-| F11 | 40 §11：参考仓库必须锁 commit SHA 并存 `SOURCE_AUDIT_LOCK.json`；沙箱当时不能 clone | libass 已通过 `codeload.github.com` 取到（master `f61db56…`，RELEASEVERSION 0.17.5，tarball 已存 `reference-audit/`）；ass2bdnxml/SupMover/VSFilterMod/csri.h 仍未锁 | 已建 `reference-audit/SOURCE_AUDIT_LOCK.json`；其余仓库待逐个抓取后补条目 | 部分已解决 | P1 |
-| F12 | 39 新增 V3.1 Gate 清单（12 条） | — | 已并入 `docs/TRACEABILITY.md` 的审查门禁；逐条在实现后勾选并附测试名 | 进行中 | P0 |
+| F11 | 40 §11：参考仓库必须锁 commit SHA 并存 `SOURCE_AUDIT_LOCK.json`；沙箱当时不能 clone | libass 已通过 `codeload.github.com` 取到（master `f61db56…`，RELEASEVERSION 0.17.5，tarball 已存 `reference-audit/`）；ass2bdnxml/SupMover/VSFilterMod/csri.h 仍未锁 | 已建 `third_party/SOURCE_AUDIT_LOCK.json`；其余仓库待逐个抓取后补条目 | 部分已解决 | P1 |
+| F12 | 39 新增 V3.1 Gate 清单（12 条） | — | 已并入 `docs/history/2026-10-06/TRACEABILITY.md` 的审查门禁；逐条在实现后勾选并附测试名 | 进行中 | P0 |
 
 ## G. codec-pgs 实现期的取证与缺陷（本轮）
 
@@ -105,7 +105,7 @@
 
 ## H. libass 源码取证（T030 分辨率重写，2026-10-05）
 
-来源已锁：`reference-audit/SOURCE_AUDIT_LOCK.json`（libass master commit `f61db567e6593df3470e91594bcd4ad2d0473aff`，RELEASEVERSION 0.17.5，tarball 随仓库保存）。行号均指该 commit。
+来源已锁：`third_party/SOURCE_AUDIT_LOCK.json`（libass master commit `f61db567e6593df3470e91594bcd4ad2d0473aff`，RELEASEVERSION 0.17.5，tarball 随仓库保存）。行号均指该 commit。
 
 | # | 问题 | 取证结果 | 处理 | 状态 | 优先级 |
 |---|---|---|---|---|---|
@@ -211,7 +211,7 @@
 | O2 | 门阶里的 CLI 断言是我凭空写的开关名和输出文件名（`--offset`、`a.stk-ass.ass`） | 真跑才炸：CLI 实际是 `--offset-ms`，默认输出名由 `run.rs` 的 `{stem}.stk-{ext}` 规则决定 | 改为先读 `args.rs`/`run.rs` 的真实契约再写断言，并显式传 `--out` 不依赖命名规则。教训：写验收脚本前必须回到实现取证，同 M2 一个道理 | 已解决 | P1 |
 | O3 | `cargo install cargo-deny cargo-nextest` 一起装失败 | 日志是 temp 目录写冲突 / `link.exe` exit 1181 / "failed to open object file"，不是源码问题（两个安装并发共用 `cargo-install*` 临时目录） | 串行重装（后台进行中，日志 `tools-cargo-install2.log`）。装不上的后果由门阶如实报 SKIP，不伪装成"已审计" | 进行中 | P1 |
 | O4 | `deny.toml` 的许可白名单不能凭印象写 | 21 §1 只给了原则（MIT/Apache/BSD/ISC/Zlib 宽松、GPL 组件走进程边界），没给每个 crate 的实际 SPDX | 先按原则写出 allow/deny + `bans.deny` 点名 libimagequant，再用 `cargo deny check licenses` 的真实输出核对（如 Unlicense/0BSD/Unicode-DFS-2016 这类需要明确接纳或拒绝），核对结果回填本表 | 进行中 | P1 |
-| O5 | `--strict` 下本机过不了 | dependency-audit 在 cargo-deny 未装时是 SKIP，`--strict` 把 SKIP 记成 FAIL（刻意的：缺依赖不能报绿） | 文档写清两种用法：日常 `bash tools/check_all.sh`；发布机/CI `RELEASE=1 bash tools/check_all.sh --strict`。见 `docs/REVIEW_GATES.md` §1/§4 | 已解决 | P2 |
+| O5 | `--strict` 下本机过不了 | dependency-audit 在 cargo-deny 未装时是 SKIP，`--strict` 把 SKIP 记成 FAIL（刻意的：缺依赖不能报绿） | 文档写清两种用法：日常 `bash tools/check_all.sh`；发布机/CI `RELEASE=1 bash tools/check_all.sh --strict`。见 `docs/history/2026-10-06/REVIEW_GATES.md` §1/§4 | 已解决 | P2 |
 | O6 | Strict 徽章在门阶里的位置 | 上一轮 N1/N2 修好后，必须有个**跑起来**的东西盯着它，而不是靠代码注释 | 新增 `strict-badge` 门阶：跑 CLI 端到端测试，要求 `--level strict` 返回非零、findings 含 `PGS.DEC.01`/`PGS.DEV.01`、且 `data` 没被丢掉 | 已解决 | P0 |
 
 ## P. task-engine 任务模型（15、38）与依赖审计门阶（21、28）本轮新增
@@ -244,7 +244,7 @@
 
 | # | 问题 | 取证 / 现象 | 处理 | 状态 | 优先级 |
 |---|---|---|---|---|---|
-| R1 | 位图合成语义不能凭记忆写 | 从 `reference-audit/libass-master.tar.gz` 里 `tar -xO` 抽出 `libass/ass_types.h:54-86` 原文 | 四条事实进代码注释并各有测试：按链表顺序合成、w/h 为 0 不画、最后一行可不补齐到 stride（保证长度 `stride*(h-1)+w`）、`color` 是 RGBA 打包 | 已解决 | P0 |
+| R1 | 位图合成语义不能凭记忆写 | 从 `third_party/sources/libass-master.tar.gz` 里 `tar -xO` 抽出 `libass/ass_types.h:54-86` 原文 | 四条事实进代码注释并各有测试：按链表顺序合成、w/h 为 0 不画、最后一行可不补齐到 stride（保证长度 `stride*(h-1)+w`）、`color` 是 RGBA 打包 | 已解决 | P0 |
 | R2 | native 依赖没落地就写 FFI 调用 = 写跑不通的代码 | libass DLL 目前不存在（Q6） | 拆两层：`bitmap`（纯 Rust 合成，现在就测得到）+ `ffi`（结构镜像 + `LoadLibraryExW`/`GetProcAddress` 运行时探测）。**不做编译期链接**，缺 DLL 时是一条可报告的错误，不是全工程编译失败 | 已解决 | P0 |
 | R3 | 结构体镜像对不对 | x64 下 C 布局有 padding，抄错字段顺序会静默读垃圾 | `mirrored_layout_matches_the_c_header` 用 `addr_of!` 逐字段验偏移（0/4/8/16/24/28/32/40/48）与总大小 56；错了就编译期/测试期暴露 | 已解决 | P0 |
 | R4 | 损坏链表与越界位图 | 自环的 `next`、`stride < w`、dst 在画布外 | `walk_chain` 有 `MAX_IMAGE_CHAIN=4096` 上限（`STK-RND-0070`）；`check()` 拒绝 stride<w 与短于保证长度的位图（0061/0062）；越界像素裁掉并写进 LossReport，不环绕 | 已解决 | P1 |
@@ -258,7 +258,7 @@
 |---|---|---|---|---|---|
 | S1 | 验收文档会与现实漂移：TRACEABILITY 里点名的测试名没人核对过是否真的存在 | 手动抽查 81 处都对，但"抽查"不是保证 | `tools/doc_claims_check.py`：从两份文档里抽出反引号点名的标识符，逐个在代码树里核对，缺失即退出 1；已作为 `doc-claims` 门阶跑起来（当前 81 处全部命中） | 已解决 | P1 |
 | S2 | 门阶脚本自己被我手改坏过两次（PowerShell 作用域 + 一次 bash 换行误删导致 `syntax error near else`） | 第二次是编辑时把一个换行吞掉，`bash -n` 立刻能发现 | 门阶第 0 步 `gate-selftest` 跑 `bash -n tools/check_all.sh`（以及 vcpkg 重试脚本），语法不过就别谈别的门 | 已解决 | P1 |
-| S3 | "全绿"这个词目前覆盖什么范围要说清楚 | 见 `docs/REVIEW_GATES.md` §3 的未完成清单 | 门阶结论只覆盖已实现的层；`--level strict` 被刻意判失败、native 渲染路径不存在、GUI 未开始，这三件事在文档里明写而不是藏进通过率 | 已解决 | P0 |
+| S3 | "全绿"这个词目前覆盖什么范围要说清楚 | 见 `docs/history/2026-10-06/REVIEW_GATES.md` §3 的未完成清单 | 门阶结论只覆盖已实现的层；`--level strict` 被刻意判失败、native 渲染路径不存在、GUI 未开始，这三件事在文档里明写而不是藏进通过率 | 已解决 | P0 |
 
 ## T. AT 覆盖矩阵与内存上限（25 §验收、23 §健壮性）
 
@@ -266,10 +266,10 @@
 |---|---|---|---|---|---|
 | T1 | "AT-SEC-001 不超额分配"以前只是口头声明 | 解析器有 `MAX_SEGMENTS`、RLE 尺寸上限和 payload/画布比例检查，但没人**量过**分配字节 | `codec-pgs/tests/security.rs` 装一个计数 `GlobalAlloc`，用 `measure_peak` 只算增量（并串行化，避免并行测试互相污染计数），断言谎报 4 GiB / 8000x8000 / 不终止游程 / 随机字节的分配上限；新增 `security-limits` 门阶 | 已解决 | P0 |
 | T2 | 计数分配器第一版把 LIVE 归零，导致并行 dealloc 簿记跑偏、测试 panic | 现象是 panic 在 `fetch_sub`，反而像"防住了" | 改成**永不归零 + 只算窗口增量**（base/peak 差值），dealloc 走 saturating；panic 的测试会被误读成防御成功，这类"失败方式"也要算缺陷 | 已解决 | P1 |
-| T3 | 25 §的 26 条 AT 从来没有逐条状态表 | TRACEABILITY 里 `F040/F041 codec-pgs 未开始` 这类行已经过期（实际早已实现并通过互操作差分） | `docs/TRACEABILITY.md` §18 逐条列出 通过 / 部分 / 阻塞 / 未开始，每条要么给出具体测试名，要么写清阻塞原因；`doc-claims` 门阶会核对这些名字在代码树里存在（当前 93 处全部命中） | 已解决 | P1 |
+| T3 | 25 §的 26 条 AT 从来没有逐条状态表 | TRACEABILITY 里 `F040/F041 codec-pgs 未开始` 这类行已经过期（实际早已实现并通过互操作差分） | `docs/history/2026-10-06/TRACEABILITY.md` §18 逐条列出 通过 / 部分 / 阻塞 / 未开始，每条要么给出具体测试名，要么写清阻塞原因；`doc-claims` 门阶会核对这些名字在代码树里存在（当前 93 处全部命中） | 已解决 | P1 |
 | T4 | AT 状态表里"通过"的边界要说清 | 例如 AT-BD-001 的 UI 解释、AT-MULTI-002 的"只渲染一次"实测都依赖还没做的 GUI/renderer | 表里区分 `通过` / `部分` / `阻塞`；`部分` 必须写清"哪一半通过了、哪一半等什么" | 已解决 | P2 |
 | T5 | `cargo deny check advisories` 是网络抖动的牺牲品 | 第一次跑 ok，之后失败：`Failed to connect to github.com port 443 after 21145 ms`。结论没变，连通性变了，门阶却从全绿变一红 | 拆成两条门：`dependency-audit`（licenses/bans/sources，离线可做，必须过）与 `advisory-audit`（需联网）。后者用 `deny.toml` 的 `git-fetch-with-cli = true` + 门阶注入**仓库内临时** `GIT_CONFIG_GLOBAL`（insteadOf 指向 gh-proxy 镜像）拉库；不改用户全局配置，拉不到就 SKIP/FAIL，不假装通过。provenance 明写：本轮 advisories 结论来自镜像拉取的 RustSec DB | 已解决 | P1 |
-| T6 | 门阶数量与"全绿"的说法要跟着现实走 | 现在是 13 条门、628 个测试；文档还写 9 条/623 个 | `docs/REVIEW_GATES.md` 表格、`docs/STATUS.md` 的入口命令与实跑记录同步；`doc-claims` 门阶继续核对文档点名的标识符 | 已解决 | P2 |
+| T6 | 门阶数量与"全绿"的说法要跟着现实走 | 现在是 13 条门、628 个测试；文档还写 9 条/623 个 | `docs/history/2026-10-06/REVIEW_GATES.md` 表格、`docs/history/2026-10-06/STATUS.md` 的入口命令与实跑记录同步；`doc-claims` 门阶继续核对文档点名的标识符 | 已解决 | P2 |
 
 ## U. pysubs2 语义交叉验证（AT-ASS-001、24 §QA）本轮新增
 
@@ -311,7 +311,7 @@
 | # | 问题 | 取证 / 现象 | 处理 | 状态 | 优先级 |
 |---|---|---|---|---|---|
 | Y1 | 镜像重试脚本抓错了要下载的 URL | 我用"日志里最后一个 https URL"当目标，实际抓到的是 vcpkg 报错里的**故障排查链接**（`learn.microsoft.com/vcpkg/troubleshoot/...`），于是 12 轮全在 404/403，而真正的 `libass-libass-0.17.5.tar.gz` 一次都没试过；脚本最后还打印"gave up"，看起来像网络不行 | 改成只认 vcpkg 明说的 `won't retry download from <url>` 那一行；抓不到这个模式就判定"这不是下载问题，是构建失败"并打印日志尾部退出。**取错目标比取不到目标更糟**：它让失败看起来像另一种失败 | 已解决 | P0 |
-| Y2 | 依赖链现状 | zlib/libpng/freetype/brotli/bzip2/fribidi/harfbuzz 已装入 `installed/x64-windows`（前几轮镜像生效），只剩 libass 本体源码包 | 镜像脚本修好后 libass 0.17.5 装入成功；`ass-9.dll`/`ass.lib`/`ass.h`/`ass_types.h` 的 SHA-256 与 vcpkg ABI 已入 `reference-audit/SOURCE_AUDIT_LOCK.json`（`native_build` 一节），`ass_render_frame` 真实封装见 R 节与 §Z | 已解决 | P0 |
+| Y2 | 依赖链现状 | zlib/libpng/freetype/brotli/bzip2/fribidi/harfbuzz 已装入 `installed/x64-windows`（前几轮镜像生效），只剩 libass 本体源码包 | 镜像脚本修好后 libass 0.17.5 装入成功；`ass-9.dll`/`ass.lib`/`ass.h`/`ass_types.h` 的 SHA-256 与 vcpkg ABI 已入 `third_party/SOURCE_AUDIT_LOCK.json`（`native_build` 一节），`ass_render_frame` 真实封装见 R 节与 §Z | 已解决 | P0 |
 | Y3 | 成功判据也是猜的 | 修完 Y1 后脚本仍然报 EXIT=4"gave up"，而 `vcpkg list` 里 libass 明明装好了。我 grep 的是 `"succeeded"`，vcpkg 实际说的是 `Successfully installed`；更糟的是我先给"成功判据"编了一个 `share/<port>/vcpkg_status` 路径，本机根本没有这个文件 | 改成读 vcpkg 真正的账本 `installed/vcpkg/status`（Debian 风格 stanza），要求**该端口自己**（不是依赖）记着 `Status: install ok installed`；两个方向都在本机验过（libass 判真、nosuchport 判假）。**教训：路径与话术都不能猜，`ls` 一下再写** | 已解决 | P0 |
 
 ## Z. 第一次真实 libass 渲染（12 §1A、13 §4/§5、23 §外部进程）本轮新增
@@ -393,7 +393,7 @@
 | AF1 | **色彩解析按想象中的 schema 写，HDR 判定在真工具面前全盲** | 装上真 ffprobe（gyan 5.1 构建）探测我自己生成的 4K/PQ 素材：`is_hdr=false`、`color.transfer=None`；而 `ffprobe -show_streams` 的原始输出里明明有 `"color_transfer": "smpte2084"`。`fields.rs` 只认嵌套的 `color_metadata:{transfer:…}` —— 那个形状来自我写单测时构想的 fixture，`hdr_is_detected_from_transfer_or_side_data` 因此一直全绿 | 改成先读扁平的 `color_transfer`/`color_primaries`/`color_space`(=矩阵)/`color_range`，嵌套形式仅兜底；并把**真工具的输出**抓成 `tests/fixtures/*.ffprobe.json` 当解析 fixture（`parses_the_captured_real_ffprobe_payload`）。新增门阶 `probe-real`：没有二进制就 SKIP，`--strict` 即 FAIL。**教训**：自造 fixture 只能证明代码自洽，证明不了"我读对了别人的输出"（M2/N1 的第 N 次） | 已解决 | P0 |
 | AF2 | `find_ffprobe` 的开发期回落路径从来不存在 | 代码写的是 `crates/cli/../tools/bin`，即 `SubtitleToolkit-RS/tools/bin` —— 仓库里从来没有这个目录；真二进制在仓库旁边的 `out/tools/bin`。这条回落与"A 路径不存在所以永远走 PATH"是同一类静默失效 | 补一层 `..` 指向仓库旁边的 `tools/bin`，并新增 `STK_FFPROBE` 显式覆盖（与 `STK_LIBASS_DLL` 同一套纪律）；`doctor` 报 `ffprobe_search_paths`，"没找到"要能说清找过哪里 | 已解决 | P2 |
 | AF3 | `probe` 命令交不出 16 §3 承诺的"候选值 + 证据" | 视频探测成功时，CLI 的 data 里只有尺寸/帧率/时长与一个 ffprobe **路径**：没有色彩、没有 `is_hdr`、没有 `suggestions`、没有二进制哈希。建议引擎（`suggest_for`）有完整单测，但 CLI 根本没调用它 —— 用户看不到，等于没有 | `probe` 现在报 `color`/`is_hdr`/`fps_candidates`/`suggestions`（每条候选带 kind、value、confidence、auto_checked、evidence）与 `recommends_speed_conversion:false`，并把 ffprobe 身份按内容哈希报（`FfprobeIdentity`）。实测 4K/PQ 素材：`is_hdr=true` + `hdr-preset reference-white@203nits High` + `fps 23.976 High`，且明确不建议降速 | 已解决 | P1 |
-| AF4 | 真实语料的可复现性与许可边界 | 三个 mp4（1080p25、4K/23.976+PQ、4:3 30fps，共约 830 KB）现在提交在仓库里；产生它们需要 ffmpeg。二进制（ffmpeg N-92722 / ffprobe 2023-02-13 gyan 构建，GPL-3.0）**不随包分发**，只作为本机交叉验证工具，与 Pillow/pysubs2 同一待遇；哈希与来源写进 `reference-audit/SOURCE_AUDIT_LOCK.json` | 新增 `tools/make_probe_fixtures.sh`：三条 ffmpeg 命令 + 两份 ffprobe 原始 JSON 抓取 + 自检打印，重跑得到同样大小的文件（已验证） | 已解决 | P2 |
+| AF4 | 真实语料的可复现性与许可边界 | 三个 mp4（1080p25、4K/23.976+PQ、4:3 30fps，共约 830 KB）现在提交在仓库里；产生它们需要 ffmpeg。二进制（ffmpeg N-92722 / ffprobe 2023-02-13 gyan 构建，GPL-3.0）**不随包分发**，只作为本机交叉验证工具，与 Pillow/pysubs2 同一待遇；哈希与来源写进 `third_party/SOURCE_AUDIT_LOCK.json` | 新增 `tools/make_probe_fixtures.sh`：三条 ffmpeg 命令 + 两份 ffprobe 原始 JSON 抓取 + 自检打印，重跑得到同样大小的文件（已验证） | 已解决 | P2 |
 | AF5 | AT-PROBE-001 的"真语料"仍然只覆盖合成素材 | 现在测的是 testsrc2 生成的合成视频：色彩/帧率/尺寸都是我们主动写进去的。真实发行素材的复杂情况（可变帧率、时基不一致、容器 duration 与流 duration 打架、 interleaved/telecine）没有一条被覆盖 | 如实保持"部分通过"：合成语料 + 真工具已经能抓住 schema 类缺陷（AF1 就是这么发现的），但 16 §5 的 VFR/telecine 判定要等 E3（真盘 SUP/视频语料来源）一起解决 | 待解决 | P1 |
 
 ## AG. 字体服务与 `font scan`（17 §2-§4、25 AT-FONT-001/002）本轮新增

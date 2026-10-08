@@ -682,20 +682,25 @@ fn pgs_adjust(
     )
 }
 
-/// libass 的位置只能由显式输入决定（23 §安全：不去磁盘上搜 DLL，那是在给自己找劫持面）。
+/// libass 只从命令参数或明确的环境变量读取路径，不在磁盘上搜索 DLL（23 §安全）。
 pub(crate) fn libass_dll(explicit: Option<&Path>) -> Result<PathBuf> {
-    if let Some(p) = explicit {
-        return Ok(p.to_path_buf());
+    let path = explicit
+        .map(Path::to_path_buf)
+        .or_else(|| std::env::var_os("STK_LIBASS_DLL").map(PathBuf::from));
+    let Some(path) = path else {
+        return Err(cli_err(141, "渲染任务需要 libass，但没有给出 DLL 路径")
+            .with_detail("传入 --libass-dll PATH，或设置 STK_LIBASS_DLL")
+            .with_action("构建或安装本机 libass DLL 后重试"));
+    };
+    if !path.is_file() {
+        return Err(cli_err(141, "指定的 libass DLL 不存在或不是文件")
+            .with_detail(format!(
+                "{}；传入 --libass-dll PATH 或设置 STK_LIBASS_DLL",
+                path.display()
+            ))
+            .with_action("检查 DLL 路径后重试"));
     }
-    if let Ok(v) = std::env::var("STK_LIBASS_DLL") {
-        return Ok(PathBuf::from(v));
-    }
-    Err(cli_err(
-        141,
-        "pgs encode 需要 libass 渲染器，但没有给出 DLL 路径",
-    )
-    .with_detail("--libass-dll PATH，或设置环境变量 STK_LIBASS_DLL")
-    .with_action("按 28 §1 构建 native 依赖（tools/vcpkg_mirror_retry.sh）；产物哈希见 reference-audit/SOURCE_AUDIT_LOCK.json"))
+    Ok(path)
 }
 
 /// 最后一个 Dialogue 事件的结束时刻（向上取整到 ms）。
@@ -786,8 +791,10 @@ fn pgs_encode(
 ) -> Result<Envelope> {
     // 前半链（采样 → 变化检测）与 ASS→BDN 共用同一份实现；批量里同一输入的
     // 两种渲染输出通过 `shared` 只跑一次（14 §Multi-output）。
-    // 字体环境与注入计划在渲染之前算（17 §7）：算晚了，报告里的身份就只是事后追认
+    // 先读输入并确认渲染器可用。缺 DLL 时无需扫描整套系统字体库。
     let text = crate::pipeline::load_text(input)?.text;
+    let dll_path = libass_dll(dll)?;
+    // 字体环境与注入计划在渲染之前算（17 §7）：算晚了，报告里的身份就只是事后追认
     let mut scanner = crate::fontenv::Scanner::with_cache(crate::fontenv::cache_mode(inv));
     let (font_env, env_ms) = scanner.env_for(&text)?;
     let plan = if inv.inject_fonts {
@@ -799,7 +806,7 @@ fn pgs_encode(
         input,
         fps,
         canvas,
-        dll,
+        dll: Some(&dll_path),
         default_font,
         inject: plan.as_deref(),
     };
@@ -976,7 +983,7 @@ fn doctor(cmd: &str) -> Result<Envelope> {
 
 /// host 可执行文件在哪：`STK_RENDERER_HOST` → 与 CLI 同目录的 `subtitletool-render-host.exe`。
 /// 找不到不是错误，是诊断信息（28 §2 把它列为独立产物，没打包就是没有）。
-fn renderer_host_exe() -> Option<PathBuf> {
+pub(crate) fn renderer_host_exe() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("STK_RENDERER_HOST") {
         let p = PathBuf::from(p);
         if p.is_file() {
@@ -985,11 +992,19 @@ fn renderer_host_exe() -> Option<PathBuf> {
     }
     let exe = std::env::current_exe().ok()?;
     let dir = exe.parent()?;
-    let sibling = dir.join(format!(
-        "subtitletool-render-host{}",
-        std::env::consts::EXE_SUFFIX
-    ));
-    sibling.is_file().then_some(sibling)
+    let name = format!("subtitletool-render-host{}", std::env::consts::EXE_SUFFIX);
+    let sibling = dir.join(&name);
+    if sibling.is_file() {
+        return Some(sibling);
+    }
+    // `cargo test` places the test executable under `target/<profile>/deps/`.
+    if dir.file_name().is_some_and(|part| part == "deps") {
+        let workspace_bin = dir.parent()?.join(name);
+        if workspace_bin.is_file() {
+            return Some(workspace_bin);
+        }
+    }
+    None
 }
 
 /// 12 §2 的可用性问题："能不能把第三方渲染 DLL 关在另一个进程里"。
@@ -1079,6 +1094,22 @@ mod tests {
             inject_fonts: false,
             no_font_cache: false,
         }
+    }
+
+    #[test]
+    fn an_explicit_missing_libass_path_is_rejected_before_render_setup() {
+        let path =
+            std::env::temp_dir().join(format!("stk-missing-libass-{}.dll", std::process::id()));
+        assert!(!path.exists(), "测试路径必须不存在：{}", path.display());
+        let err = libass_dll(Some(&path)).expect_err("不存在的 DLL 必须拒绝");
+        assert_eq!(err.code_string(), "STK-INP-0141");
+        assert!(err.title.contains("libass"), "{err}");
+        assert!(
+            err.details
+                .iter()
+                .any(|detail| detail.contains(&path.display().to_string())),
+            "错误必须指出无效路径：{err}"
+        );
     }
 
     const ASS: &str = "[Script Info]\r\nPlayResX: 1920\r\nPlayResY: 1080\r\n\r\n[V4+ Styles]\r\nFormat: Name, Fontname, Fontsize, Outline, Shadow, MarginV\r\nStyle: Default,Arial,48,3,2,50\r\n\r\n[Events]\r\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\r\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,{\\pos(960,540)\\blur4}你好\r\n";

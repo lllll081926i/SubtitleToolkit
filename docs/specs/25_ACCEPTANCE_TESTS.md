@@ -1,5 +1,7 @@
 # 正式验收用例
 
+本表定义验收条件，不代表用例已经通过。需要真实 DLL、播放器、真盘 SUP 或 GUI 的用例，必须明确记录依赖与样本；模拟测试不能代替互操作结果。当前交付状态见 [`../STATUS.md`](../STATUS.md)。
+
 - AT-ASS-001：parse→write 未修改文件语义等价，未知 tag 不丢。
 - AT-ASS-002：HDR transform 只改目标颜色字段，时间/文本/几何 hash 不变。
 - AT-CANVAS-001：1080→2160 特效字幕保持完整16:9坐标，关键定位×2。
@@ -9,10 +11,10 @@
 - AT-TIME-001：24000/1001→25 speed conversion 长片无浮点累积漂移。
 - AT-TIME-002：25→50 frame snap 不改变总时长。
 - AT-PROBE-001：目标视频只填建议，不自动应用 speed conversion。
-- AT-RENDER-001：libass host crash-free；
-- AT-RENDER-002：第三方 VSFilterMod 崩溃只终止 renderer-host，GUI 可重试。
-- AT-RENDER-003：x86 DLL 自动路由 x86 host。
-- AT-PGS-001：第三方 SUP +1000ms，ODS payload hash 完全一致。
+- AT-RENDER-001：设置 `STK_LIBASS_DLL` 后，真实 libass 经 renderer-host 输出正确 RGBA；故障只影响 host。
+- AT-RENDER-002：取得可用 VSFilterMod provider 后，证明其崩溃只终止 renderer-host，GUI 可重试；自伤 `Poison` 测试不能代替该 provider 测试。
+- AT-RENDER-003：仅在 x86 host 产物加入支持矩阵后，验证 x86 DLL 路由；当前缺少该产物，不验收自动路由。
+- AT-PGS-001：对可合法使用的第三方 SUP 执行 +1000ms，ODS payload hash 完全一致；自制流往返不能代替外部样本。
 - AT-PGS-002：Forced-only Fast Path 不重编码。
 - AT-PGS-003：palette dim 只改 PDS，结构验证通过。
 - AT-PGS-004：Basic Encoder segment length/RLE/object id/palette 正确。

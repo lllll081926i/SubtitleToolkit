@@ -117,7 +117,7 @@ impl Rational {
         )
     }
     pub fn neg(&self) -> Option<Rational> {
-        Rational::new(-self.num, self.den).ok()
+        Self::from_i128(-i128::from(self.num), i128::from(self.den))
     }
 
     /// 仅供显示/日志。
@@ -140,7 +140,7 @@ impl Rational {
         if self.num >= 0 {
             self.num / self.den
         } else {
-            -(((-self.num) + self.den - 1) / self.den)
+            ((i128::from(self.num) - i128::from(self.den) + 1) / i128::from(self.den)) as i64
         }
     }
 
@@ -191,7 +191,10 @@ impl Rational {
             for _ in 0..fp.len() {
                 scale = scale.checked_mul(10).ok_or_else(overflow)?;
             }
-            let num = (ip_v.checked_mul(scale).ok_or_else(overflow)? + fp_v)
+            let num = ip_v
+                .checked_mul(scale)
+                .and_then(|whole| whole.checked_add(fp_v))
+                .ok_or_else(overflow)?
                 .checked_mul(sign)
                 .ok_or_else(overflow)?;
             return Rational::new(num, scale).map_err(|_| overflow());
@@ -265,8 +268,11 @@ impl Time {
         if h < 0 || !(0..60).contains(&m) || !(0..60).contains(&s) || !(0..100).contains(&cs) {
             return Err(StkError::simple(Domain::Parse, 30, "ASS 时间字段越界"));
         }
+        let whole_seconds =
+            i64::try_from(i128::from(h) * 3600 + i128::from(m) * 60 + i128::from(s))
+                .map_err(|_| overflow())?;
         Ok(Time(
-            rat(h * 3600 + m * 60 + s, 1)?
+            rat(whole_seconds, 1)?
                 .add(&rat(cs, 100)?)
                 .ok_or_else(overflow)?,
         ))
@@ -277,8 +283,11 @@ impl Time {
         if h < 0 || !(0..60).contains(&m) || !(0..60).contains(&s) || !(0..1000).contains(&ms) {
             return Err(StkError::simple(Domain::Parse, 31, "SRT 时间字段越界"));
         }
+        let whole_seconds =
+            i64::try_from(i128::from(h) * 3600 + i128::from(m) * 60 + i128::from(s))
+                .map_err(|_| overflow())?;
         Ok(Time(
-            rat(h * 3600 + m * 60 + s, 1)?
+            rat(whole_seconds, 1)?
                 .add(&rat(ms, 1000)?)
                 .ok_or_else(overflow)?,
         ))
@@ -637,6 +646,12 @@ mod tests {
         let big = Rational::from_int(i64::MAX);
         assert!(big.mul(&big).is_none());
         assert!(Rational::from_int(1).div(&Rational::ZERO).is_none());
+        assert!(Rational::from_int(i64::MIN).neg().is_none());
+        assert_eq!(Rational::from_int(i64::MIN).floor_i64(), i64::MIN);
+        assert!(Rational::parse("9223372036854775807.1").is_err());
+        assert!(Rational::parse("-9223372036854775808.1").is_err());
+        assert!(Time::from_hcs(i64::MAX, 0, 0, 0).is_err());
+        assert!(Time::from_hms_millis(i64::MAX, 0, 0, 0).is_err());
     }
 
     /// 回归：i64::MIN 取反在 i64 内会溢出（codec-srt 审查时发现）

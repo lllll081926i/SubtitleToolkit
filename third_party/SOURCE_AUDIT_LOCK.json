@@ -10,9 +10,11 @@
       "ref": "master",
       "commit_sha": "f61db567e6593df3470e91594bcd4ad2d0473aff",
       "release_version_file": "0.17.5",
-      "artifact": "reference-audit/libass-master.tar.gz",
+      "artifact": "third_party/sources/libass-master.tar.gz",
       "artifact_sha256": "d2b2561cc8fb655451e8e4428539f94c2639184a914bdcacb4c9b1e837239f9a",
-      "reproduce": "curl -sSL https://codeload.github.com/libass/libass/tar.gz/refs/heads/master | sha256sum  (需与上述 commit 一致；master 前移后要重新锁 SHA)",
+      "reproduce": "下载 https://codeload.github.com/libass/libass/tar.gz/f61db567e6593df3470e91594bcd4ad2d0473aff，并按相对路径逐文件比对；codeload 的归档根目录与 gzip 封装不同，不应直接比较压缩包 SHA-256。artifact_sha256 锁定本仓库保存的原始归档字节。",
+      "verified_source_tree": "与上述 commit 的 codeload 源码树逐文件核对：136 个文件路径及内容完全一致；commit 下载包压缩 SHA-256 为 edb3e866ca9394152484bc9a83b68a395f5c9052ae0dc502e4100035c250330b",
+      "license_notes": "仓库主代码 COPYING 为 ISC；libass/wyhash.h 声明 Unlicense，libass/dwrite_c.h 声明 Public Domain，checkasm/ 文件声明 BSD-2-Clause，libass/x86/x86inc.asm 有独立 ISC 声明；compare/test/font1.ttf 与 font2.otf 的 name 表都标注 CC0-1.0。",
       "verified_claims": [
         "Script Info 认 LayoutResX/LayoutResY：libass/ass.c:888-893（另见 569-572 的 i18nstrcmp 路径）",
         "ASS_Track.LayoutResX 注释：'overrides values from ass_set_storage_size and also takes precedence over ass_set_pixel_aspect'：libass/ass_types.h:302",
@@ -67,9 +69,9 @@
       "license": "见 crate 清单",
       "source": "crates.io index",
       "version": "0.0.7",
-      "local_path": "C:/Users/Administrator/.cargo/registry/src/index.crates.io-*/oxideav-sub-image-0.0.7",
+      "local_path": "$CARGO_HOME/registry/src/index.crates.io-*/oxideav-sub-image-0.0.7",
       "note": "registry 校验和由 cargo 保证；差分测试在 crates/codec-pgs/tests/differential.rs",
-      "divergences_recorded_in": "docs/ISSUES.md §G（C16/C17/C18）"
+      "divergences_recorded_in": "docs/history/2026-10-06/ISSUES.md §G（C16/C17/C18）"
     },
     {
       "name": "ass2bdnxml (Masaiki)",
@@ -78,9 +80,11 @@
       "repository": "https://github.com/Masaiki/ass2bdnxml",
       "ref": "master",
       "commit_sha": "6faa51e12e32baaeae1aa53e7951b6a0fea83ec2",
-      "artifact": "reference-audit/ass2bdnxml-master.tgz",
+      "artifact": "third_party/sources/ass2bdnxml-master.tgz",
       "artifact_sha256": "e1faeb2b57e50551d43b4336246abbbde54d4564cf5fc13a9be00f0cb7404830",
-      "reproduce": "curl -sSL https://codeload.github.com/Masaiki/ass2bdnxml/tar.gz/refs/heads/master | sha256sum",
+      "reproduce": "下载 https://codeload.github.com/Masaiki/ass2bdnxml/tar.gz/6faa51e12e32baaeae1aa53e7951b6a0fea83ec2，并按相对路径逐文件比对；codeload 的归档根目录与 gzip 封装不同，不应直接比较压缩包 SHA-256。artifact_sha256 锁定本仓库保存的原始归档字节。",
+      "verified_source_tree": "与上述 commit 的 codeload 源码树逐文件核对：24 个文件路径及内容完全一致；commit 下载包压缩 SHA-256 为 e3c1f616ba003432c466c76a70d137b9a044795824b8bb291324aa6319322b6a",
+      "license_notes": "源文件头声明 GPL-3.0-or-later，COPYING 提供 GPL-3.0 正文；x86inc.asm 自带独立 ISC 许可声明。",
       "verified_claims": [
         "BDN InTC/OutTC 是帧号时间码而不是墙上时钟：mk_timecode()（ass2bdnxml.c:495-519）对帧号依次取模 frames = tc % fps; tc /= fps; s = tc % 60; ...，所以 SS 字段来自帧号除以 nominal",
         "帧号来自精确有理数：get_frame_total_ass()（同文件 220-228）= max_time_point(ms) / fps_den * fps_num / 1000，整数赋值即 trunc",
@@ -91,8 +95,38 @@
     }
   ],
   "not_yet_locked": [
-    "pinterf/xy-VSFilter、sorayuki/VSFilterMod、SupMover、Aegisub csri.h",
+    "pinterf/xy-VSFilter、sorayuki/VSFilterMod 对应的上游源码提交（本机 DLL 尚无可核实的源码映射）、SupMover、Aegisub csri.h",
     "真实 .sup 设备语料（E3 仍未答复）：没有它，第 7 层设备兼容与 Strict 徽章都只能保持「未覆盖」"
+  ],
+  "binary_artifacts": [
+    {
+      "name": "VSFilterMod.dll",
+      "role": "项目内 CSRI/legacy renderer 候选；未集成进 renderer-host",
+      "path": "third_party/VSFilterMod.dll",
+      "license": "GPL-3.0 (source mapping unverified)",
+      "version_resource": "ProductVersion 2.5.2.2；FileVersionRaw/ProductVersionRaw 2.5.2.1",
+      "size_bytes": 3674112,
+      "sha256": "87a9c3c1ab7614eda22b8fb367840a87fd34c0c7fb92d7c4d3aa6bb0b2a6ee6b",
+      "pe_machine": "AMD64 (PE32+)",
+      "pe_timestamp": "2022-05-22 01:26:27 local PE timestamp",
+      "authenticode": "unsigned",
+      "observed_exports": [
+        "csri_close",
+        "csri_open_file",
+        "csri_open_mem",
+        "csri_query_ext",
+        "csri_render",
+        "csri_renderer_byname",
+        "csri_renderer_default",
+        "csri_renderer_info",
+        "csri_renderer_next",
+        "csri_request_fmt",
+        "VapourSynthPluginInit"
+      ],
+      "provenance": "当前工作区提供的本机二进制；PDB 路径为 D:\\a\\VSFilterMod\\VSFilterMod\\bin\\x64\\VSFilter\\Release (MOD)\\VSFilterMod.pdb，PE 时间戳为 2022-05-22；与 sorayuki/VSFilterMod 上游构建路径和 2022-05-21 更新接近，但尚未核实官方 release 资产或确切源码提交。",
+      "license_status": "GPL-3.0 (based on likely sorayuki/VSFilterMod origin; exact release asset and source commit mapping are not verified)",
+      "runtime_status": "仅完成 PE 元数据和导出表静态检查；未加载、未运行、未验证 CSRI ABI 或渲染输出"
+    }
   ],
   "verification_tools": {
     "purpose": "本机用于交叉验证的外部工具版本；不是随包分发的依赖，但门阶结论依赖它们（24 §QA）",

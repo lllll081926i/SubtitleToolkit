@@ -1,5 +1,9 @@
 # Windows 构建、安装、签名与发布
 
+本文件是发布阶段的目标清单，不是当前发行物清单。当前 workspace 只定义 CLI 与 x64 `subtitletool-render-host.exe`；GUI、x86 host、安装包、portable 包、签名和更新器均未实现。只有经过实际构建与验收的产物才能加入支持矩阵。
+
+以下文件名是发行包候选命名；目前没有打包流程。Cargo 产物名以各 crate 的 `[[bin]]` 配置为准，不能把下方候选名当作已经生成的文件。
+
 ## 1. Toolchain
 - Rust stable MSVC x64；
 - Visual Studio Build Tools + Windows SDK；

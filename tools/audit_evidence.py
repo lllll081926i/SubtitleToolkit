@@ -7,7 +7,7 @@
 
   1. 代码树里 `#[test]` 标注的函数 → 测试全集；
   2. `target/gate/*.log` 里 nextest/cargo test 的实际通过行 → 已执行集；
-  3. `docs/TRACEABILITY.md` 与 `docs/ISSUES.md` 反引号点名的标识符 → 声称集。
+  3. `docs/history/2026-10-06/TRACEABILITY.md` 与 `docs/history/2026-10-06/ISSUES.md` 反引号点名的标识符 → 声称集。
 
 判定：声称集 ∩ 测试全集 必须是 已执行集 的子集。
 另外报告"声称集里长得像测试却不存在于代码树"的名字（改名漂移，与 doc-claims 同一族）。
@@ -25,7 +25,7 @@ if hasattr(__import__('sys').stdout, 'reconfigure'):
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 GATE = os.path.join(ROOT, "target", "gate")
-DOCS = ["docs/TRACEABILITY.md", "docs/ISSUES.md"]
+DOCS = ["docs/history/2026-10-06/TRACEABILITY.md", "docs/history/2026-10-06/ISSUES.md"]
 
 TEST_FN = re.compile(
     r"^\s*#\[test\].*\n\s*(?:#\[[^\n]*\]\s*\n\s*)*(?:(?:pub|pub\(crate\))\s+)?fn\s+([a-z0-9_]+)\s*[<(]",

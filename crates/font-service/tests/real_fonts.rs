@@ -70,7 +70,7 @@ fn a_real_font_library_is_read_from_its_tables_not_its_filenames() {
         assert_eq!(f.sha256.len(), 64, "身份必须是 sha256：{f:?}");
         assert!(f.num_glyphs > 0, "{f:?} 的 cmap 是空的？");
         assert!(f.units_per_em > 0, "{f:?} 没有 head 表？");
-        assert!(f.weight >= 100 && f.weight <= 1000, "{f:?} 的字重不像话");
+        assert!((1..=1000).contains(&f.weight), "{f:?} 的字重超出 OS/2 范围");
     }
     // 每一条"没读成"都必须有原因，静默少扫等于报告在撒谎
     for n in &db.notes {

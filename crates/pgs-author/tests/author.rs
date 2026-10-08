@@ -7,7 +7,7 @@ use core_model::canvas::Canvas;
 use core_model::profile::ValidationLevel;
 use core_model::time::{Fps, Time};
 use image_core::Frame;
-use pgs_author::{plan, AuthorOptions, EventKind, Sample};
+use pgs_author::{plan, AuthorOptions, EventKind, PlanBuilder, Sample};
 use validator::ProfileWant;
 
 const C: Canvas = Canvas::HD720;
@@ -64,6 +64,35 @@ fn identical_samples_collapse_into_one_event() {
         "合并必须进 LossReport：{:?}",
         p.loss.dropped
     );
+}
+
+#[test]
+fn incremental_plan_matches_slice_plan_without_retaining_full_samples() {
+    let samples = vec![
+        Sample::new(t(500), dirty_blank()),
+        Sample::new(t(1000), band(100, 300, 400, 30)),
+        Sample::new(t(1400), band(100, 300, 400, 30)),
+        Sample::new(t(2000), dirty_blank()),
+        Sample::new(t(2600), band(600, 300, 200, 30)),
+    ];
+    let expected = plan(&samples, &opts(4000)).unwrap();
+    let mut builder = PlanBuilder::new(opts(4000));
+    for sample in samples.clone() {
+        builder.push(sample).unwrap();
+    }
+    let actual = builder.finish().unwrap();
+
+    assert_eq!(actual.stats, expected.stats);
+    assert_eq!(actual.events.len(), expected.events.len());
+    for (actual, expected) in actual.events.iter().zip(&expected.events) {
+        assert_eq!(actual.start, expected.start);
+        assert_eq!(actual.end, expected.end);
+        assert_eq!(actual.kind, expected.kind);
+        assert_eq!(actual.digest, expected.digest);
+        assert_eq!(actual.patch, expected.patch);
+        assert_eq!(actual.merged_samples, expected.merged_samples);
+    }
+    assert_eq!(actual.loss, expected.loss);
 }
 
 #[test]

@@ -6,7 +6,7 @@
 //!
 //! 读取支持 color type 0/3 的 1/2/4/8 位、color type 2/4/6 的 8 位，加全部 5 种 filter。
 //! **16 位、隔行、tRNS 颜色键是策略性拒绝**（位深转换要先进色彩管线，不能默默 8 化），
-//! 见 docs/ISSUES.md。
+//! 见 docs/history/2026-10-06/ISSUES.md。
 
 use core_model::error::{Domain, Result, StkError};
 use flate2::read::ZlibDecoder;

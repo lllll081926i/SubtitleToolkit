@@ -16,5 +16,6 @@ pub use plan::Digest;
 pub use plan::Event;
 pub use plan::EventKind;
 pub use plan::Plan;
+pub use plan::PlanBuilder;
 pub use plan::PlanStats;
 pub use plan::Sample;

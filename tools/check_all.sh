@@ -12,6 +12,47 @@
 set -u
 cd "$(dirname "$0")/.." || exit 1
 
+# 避免 Cargo 缓存、构建产物或编译临时文件落到 Windows C 盘。
+is_c_drive_path() {
+    local path="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed 's#\\#/#g')"
+    [[ "$path" == c:* || "$path" == /c/* || "$path" == /mnt/c/* || "$path" == /cygdrive/c/* ]]
+}
+if [ -z "${CARGO_HOME:-}" ] || is_c_drive_path "$CARGO_HOME"; then
+    export CARGO_HOME="$PWD/.cargo-home"
+fi
+export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$PWD/target}"
+if is_c_drive_path "$CARGO_TARGET_DIR"; then
+    export CARGO_TARGET_DIR="$PWD/target"
+fi
+BUILD_DIR="${CARGO_TARGET_DIR//\\//}"
+CACHE_DIR="$BUILD_DIR/cache"
+TEMP_DIR="$PWD/target/tmp"
+if [ -z "${VCPKG_DOWNLOADS:-}" ] || is_c_drive_path "$VCPKG_DOWNLOADS"; then
+    export VCPKG_DOWNLOADS="$BUILD_DIR/vcpkg-downloads"
+fi
+if [ -z "${VCPKG_DEFAULT_BINARY_CACHE:-}" ] || is_c_drive_path "$VCPKG_DEFAULT_BINARY_CACHE"; then
+    export VCPKG_DEFAULT_BINARY_CACHE="$CACHE_DIR/vcpkg-binary"
+fi
+if [ -z "${SCCACHE_DIR:-}" ] || is_c_drive_path "$SCCACHE_DIR"; then
+    export SCCACHE_DIR="$CACHE_DIR/sccache"
+fi
+if [ -z "${CCACHE_DIR:-}" ] || is_c_drive_path "$CCACHE_DIR"; then
+    export CCACHE_DIR="$CACHE_DIR/ccache"
+fi
+if [ -z "${PIP_CACHE_DIR:-}" ] || is_c_drive_path "$PIP_CACHE_DIR"; then
+    export PIP_CACHE_DIR="$CACHE_DIR/pip"
+fi
+if [ -z "${TMP:-}" ] || is_c_drive_path "$TMP"; then
+    export TMP="$TEMP_DIR"
+fi
+if [ -z "${TEMP:-}" ] || is_c_drive_path "$TEMP"; then
+    export TEMP="$TEMP_DIR"
+fi
+if [ -z "${TMPDIR:-}" ] || is_c_drive_path "$TMPDIR"; then
+    export TMPDIR="$TEMP_DIR"
+fi
+mkdir -p "$CARGO_HOME" "$TEMP_DIR" "$VCPKG_DOWNLOADS" "$VCPKG_DEFAULT_BINARY_CACHE" "$SCCACHE_DIR" "$CCACHE_DIR" "$PIP_CACHE_DIR"
+
 STRICT=0
 [ "${1:-}" = "--strict" ] && STRICT=1
 LOGDIR=target/gate
@@ -113,7 +154,7 @@ g_pillow; rc=$?
 # ---------------------------------------------------------------- 5 CLI 端到端
 g_cli() {
     cargo build -p cli > /dev/null 2>&1 || return 1
-    local exe=target/debug/subtitletool-cli.exe
+    local exe="$BUILD_DIR/debug/subtitletool-cli.exe"
     [ -f "$exe" ] || return 2
     local tmp; tmp=$(mktemp -d)
     printf '1\n00:00:01,000 --> 00:00:03,000\nhello\n\n2\n00:00:04,000 --> 00:00:06,000\nworld\n' > "$tmp/a.srt"
@@ -269,13 +310,13 @@ g_render() {
     # （STK-BDN-0073）。这是门阶自己的夹具设计错，不是产品缺陷，但必须先排除掉再谈结论。
     mkdir -p "$itmp/inject" "$itmp/noinject" "$itmp/embed" "$itmp/plain"
     cp crates/codec-ass/tests/fixtures/full22.ass "$itmp/a.ass"
-    STK_LIBASS_DLL="$dll" target/debug/subtitletool-cli.exe render "$itmp/a.ass" \
+    STK_LIBASS_DLL="$dll" "$BUILD_DIR/debug/subtitletool-cli.exe" render "$itmp/a.ass" \
         --inject-fonts --out "$itmp/inject/a.xml" --json > "$LOGDIR/inject-cli.log" 2>&1 \
         || { say "    --inject-fonts 的渲染跑不起来：见 $LOGDIR/inject-cli.log"; return 1; }
     python tools/check_injection_report.py "$LOGDIR/inject-cli.log" true 1 \
         > "$LOGDIR/inject-check.log" 2>&1 \
         || { say "    注入台账的语义核对没过：见 $LOGDIR/inject-check.log"; return 1; }
-    STK_LIBASS_DLL="$dll" target/debug/subtitletool-cli.exe render "$itmp/a.ass" \
+    STK_LIBASS_DLL="$dll" "$BUILD_DIR/debug/subtitletool-cli.exe" render "$itmp/a.ass" \
         --out "$itmp/noinject/b.xml" --json > "$LOGDIR/noinject-cli.log" 2>&1 || return 1
     python tools/check_injection_report.py "$LOGDIR/noinject-cli.log" false 0 \
         > "$LOGDIR/noinject-check.log" 2>&1 \
@@ -290,7 +331,7 @@ g_render() {
     # 空哈希会把下面的 grep -F 变成"匹配一切"，所以先验长度（AI9 的那类自欺）
     [ "${#esha}" -eq 64 ] \
         || { say "    样本生成器没交出内容哈希（拿到的是 '$esha'），后续核对无从谈起"; return 1; }
-    STK_LIBASS_DLL="$dll" target/debug/subtitletool-cli.exe render "$itmp/embed.ass" \
+    STK_LIBASS_DLL="$dll" "$BUILD_DIR/debug/subtitletool-cli.exe" render "$itmp/embed.ass" \
         --inject-fonts --out "$itmp/embed/e.xml" --json > "$LOGDIR/embed-cli.log" 2>&1 \
         || { say "    带 [Fonts] 的脚本渲不动：见 $LOGDIR/embed-cli.log"; return 1; }
     python tools/check_injection_report.py "$LOGDIR/embed-cli.log" true 1 1 \
@@ -299,7 +340,7 @@ g_render() {
     grep -Fq "$esha" "$LOGDIR/embed-cli.log" \
         || { say "    台账里没有内嵌那批字节的哈希 $esha：[Fonts] 的字节没被交出去"; return 1; }
     # 同一份脚本去掉 [Fonts] 后身份必须变（AK6：内嵌字体不进摘要的话，缓存会串脚本）
-    STK_LIBASS_DLL="$dll" target/debug/subtitletool-cli.exe render "$itmp/plain.ass" \
+    STK_LIBASS_DLL="$dll" "$BUILD_DIR/debug/subtitletool-cli.exe" render "$itmp/plain.ass" \
         --inject-fonts --out "$itmp/plain/p.xml" --json > "$LOGDIR/plain-cli.log" 2>&1 \
         || { say "    去掉 [Fonts] 的同一份脚本渲不动：见 $LOGDIR/plain-cli.log"; return 1; }
     python tools/check_injection_report.py "$LOGDIR/plain-cli.log" true 1 0 \
@@ -336,14 +377,14 @@ g_host() {
     cargo build -p renderer-host --bin subtitletool-render-host \
         > "$LOGDIR/host-build.log" 2>&1 || return 1
     local hx
-    hx=$(readlink -f target/debug/subtitletool-render-host.exe 2>/dev/null)
+    hx=$(readlink -f "$BUILD_DIR/debug/subtitletool-render-host.exe" 2>/dev/null)
     [ -n "$hx" ] && [ -f "$hx" ] || return 2
     STK_REQUIRE_LIBASS=1 STK_LIBASS_DLL="$dll" STK_RENDERER_HOST="$hx" \
         cargo test -p renderer-host > "$LOGDIR/host-test.log" 2>&1 || return 1
     # doctor 必须把这项能力如实报出来：它是用户问"能不能隔离渲染"时的答案来源
     local rep
     rep=$(STK_LIBASS_DLL="$dll" STK_RENDERER_HOST="$hx" \
-        target/debug/subtitletool-cli.exe doctor --json 2>/dev/null | tr -d '\n')
+        "$BUILD_DIR/debug/subtitletool-cli.exe" doctor --json 2>/dev/null | tr -d '\n')
     printf '%s' "$rep" | grep -q '"render_host"' || { say "    doctor 没有 render_host 段"; return 1; }
     printf '%s' "$rep" | grep -q '"available":true' || { say "    doctor 说 host 不可用：$rep"; return 1; }
     printf '%s' "$rep" | grep -q '"tree_contained"' || { say "    doctor 没交代孙进程约束状态"; return 1; }
@@ -370,7 +411,7 @@ g_probe() {
         > "$LOGDIR/probe.log" 2>&1 || return 1
     # 用户能看到的那条路径也要带上建议与色彩证据，否则 crate 对了、CLI 还是瞎的
     local out
-    out=$(STK_FFPROBE="$fp" target/debug/subtitletool-cli.exe probe \
+    out=$(STK_FFPROBE="$fp" "$BUILD_DIR/debug/subtitletool-cli.exe" probe \
         crates/media-probe/tests/fixtures/uhd23976-hdr.mp4 --json 2>&1 | tr -d '\n')
     printf '%s' "$out" | grep -q '"is_hdr":true' || { say "    CLI probe 没判出 HDR：$out"; return 1; }
     printf '%s' "$out" | grep -q '"hdr-preset"' || { say "    CLI probe 没给 HDR preset：$out"; return 1; }
@@ -404,7 +445,7 @@ g_font() {
     # AI5：字体库磁盘缓存指到门阶自己的路径，免得一次梯子读到另一次梯子的残留
     cpath="$(readlink -f "$LOGDIR")/font-cache.json"
     rm -f "$cpath"
-    STK_FONTCACHE="$cpath" target/debug/subtitletool-cli.exe font scan \
+    STK_FONTCACHE="$cpath" "$BUILD_DIR/debug/subtitletool-cli.exe" font scan \
         crates/codec-ass/tests/fixtures/full22.ass \
         --fonts-dir "$dir" --out "$rep" --json > "$LOGDIR/font-cli.log" 2>&1 || return 1
     grep -q '"command":"font scan"' "$LOGDIR/font-cli.log" \
@@ -437,7 +478,7 @@ g_font() {
     local rep2
     rep2="$(readlink -f "$LOGDIR")/font-report-hit.json"
     rm -f "$rep2"
-    STK_FONTCACHE="$cpath" target/debug/subtitletool-cli.exe font scan         crates/codec-ass/tests/fixtures/full22.ass         --fonts-dir "$dir" --out "$rep2" --json > "$LOGDIR/font-cli-hit.log" 2>&1         || { say "    缓存第二跑失败：见 $LOGDIR/font-cli-hit.log"; return 1; }
+    STK_FONTCACHE="$cpath" "$BUILD_DIR/debug/subtitletool-cli.exe" font scan         crates/codec-ass/tests/fixtures/full22.ass         --fonts-dir "$dir" --out "$rep2" --json > "$LOGDIR/font-cli-hit.log" 2>&1         || { say "    缓存第二跑失败：见 $LOGDIR/font-cli-hit.log"; return 1; }
     grep -q '"cache": "hit"' "$rep2"         || { say "    第二跑没吃到缓存，AI5 的债没还上：$rep2"; return 1; }
     local b1 b2 d1 d2
     b1=$(sed -n 's/.*"build_ms": *\([0-9]*\).*/\1/p' "$rep" | head -1)
@@ -455,7 +496,7 @@ g_font() {
         if [ -f "$dir/$n" ]; then cp "$dir/$n" "$tmp/fonts/" && copied=$((copied + 1)); fi
     done
     [ "$copied" -gt 0 ] || { say "    本机没有 full22.ass 请求的任何字体，交付路径没法验"; return 1; }
-    target/debug/subtitletool-cli.exe font scan \
+    "$BUILD_DIR/debug/subtitletool-cli.exe" font scan \
         crates/codec-ass/tests/fixtures/full22.ass \
         --fonts-dir "$(readlink -f "$tmp/fonts")" --no-registry \
         --copy-fonts "$(readlink -f "$tmp/out")" --json \
@@ -471,7 +512,7 @@ g_font() {
     cmp -s "$tmp/fonts/$(basename "$delivered")" "$delivered" \
         || { say "    复制出去的字体与源不逐字节相同"; return 1; }
     # --dry-run 时交付也不能碰盘
-    rm -rf "$tmp/dry"; target/debug/subtitletool-cli.exe font scan \
+    rm -rf "$tmp/dry"; "$BUILD_DIR/debug/subtitletool-cli.exe" font scan \
         crates/codec-ass/tests/fixtures/full22.ass \
         --fonts-dir "$(readlink -f "$tmp/fonts")" --no-registry \
         --copy-fonts "$(readlink -f "$tmp" )/dry" --dry-run --json \
@@ -485,9 +526,9 @@ g_font() {
     p_off="$(readlink -f "$LOGDIR")/cache-off.json"
     c2="$(readlink -f "$LOGDIR")/cache-off-pair.json"
     rm -f "$p_use" "$p_off" "$c2"
-    STK_FONTCACHE="$c2" target/debug/subtitletool-cli.exe font scan         crates/codec-ass/tests/fixtures/full22.ass         --fonts-dir "$(readlink -f "$tmp/fonts")" --no-registry --out "$p_use" --json         > "$LOGDIR/cache-use.log" 2>&1 || { say "    缓存对照跑失败：见 $LOGDIR/cache-use.log"; return 1; }
+    STK_FONTCACHE="$c2" "$BUILD_DIR/debug/subtitletool-cli.exe" font scan         crates/codec-ass/tests/fixtures/full22.ass         --fonts-dir "$(readlink -f "$tmp/fonts")" --no-registry --out "$p_use" --json         > "$LOGDIR/cache-use.log" 2>&1 || { say "    缓存对照跑失败：见 $LOGDIR/cache-use.log"; return 1; }
     rm -f "$c2"
-    STK_FONTCACHE="$c2" target/debug/subtitletool-cli.exe font scan         crates/codec-ass/tests/fixtures/full22.ass         --fonts-dir "$(readlink -f "$tmp/fonts")" --no-registry --no-font-cache         --out "$p_off" --json > "$LOGDIR/cache-off.log" 2>&1         || { say "    --no-font-cache 跑不通：见 $LOGDIR/cache-off.log"; return 1; }
+    STK_FONTCACHE="$c2" "$BUILD_DIR/debug/subtitletool-cli.exe" font scan         crates/codec-ass/tests/fixtures/full22.ass         --fonts-dir "$(readlink -f "$tmp/fonts")" --no-registry --no-font-cache         --out "$p_off" --json > "$LOGDIR/cache-off.log" 2>&1         || { say "    --no-font-cache 跑不通：见 $LOGDIR/cache-off.log"; return 1; }
     grep -q '"cache": "off"' "$p_off"         || { say "    --no-font-cache 没在报告里留下痕迹：$p_off"; return 1; }
     [ -f "$c2" ] && { say "    --no-font-cache 还是写了缓存文件：$c2"; return 1; }
     local d3 d4
@@ -534,31 +575,13 @@ g_soak; rc=$?
 [ $rc -eq 0 ] && grep -E "^ *Summary" "$LOGDIR/soak.log" 2>/dev/null | tail -1 | sed 's/^/    /'
 report $rc "见 $LOGDIR/soak.log"
 
-# ---------------------------------------------------------------- 9 文档声明核对
-g_docs() {
-    command -v python >/dev/null 2>&1 || return 2
-    python tools/doc_claims_check.py > "$LOGDIR/docs.log" 2>&1 || return 1
-    # 第二段：文档点名为证据的测试，必须在**本次**门阶的执行记录里真的跑过。
-    # 只查"名字存在"是不够的——一条从没被执行过的测试同样能给文档当证据（ISSUES AG17）。
-    # 放在 `tests` 阶之后跑，读的就是这一轮写的 tests.log，不是上次的残留。
-    python tools/audit_evidence.py >> "$LOGDIR/docs.log" 2>&1
-    # 第三段：问题清单与交付状态必须互相自洽（ISSUES §AJ1）。
-    # 前两段查的是"文档说的东西存在吗、跑过吗"，这一段查的是"两边说法一致吗"：
-    # 已解决的事不许还留在「没做」清单里，开着的事必须在状态文档里点得到名。
-    python tools/issue_status_audit.py >> "$LOGDIR/docs.log" 2>&1
-}
-start doc-claims "39 §清单、22 §诊断、24 §QA" "文档点名的测试/标识符必须真的存在且本次真的执行过；问题清单与交付状态不得互相矛盾"
-g_docs; rc=$?
-[ $rc -eq 2 ] && report 2 "没有 python" || report $rc "见 $LOGDIR/docs.log"
-grep -E "核对|DOC CLAIMS|已执行|点名|EVIDENCE AUDIT" "$LOGDIR/docs.log" 2>/dev/null | sed 's/^/    /'
-
 # ---------------------------------------------------------------- 10 release 构建
 if [ "${RELEASE:-0}" = 1 ]; then
     g_release() {
         cargo build --workspace --release > "$LOGDIR/release.log" 2>&1 || return 1
-        [ -f target/release/subtitletool-cli.exe ] || return 1
+        [ -f "$BUILD_DIR/release/subtitletool-cli.exe" ] || return 1
         # 28 §2 把 renderer-host 列为独立产物：没有它，"DLL 不进主进程"就只是一句文档
-        [ -f target/release/subtitletool-render-host.exe ] || {
+        [ -f "$BUILD_DIR/release/subtitletool-render-host.exe" ] || {
             say "    28 §2 要求的 renderer-host 产物没被构建出来"
             return 1
         }

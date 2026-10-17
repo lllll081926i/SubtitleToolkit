@@ -409,15 +409,31 @@ fn parse_palette_len(payload: &[u8]) -> Result<usize> {
     Ok(p.entries.len())
 }
 
-/// 每个对象引用的 ODS 是否存在；Strict validator 的 Lifecycle 前置检查。
+/// 每个对象引用是否真的能解析到一份定义；Strict validator 的 Lifecycle 前置检查。
+///
+/// **对象定义跨 display set 持续有效**，不是每个集合各自封闭：
+/// 一份 ODS 定义过的 object_id 一直可用，直到被新的同 id ODS 重新定义。
+/// 真实成品字幕就是靠这一点工作的：Acquisition Point 集合先把对象都定义好，
+/// 后面一串 Normal 集合只引用、不重定义（实测一份 9951 集合的商业 SUP 里有 1641 个
+/// 这样的集合）。只在本集合内查会把它们全部误报成“未定义引用”。
+///
+/// 本项目自产的 Basic 流每个集合都自带定义，所以这个区别在自产流上看不出来。
 pub fn unresolved_objects(segments: &[Segment], sets: &[DisplaySet]) -> Vec<u16> {
     let mut out = Vec::new();
+    // 累积已定义的对象 id（跨集合）；按集合顺序推进，定义先于引用就成立。
+    let mut defined: Vec<u16> = Vec::new();
     for s in sets {
-        let defined: Vec<u16> = segments[s.first_segment..=s.last_segment]
+        for x in segments[s.first_segment..=s.last_segment]
             .iter()
             .filter(|x| x.seg_type == SEG_ODS)
-            .filter_map(|x| parse_ods_header(&x.payload).ok().map(|h| h.object_id))
-            .collect();
+        {
+            if let Ok(h) = parse_ods_header(&x.payload) {
+                // 分片序列只需记一次；重定义也只是同一个 id，不影响“已定义”。
+                if !defined.contains(&h.object_id) {
+                    defined.push(h.object_id);
+                }
+            }
+        }
         if let Some(pcs) = &s.pcs {
             for o in &pcs.objects {
                 if !defined.contains(&o.object_id) {
@@ -722,6 +738,57 @@ mod tests {
             group_display_sets(&early).unwrap_err().code_string(),
             "STK-PGS-0064"
         );
+    }
+
+    /// 回归：对象定义**跳集合持续有效**。真实成品字幕靠这个工作：
+    /// Acquisition Point 集合先把对象都定义好，后面一串 Normal 集合只引用不重定义。
+    /// 旧版只看本集合内的 ODS，把这类合法流全报成“未定义引用”。
+    #[test]
+    fn objects_defined_in_an_earlier_set_stay_resolvable() {
+        let ods_obj1 = Segment::new(
+            90_000,
+            90_000,
+            SEG_ODS,
+            vec![0, 1, 0, 0xC0, 0, 0, 6, 0, 4, 0, 2, 1, 2, 3, 4],
+        )
+        .unwrap();
+        let segs = vec![
+            Segment::new(
+                90_000,
+                90_000,
+                SEG_PCS,
+                pcs_payload(1920, 1080, &[(1, false, false)]),
+            )
+            .unwrap(),
+            ods_obj1,
+            Segment::new(90_000, 90_000, SEG_END, vec![]).unwrap(),
+            Segment::new(
+                180_000,
+                180_000,
+                SEG_PCS,
+                pcs_payload(1920, 1080, &[(1, false, false)]),
+            )
+            .unwrap(),
+            Segment::new(180_000, 180_000, SEG_END, vec![]).unwrap(),
+        ];
+        let sets = group_display_sets(&segs).unwrap();
+        assert_eq!(sets.len(), 2);
+        assert!(
+            unresolved_objects(&segs, &sets).is_empty(),
+            "前一个集合定义过的对象在本集合里必须可解析"
+        );
+
+        // 反向：引用一个从未定义过的对象仍必须报
+        let mut dangling = segs.clone();
+        dangling[3] = Segment::new(
+            180_000,
+            180_000,
+            SEG_PCS,
+            pcs_payload(1920, 1080, &[(7, false, false)]),
+        )
+        .unwrap();
+        let sets = group_display_sets(&dangling).unwrap();
+        assert_eq!(unresolved_objects(&dangling, &sets), vec![7]);
     }
 
     #[test]

@@ -268,18 +268,17 @@ pub fn ods_digests(segments: &[Segment]) -> Result<Vec<(u16, String)>> {
     Ok(out)
 }
 
-/// 结构自检：时间戳单调 + 每个 set 以 END 收尾 + DTS 不晚于 PTS（13 §6 Timeline 的最小版本）。
+/// 结构自检：display set 级时钟单调 + 每个 set 以 END 收尾 + 段内 DTS 不晚于 PTS
+/// （13 §6 Timeline 的最小版本）。
+///
+/// **单调性只看 PCS**，不看每一段。段各有 PTS/DTS（FFmpeg supenc 按解码角色逐段推导：
+/// PCS/WDS/PDS 用 base PTS，首个 ODS 的 PTS 再加对象解码时间，末段沿用上个 ODS 的时钟），
+/// 所以真实文件里同一集合内完全可以出现“后一段的 PTS 比前一段小”
+/// （实测：PCS 303750 → WDS 303702 → PDS 297870）。把逐段单调当成不变量会误杀全部真文件。
 pub fn check_timeline(segments: &[Segment]) -> Result<()> {
     let mut open = false;
-    let mut prev_pts: Option<i64> = None;
+    let mut prev_pcs_pts: Option<i64> = None;
     for s in segments {
-        if let Some(p) = prev_pts {
-            if s.pts < p {
-                return Err(StkError::simple(Domain::Pgs, 90, "PTS 非单调递增")
-                    .with_detail(format!("offset={:?} {p} -> {}", s.offset, s.pts)));
-            }
-        }
-        prev_pts = Some(s.pts);
         match s.seg_type {
             SEG_PCS => {
                 if open {
@@ -289,6 +288,18 @@ pub fn check_timeline(segments: &[Segment]) -> Result<()> {
                         "连续两个 PCS 之间没有 END",
                     ));
                 }
+                if let Some(p) = prev_pcs_pts {
+                    if s.pts <= p {
+                        return Err(
+                            StkError::simple(Domain::Pgs, 90, "display set 的 PTS 非递增")
+                                .with_detail(format!(
+                                    "offset={:?} 前一个 PCS {p} -> 本个 PCS {}",
+                                    s.offset, s.pts
+                                )),
+                        );
+                    }
+                }
+                prev_pcs_pts = Some(s.pts);
                 open = true;
             }
             SEG_END => {
@@ -594,11 +605,39 @@ mod tests {
     #[test]
     fn timeline_checks() {
         assert!(check_timeline(&stream()).is_ok());
+        // 逐段 PTS 回退（真实文件里合法）不得报错
+        let mut per_segment = stream();
+        per_segment[4].pts = 1;
+        per_segment[4].dts = 1;
+        assert!(
+            check_timeline(&per_segment).is_ok(),
+            "段间时钟不同是正常的（FFmpeg/真实字幕都这样）"
+        );
+        // PCS 级 PTS 不递增必须报：它是真正的 display set 时钟
         let mut backwards = stream();
-        backwards[4].pts = 1;
-        assert_eq!(
-            check_timeline(&backwards).unwrap_err().code_string(),
-            "STK-PGS-0090"
+        // 再拼一个完整的 display set（PCS..END），PTS 与第一组相同 → 不递增
+        let mut second_set: Vec<Segment> = stream();
+        for s in &mut second_set {
+            s.offset = None;
+        }
+        backwards.extend(second_set);
+        assert!(
+            check_timeline(&backwards).is_err(),
+            "两组 PCS 同 PTS 应被报成不递增"
+        );
+        // PCS 级 PTS 递增时不应报（逐段 PTS 回退是合法的）
+        let mut forward = stream();
+        let mut second_set: Vec<Segment> = stream();
+        for s in &mut second_set {
+            s.pts += 90_000;
+            s.dts += 90_000;
+            s.offset = None;
+        }
+        forward.extend(second_set);
+        assert!(
+            check_timeline(&forward).is_ok(),
+            "第二组 PCS 晚于第一组就该过：{:?}",
+            check_timeline(&forward).unwrap_err()
         );
         let unclosed = vec![pcs(vec![obj(1, 0, 0, false)])];
         assert_eq!(

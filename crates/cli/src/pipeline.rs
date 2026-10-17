@@ -205,6 +205,29 @@ pub fn load_text(path: &Path) -> Result<Loaded> {
     }
 }
 
+/// 23 §文件 的“极端 cue 数”检查：ASS/SSA 侧的入口。
+///
+/// `codec_ass::AssDocument::parse` 是不可失败的（它必须尽量多地把字节保下来，
+/// 这是 AT-ASS-001 的前提）。所以条目数上限只能在**解析之后**查，
+/// 而这个检查必须每个生产调用点都过——所以做成一个函数而不是散在各处的 `if`。
+///
+/// 为什么在 ASS 侧只查 Dialogue 而不查全部 Entry：`[Script Info]`、样式、
+/// 特效字体等条目数不会因恶意输入而爆炸（它们受字段数与行长度约束）。
+/// Dialogue 才是“每个数据都要建一个 stage”的那一类。
+pub fn check_ass_dialogue_count(doc: &AssDocument) -> Result<()> {
+    let n = doc.dialogue_count();
+    if let Some(limit) = core_model::limits::cue_count_exceeded(n) {
+        return Err(cli_err(114, "事件条数超过本工具的处理上限")
+            .with_detail(format!(
+                "Dialogue 有 {} 条，上限 {} 条",
+                n,
+                core_model::limits::limit_label(limit)
+            ))
+            .with_action("确认选对了文件；逐词时间轴这类超密字幕需要先切分"));
+    }
+    Ok(())
+}
+
 /// CLI 层的写出结果（`task_engine::Commit` 只有 Skipped/Written，dry-run 语义属于 CLI 层）。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Emitted {

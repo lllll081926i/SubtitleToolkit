@@ -42,3 +42,4 @@ flate2 = { workspace = true }
 # 只为模糊冒烟：BDN XML 也必须做到"任何字节都不 panic"
 codec-bdn = { workspace = true }
 sha2 = { workspace = true }
+

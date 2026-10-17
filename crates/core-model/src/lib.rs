@@ -5,6 +5,7 @@ pub mod color;
 pub mod datadir;
 pub mod error;
 pub mod geometry;
+pub mod limits;
 pub mod logging;
 pub mod loss;
 pub mod pe;
@@ -20,6 +21,7 @@ pub use geometry::{
     Geometry, LayoutRes, LayoutResPolicy, PixelAspect, ScriptResolutionPolicy, ScriptSize,
     StorageSize,
 };
+pub use limits::{cue_count_exceeded, CUE_COUNT_LIMIT, EVENT_COUNT_LIMIT};
 pub use logging::{current_log_file, init as init_logging, log_dir};
 pub use loss::LossReport;
 // PE 头读取（23 §DLL / 12 §3）：放在 core-model 是因为主程序与 renderer-host

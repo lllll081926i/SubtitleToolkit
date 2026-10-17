@@ -65,6 +65,8 @@
   CLI 把“不存在/不是 PE/位数不符”分成三个可分的错误码；`JobSnapshot` 的 `arch` 读 PE 头而非写死。
 - 23 §文件 的大文件拒绝（`pipeline::read_bounded`）：**先 stat 再读**，
   文本 1 GiB / 二进制 4 GiB，错误码 `STK-INP-0113`，详情给实际字节数与上限。
+- 23 §文件 的极端 cue 数上限（`core_model::limits`）：SRT `STK-PRS-0123` /
+  ASS `STK-INP-0114`，上限 100 万条；超限报错而不静默截断。
 - libass 渲染、renderer-host 进程隔离、BDN XML/PNG 输出和 Basic PGS 编码链。
 - PGS 段解析、Fast Path 变换、分层校验及 ODS 内容摘要。
 - 字体扫描、缺字报告、整字体复制与 manifest、渲染字体身份和字体注入。

@@ -151,3 +151,70 @@ fn the_limit_itself_is_inclusive() {
     let e = cli::pipeline::pipeline_probe_read(&f, limit).expect_err("超一个字节该被拒");
     assert_eq!(e.code_string(), "STK-INP-0113", "{e:?}");
 }
+
+// ---------------------------------------------------------------------------
+// 23 §文件 的「极端 cue 数」：字节数限不住这一格。
+//
+// 200 万条空 cue 只有 40 多 MB，字节上限完全看不住；而解析后每条 cue
+// 要占一个结构 + 一个下游 stage。所以那一条要求必须按**条目数**单独设限。
+// ---------------------------------------------------------------------------
+
+/// 造一份 `n` 条 cue 的 SRT。每条不到 40 字节，所以 100 万条大约 40 MB。
+fn many_cues_srt(n: usize) -> String {
+    let mut s = String::with_capacity(n * 40);
+    for i in 0..n {
+        s.push_str(&format!("{i}\n00:00:01,000 --> 00:00:02,000\nx\n\n"));
+    }
+    s
+}
+
+/// SRT 超过 cue 上限时以 `STK-PRS-0123` 被拒，且**不静默截断**。
+///
+/// 静默截断会让用户拿到一份缺了后半段的字幕，而那份文件在别处看起来完全正常 ——
+/// 这是本仓库一贯拒绝的取向（同 15 §6 的覆盖策略）。
+#[test]
+fn an_srt_with_too_many_cues_is_refused_not_truncated() {
+    let d = scratch("cues");
+    let limit = core_model::CUE_COUNT_LIMIT;
+    let f = d.join("many.srt");
+    // 只多一条：边界用例，同时让文件尽量小（约 40 MB）
+    std::fs::write(&f, many_cues_srt(limit + 1)).unwrap();
+    assert!(
+        std::fs::metadata(&f).unwrap().len() < 100 * 1024 * 1024,
+        "这份输入要远小于字节上限，否则测的就不是 cue 数那一条"
+    );
+
+    let v = run_json(&["convert", f.to_str().unwrap(), "--to", "ass"]);
+    assert!(!v["ok"].as_bool().unwrap(), "该失败：{v}");
+    let (code, title, details, action) = err_of(&v);
+    assert_eq!(code, "STK-PRS-0123", "{v}");
+    assert!(title.contains("cue"), "{title}");
+    assert!(
+        details.contains(&format!("{}", limit + 1)) || details.contains(&format!("{limit}")),
+        "详情要说清到多少条：{details}"
+    );
+    assert!(action.contains("切分"), "要给可照做的补法：{action}");
+    // 关键：没有产物写出来（截断会写出一份“看起来正常”的文件）
+    assert!(!d.join("many.ass").exists(), "被拒时不该写出任何产物");
+}
+
+/// 上限之内的 cue 数要照常处理（负基线）。
+/// 少了它，一个"什么 SRT 都拒"的实现也能让上面那条变绿。
+#[test]
+fn an_srt_just_below_the_cue_limit_still_converts() {
+    let d = scratch("cues-ok");
+    let f = d.join("ok.srt");
+    std::fs::write(&f, many_cues_srt(5)).unwrap();
+    let v = run_json(&["convert", f.to_str().unwrap(), "--to", "ass"]);
+    assert!(v["ok"].as_bool().unwrap(), "正常条数该照常转换：{v}");
+}
+
+/// 真字幕（几百条 cue）必须完好无损地通过 —— 上限不能把正常用法拦住。
+#[test]
+fn a_realistic_subtitle_is_unaffected_by_the_cue_limit() {
+    let d = scratch("real");
+    let f = d.join("real.srt");
+    std::fs::write(&f, many_cues_srt(2000)).unwrap();
+    let v = run_json(&["convert", f.to_str().unwrap(), "--to", "ass"]);
+    assert!(v["ok"].as_bool().unwrap(), "{v}");
+}

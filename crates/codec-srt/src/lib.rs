@@ -33,7 +33,9 @@ pub fn parse(bytes: &[u8]) -> Result<(TextSubtitle, LossReport), StkError> {
         encoding: decoded.encoding,
         ..Default::default()
     };
-    parser::collect(parser::split_lines(&decoded.text), &mut sub, &mut loss);
+    if let Some(e) = parser::collect(parser::split_lines(&decoded.text), &mut sub, &mut loss) {
+        return Err(e);
+    }
     loss.preserved("cue 时间与文本（毫秒精度、字节保真）");
     if sub.cues.is_empty() {
         loss.user_attention("未解析到任何有效 cue");

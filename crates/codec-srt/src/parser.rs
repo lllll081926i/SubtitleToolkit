@@ -5,6 +5,7 @@
 //! 一律容忍并记 non-standard；只有"无法安全归属"的块（无 `-->`、时间行之前还有别的内容、
 //! 时间字段非法）整体按原文保留为 `UnrecognizedBlock`——绝不 panic，也绝不丢内容。
 
+use core_model::error::{Domain, StkError};
 use core_model::loss::LossReport;
 use core_model::time::Time;
 
@@ -94,7 +95,11 @@ struct State {
 }
 
 /// 把已经切好的行灌进 `TextSubtitle`（`newline`/`cues`/`unrecognized` 三字段）。
-pub(crate) fn collect(split: Split<'_>, sub: &mut TextSubtitle, loss: &mut LossReport) {
+pub(crate) fn collect(
+    split: Split<'_>,
+    sub: &mut TextSubtitle,
+    loss: &mut LossReport,
+) -> Option<StkError> {
     let Split {
         lines,
         newline,
@@ -111,6 +116,12 @@ pub(crate) fn collect(split: Split<'_>, sub: &mut TextSubtitle, loss: &mut LossR
             if !block.is_empty() {
                 flush_block(&block, &mut st, loss);
                 block.clear();
+                // 23 §文件：“极端 cue 数”的防线按**条目数**算，字节数看不住
+                // （200 万条空 cue 只有 40 多 MB）。超限一律报错而不是取前 N 条：
+                // 静默截断会让用户拿到一份缺了后半段的字幕，而那份文件在别处看起来完全正常。
+                if let Some(limit) = core_model::cue_count_exceeded(st.cues.len()) {
+                    return Some(cue_limit_error(limit, st.cues.len()));
+                }
             }
             if !line.is_empty() {
                 st.flags.blank_sep = true;
@@ -121,10 +132,26 @@ pub(crate) fn collect(split: Split<'_>, sub: &mut TextSubtitle, loss: &mut LossR
     }
     if !block.is_empty() {
         flush_block(&block, &mut st, loss);
+        // 收尾块也要查：文件最后一块也可能正好跨过上限。
+        if let Some(limit) = core_model::cue_count_exceeded(st.cues.len()) {
+            return Some(cue_limit_error(limit, st.cues.len()));
+        }
     }
     apply_flags(&st.flags, loss);
     sub.cues = st.cues;
     sub.unrecognized = st.unrecognized;
+    None
+}
+
+/// 超限错误。单独一个函数是为了让两处（循环内与收尾块）给出同一条消息。
+fn cue_limit_error(limit: usize, got: usize) -> StkError {
+    StkError::simple(Domain::Parse, 123, "cue 条数超过本工具的处理上限")
+        .with_detail(format!(
+            "已解析出 {} 条，上限 {} 条",
+            got.min(limit + 1),
+            core_model::limits::limit_label(limit)
+        ))
+        .with_action("确认选对了文件；逐词时间轴这类超密字幕需要先切分")
 }
 
 /// 只有空行或纯 ASCII 空白行才算块分隔符；非 ASCII 空白视为内容（保持字节保真）。

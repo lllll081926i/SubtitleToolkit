@@ -444,6 +444,7 @@ fn verify_ass_bytes(bytes: &[u8]) -> Result<()> {
     let text = std::str::from_utf8(bytes)
         .map_err(|e| cli_err(122, "输出不是合法 UTF-8").with_detail(e.to_string()))?;
     let doc = AssDocument::parse(text);
+    crate::pipeline::check_ass_dialogue_count(&doc)?;
     if doc.render() != text {
         return Err(cli_err(123, "输出无法按自身字节重新解析为同一文档"));
     }
@@ -498,6 +499,7 @@ fn convert(
         }
         (FormatKind::Ass, FormatKind::Srt) => {
             let doc = AssDocument::parse(&src.loaded.text);
+            crate::pipeline::check_ass_dialogue_count(&doc)?;
             let (sub, loss) = pipeline::ass_to_srt(&doc)?;
             let bytes = write_srt(&sub)?;
             let data = serde_json::json!({
@@ -520,6 +522,7 @@ fn convert(
         }
         (FormatKind::Ass, FormatKind::Ass) | (FormatKind::Ass, FormatKind::Ssa) => {
             let mut doc = AssDocument::parse(&src.loaded.text);
+            crate::pipeline::check_ass_dialogue_count(&doc)?;
             let mut loss = LossReport::new();
             let g = pipeline::geometry_for(&doc, canvas, script_policy, layout_policy)?;
             let applied: ResApplied = transform_resolution::apply(&mut doc, &g, &mut loss)?;
@@ -587,6 +590,7 @@ fn time(
     match src.format {
         FormatKind::Ass => {
             let mut doc = AssDocument::parse(&src.loaded.text);
+            crate::pipeline::check_ass_dialogue_count(&doc)?;
             let (n, loss) = pipeline::time_ass(&mut doc, cfg, spec, piecewise)?;
             let bytes = doc.render().into_bytes();
             let data =
@@ -639,6 +643,7 @@ fn hdr(
         return Err(cli_err(128, "hdr 只作用于 ASS/SSA 的 &H… 颜色"));
     }
     let mut doc = AssDocument::parse(&src.loaded.text);
+    crate::pipeline::check_ass_dialogue_count(&doc)?;
     let mut loss = LossReport::new();
     let applied: HdrApplied = transform_hdr::apply(&mut doc, settings, &mut loss)?;
     let bytes = doc.render().into_bytes();

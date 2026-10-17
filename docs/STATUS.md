@@ -42,6 +42,17 @@
   （含真 libass 通过检查并真的渲染出 BDN XML，以及“同位 PE 不被误判”的负基线）；
   `core-model/src/pe.rs` 的 4 用例把 Itanium（0x0200）正确归为 `Other` 而不是 x64。
   详见[PE 架构检测裁决](reviews/2026-10-17-pe-arch-check.md)。
+- 2026-10-17 **给 AT-UI-001 补上实测证据**（此前只有结构证据）：新增
+  `crates/gui/tests/ui_responsiveness.rs`（5 用例）。真重任务（12 份输入 × 4000 条 cue）
+  在后台跑时反复计时 `SubtitleApp::update`，实测**最慢 18.5µs / 均值 9.5µs**，
+  距离 37 §1 的 8ms 预算还有 430 倍余量（实测值由用例打出来，不只是一句“通过”）。
+  另含：取消点击不阻塞且令牌与 worker 是同一份（历史上真出现过“取消按钮无效”）、
+  `StartQueue` 真的置位运行状态并换新令牌、无输入时不假装在跑。
+  开发中抳出一个**假绿**：第一版只调 `update` 不 poll 它返回的 `Task`，
+  后台永不调度 —— 表现是“任务 60 秒没动而 update 一直很快”，
+  那只证明了 UI 很快，因为后台压根没跑。
+  至此 AT 覆盖变为 23/26（`tools/at_coverage.py`）。
+  详见[UI 响应性裁决](reviews/2026-10-17-ui-responsiveness.md)。
 - 2026-10-17 **实现 22 §2 correlation id**：新增 `core_model::corrid`。
   格式 `{J|O|R}-{8hex 共享段}-{12hex 唯一尾}`：前缀标出层级，共享段让“同一个 Job 的
   全部下级”在字面上就是一家人（按它分组即可聚一次执行）。信封、人读输出末尾的
@@ -74,6 +85,8 @@
 - 22 §1 结构化日志（`tracing`），按日轮转 7 天 + 10 MiB 总量上限，随 `DataDir` 落盘。
 - 22 §2 correlation id（`J/O/R` 三层 + 共享段）：信封、人读输出和日志三处是同一个值，
   batch 另有 `output_ids[]` 与 `renderer_id`。
+- AT-UI-001 的**实测**：真重任务在后台跑时反复计时 `SubtitleApp::update`，
+  最慢 18.5µs / 均值 9.5µs（预算 8ms，37 §1）；取消点击不阻塞且令牌与 worker 同源。
 - 23 §DLL 的 PE arch 检测（单份实现在 `core_model::pe`，主程序与 host 共用）；
   CLI 把“不存在/不是 PE/位数不符”分成三个可分的错误码；`JobSnapshot` 的 `arch` 读 PE 头而非写死。
 - 23 §文件 的大文件拒绝（`pipeline::read_bounded`）：**先 stat 再读**，

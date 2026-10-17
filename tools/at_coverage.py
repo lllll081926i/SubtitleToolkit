@@ -76,10 +76,12 @@ COVERAGE = {
         "cli/tests/batch.rs 的 100 输入×3 profile 用例（含部分失败隔离）",
     ),
     "AT-UI-001": (
-        "shared",
-        "已接通的部分：真任务经 spawn_blocking 跑（不占 UI 线程）、取消令牌与引擎共享同一份 Arc"
-        "（已断言）；未做的部分：60 秒持续响应的**实测**需要真人操作与屏幕录制，"
-        "当前只有结构证据（阻塞 IO 不在 UI 线程上），不声称已通过",
+        "covered",
+        "gui/tests/ui_responsiveness.rs（5 用例）——**实测**而非结构证据：真重任务在后台跑时"
+        "反复调 SubtitleApp::update 并计时，最慢 18.5µs / 均值 9.5µs（预算 8ms，37 §1）。"
+        "另含：空闲基线、取消点击不阻塞且令牌与 worker 是同一份（已断言）、"
+        "StartQueue 真的把运行状态置位且换新令牌、无输入时不假装在跑。"
+        "未做的：真人点按钮/IME/DPI 仍需人眼（不主张已覆盖）",
     ),
     "AT-PATH-001": (
         "covered",

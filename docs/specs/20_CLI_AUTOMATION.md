@@ -26,6 +26,8 @@
 - `batch` 从 JSON 任务规格运行多个输入与输出 profile。
 - `font scan` 扫描 ASS 字体请求并生成报告；`--copy-fonts` 可交付完整字体文件。
 - `font subset` 做安全字体子集（17 §5）：复杂脚本回退整份，其余做 cmap 级等价检查。
+  `--embed-fonts --out X.ass` 把字体写进产物 ASS 的 `[Fonts]` 段；
+  `--mkv-attachments` 生成可直接嗂给 `mkv remux --attach-font` 的附件目录。
 - `mkv identify` 列出轨道与附件；`mkv extract` 抽出字幕轨或字体附件；`mkv remux` 重封装成新 MKV（绝不原地修改）。
 - `doctor` 报告环境与未实现能力。
 

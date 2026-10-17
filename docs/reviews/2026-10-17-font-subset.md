@@ -128,6 +128,47 @@ vertical forms / IVS / emoji），不按"这个字体有没有对应表"：
 | --- | --- |
 | report only | 已交付（`font scan`） |
 | copy full fonts + manifest | 已交付（`font scan --copy-fonts`） |
-| copy subset fonts + manifest | **本次交付**（`font subset`） |
-| embed ASS `[Fonts]` | 未交付 |
-| prepare MKV attachments | 未交付（但 `mkv remux --attach-font` 已可手接） |
+| copy subset fonts + manifest | 已交付（`font subset`） |
+| embed ASS `[Fonts]` | **已交付**（`font subset --embed-fonts`） |
+| prepare MKV attachments | **已交付**（`font subset --mkv-attachments`，输出可照抄的 `mkv remux` 命令行） |
+
+## 7. 第四/五档的实现裁决（AT-FONT-004 候选）
+
+### 7.1 编码器与解码器必须严格互逆
+
+`font_service::attachments` 新增 `encode_base64` / `encode_fonts_section` /
+`insert_fonts_section` / `strip_fonts_section`。回程用例把**整份真字体字节**
+（1,045,720 字节）走一遍 `encode → parse`，逐字节比较才算过。
+
+带出两个真实缺陷（已修）：
+
+- **BOM 会让整个 `[Fonts]` 段隐形**：BOM 在文件开头时，第一行是
+  `\u{feff}[Fonts]`，而它不是一个段头，解析器会整段跳过去。修法是在解析的第一行剥 BOM。
+- **不去重会写出两份 `[Fonts]`**：解析器只认第一份，第二份字节会静默留在文件里。
+  `strip_fonts_section` 负责先剥掉；没删过东西时它一个字节都不动（有断言守护）。
+
+base64 行宽取 80（4 的倍数）：拆散编码单元就拼不回去了。
+
+### 7.2 什么被证明了、什么没有
+
+原本想拿“字体库置空的目录里渲染内嵌产物”当判据。实测发现**这条路证明不了任何事**：
+`STK_FONTS_DIR` 只换我们自己的扫描根（报告 `roots` 可见它只在扫描侧生效），
+libass 仍会走自己的系统字体回退链，于是“空目录也能渲染成功”与内嵌无关。
+把这个结果写成“内嵌验证通过”就是拿一个自欺的断言充证据。
+
+所以 `crates/cli/tests/embed_fonts.rs` 只声明能判定的东西：
+
+1. 内嵌段能被解析器读回，**SHA-256 与报告里声明交付的那份相等**；
+2. 产物里只有一个 `[Fonts]`；
+3. 带内嵌段的 ASS 能渲染，且与不带它时**逐像素一致**
+   （只证明“加了这段没弄坏渲染”，**不证明** libass 用了它）；
+4. MKV 附件目录里的字节与报告里的哈希一致，且仍是可解析的字体。
+
+“libass 到底用没用内嵌字节”需要一条能屏蔽系统字体的通路，
+那由 `--inject-fonts` 回答（见 `crates/cli/tests/subset_render.rs` 的逐像素对照）。
+
+### 7.3 MKV 附件不自己调 mkvmerge
+
+字体服务只落目录 + 给命令行，容器层的事留给 `mkv remux`（18 §2）。
+这样做的好处是两边可以独立验收：附件目录的判据是“字节对不对”，
+MKV 那侧的判据是 AT-MKV-001 的逐轨元数据核对。

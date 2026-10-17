@@ -179,6 +179,230 @@ pub fn copy_fonts(
     Ok((writes, manifest))
 }
 
+/// 一个档位的产出（写盘记录 + 报告）。
+///
+/// 抽出来是为了让 `font subset` 的两个新档位有同一种形状，
+/// 而不是各自造一套 envelope 片段。
+pub struct OutputResult {
+    pub writes: Vec<WriteRecord>,
+    pub report: serde_json::Value,
+}
+
+impl std::fmt::Debug for OutputResult {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OutputResult")
+            .field("writes", &self.writes.len())
+            .field("report_mode", &self.report["mode"])
+            .finish()
+    }
+}
+
+/// 17 §6 第四档：把字体写进产物 ASS 的 `[Fonts]` 段。
+///
+/// 三条纪律：
+/// * **先剥掉原有的 `[Fonts]` 段**再嵌：不去掉就会写出两个，而解析器只认第一份，
+///   后面那份字节会静默留在文件里 —— 体积涨了却没人用；
+/// * 嵌进去的必须还是**能被解析器读回**的字体：写一个坏字体进 ASS 是最坏的失败；
+/// * 产物是**新文件**（`--out` 决定路径），不动输入 ASS（与其它命令同一条规矩）。
+pub fn embed_fonts(
+    inv: &Invocation,
+    ass_text: &str,
+    input: &Path,
+    fonts: &[(String, Vec<u8>)],
+    dest: &Path,
+) -> Result<OutputResult> {
+    if fonts.is_empty() {
+        return Err(
+            cli_err(201, "没有字体可以嵌入").with_action("先跑 font scan 确认有解析到的 face")
+        );
+    }
+    let out = inv.out.as_deref().ok_or_else(|| {
+        cli_err(202, "--embed-fonts 需要 --out PATH 指定产物 ASS 的位置")
+            .with_action("例：--out D:\\out\\embedded.ass")
+    })?;
+
+    let items: Vec<(String, &[u8])> = fonts
+        .iter()
+        .map(|(n, b)| (n.clone(), b.as_slice()))
+        .collect();
+    let section = font_service::encode_fonts_section(&items)?;
+    let (clean, removed) = font_service::strip_fonts_section(ass_text);
+    let rebuilt = font_service::insert_fonts_section(&clean, &section);
+
+    // 自检：产物必须自己解得回来，而且要解回**完全相同**的字节。
+    // 这一关不是多余的：它就是"嵌进去的东西能不能被 libass 用上"的直接判据。
+    let want: Vec<(String, String)> = fonts
+        .iter()
+        .map(|(n, b)| (n.clone(), font_service::attachments::digest_hex(b)))
+        .collect();
+    let parsed = font_service::parse_font_attachments(&rebuilt)?;
+    if parsed.len() != want.len() {
+        return Err(
+            cli_err(203, "嵌入后的 ASS 解出的附件数不对").with_detail(format!(
+                "写了 {} 份，解回 {} 份",
+                want.len(),
+                parsed.len()
+            )),
+        );
+    }
+    for (got, (name, sha)) in parsed.iter().zip(want.iter()) {
+        if &got.declared_name != name || &got.sha256 != sha {
+            return Err(cli_err(204, "嵌入后的 ASS 附件与预期不符")
+                .with_detail(format!("{}：写了 {sha}，解回 {}", name, got.sha256)));
+        }
+    }
+
+    let bytes = rebuilt.into_bytes();
+    let verify_sha = pipeline::sha256_hex(&bytes);
+    let emitted = pipeline::emit(
+        Some(out),
+        out,
+        &bytes,
+        move |b| {
+            if pipeline::sha256_hex(b) != verify_sha {
+                return Err(cli_err(205, "写出的 ASS 与计算结果不一致"));
+            }
+            // 再解一次：落盘的内容必须仍然能解回那些字体
+            font_service::parse_font_attachments(&String::from_utf8_lossy(b))?;
+            Ok(())
+        },
+        inv.dry_run,
+        inv.overwrite,
+    )?;
+    let note = emitted.describe();
+
+    let total_bytes: usize = fonts.iter().map(|(_, b)| b.len()).sum();
+    Ok(OutputResult {
+        writes: vec![WriteRecord {
+            path: note.path,
+            bytes: note.bytes,
+            state: note.state,
+        }],
+        report: serde_json::json!({
+            "mode": "embed ASS [Fonts]",
+            "input": input.display().to_string(),
+            "output": out.display().to_string(),
+            "embedded_fonts": fonts.iter().map(|(n, b)| serde_json::json!({
+                "name": n,
+                "bytes": b.len(),
+                "sha256": font_service::attachments::digest_hex(b),
+            })).collect::<Vec<_>>(),
+            "embedded_total_bytes": total_bytes,
+            "replaced_existing_section": removed,
+            "verified_round_trip": true,
+            "scope": [
+                "嵌入的是本轮交付的那份字节（子集或整份回退），不是重新读一次磁盘",
+                "写完会重新解一遍，逐份核对名字与 SHA-256；对不上就不算产出",
+                "不验证 libass 是否真的用上了这些字节：那需要真渲染对照（见 AT-FONT-002/003）",
+            ],
+            "dir_hint": dest.display().to_string(),
+        }),
+    })
+}
+
+/// 17 §6 第五档：生成可直接嗂给 `mkv remux --attach-font` 的附件目录。
+///
+/// 与第四档的差别在于**它不修改任何字幕**：只把字节落到一个目录，并在报告里
+/// 给出可以照抄的命令行。这样做是因为 MKV 附件是容器层的事（18 §2），
+/// 字体服务不应自己调 mkvmerge —— 两者靠目录与命令文本对接。
+pub fn mkv_attachments(
+    inv: &Invocation,
+    fonts: &[(String, Vec<u8>)],
+    dest: &Path,
+) -> Result<OutputResult> {
+    if fonts.is_empty() {
+        return Err(cli_err(206, "没有字体可以作为 MKV 附件交付")
+            .with_action("先跑 font scan 确认有解析到的 face"));
+    }
+    let attach_dir = dest.join("mkv-attachments");
+    if !inv.dry_run {
+        std::fs::create_dir_all(&attach_dir).map_err(|e| {
+            cli_err(207, "无法创建 MKV 附件目录")
+                .with_detail(format!("{}：{e}", attach_dir.display()))
+        })?;
+    }
+
+    let mut writes: Vec<WriteRecord> = Vec::new();
+    let mut entries: Vec<serde_json::Value> = Vec::new();
+    for (name, bytes) in fonts {
+        // 文件名要能直接当 mkvmerge 的 `--attach-file` 参数：
+        // 带路径分隔符或专属字符的名字会让命令行指引变得没法照抄。
+        let safe = sanitize_attachment_name(name);
+        let target = attach_dir.join(&safe);
+        let want_sha = font_service::attachments::digest_hex(bytes);
+        let verify = move |b: &[u8]| -> Result<()> {
+            if font_service::attachments::digest_hex(b) != want_sha {
+                return Err(cli_err(208, "写出的附件字节不一致").with_detail(name.clone()));
+            }
+            if !font_service::is_parseable_font(b) {
+                return Err(cli_err(209, "写出的附件不是可解析的字体").with_detail(name.clone()));
+            }
+            Ok(())
+        };
+        let emitted = pipeline::emit(
+            Some(&target),
+            &target,
+            bytes,
+            verify,
+            inv.dry_run,
+            inv.overwrite,
+        )?;
+        let note = emitted.describe();
+        writes.push(WriteRecord {
+            path: note.path.clone(),
+            bytes: note.bytes,
+            state: note.state.clone(),
+        });
+        entries.push(serde_json::json!({
+            "name": name,
+            "delivered_as": safe,
+            "path": note.path,
+            "bytes": bytes.len(),
+            "sha256": font_service::attachments::digest_hex(bytes),
+        }));
+    }
+
+    // 给一段能直接照抄的命令行：两档之间靠这个对接，而不是靠调用方猜。
+    let attach_args: Vec<String> = entries
+        .iter()
+        .map(|e| format!("--attach-font \"{}\"", e["path"].as_str().unwrap_or("")))
+        .collect();
+
+    Ok(OutputResult {
+        writes,
+        report: serde_json::json!({
+            "mode": "prepare MKV attachments",
+            "attachment_dir": attach_dir.display().to_string(),
+            "attachments": entries,
+            "remux_hint": format!("mkv remux <in.mkv> --out <new.mkv> --all-subtitles {}", attach_args.join(" ")),
+            "scope": [
+                "只准备附件目录，不调用 mkvmerge：容器层的事留给 mkv remux（18 §2）",
+                "附件名已做安全化（去掉路径分隔符与控制字符），便于直接嗂给 --attach-file",
+                "mkv remux 会按“文件名 + 字节数”去重，重复附加同一份字体是安全的",
+            ],
+        }),
+    })
+}
+
+/// 附件文件名安全化：mkvmerge 把它当路径参数，而 `--attach-file` 的值里
+/// 出现路径分隔符就会被当成子目录。把所有不安全字符换成 `_`。
+fn sanitize_attachment_name(name: &str) -> String {
+    let mut out: String = name
+        .chars()
+        .map(|c| {
+            if c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    if out.trim().is_empty() {
+        out = "font.ttf".to_string();
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -186,6 +410,155 @@ mod tests {
     use font_service::report::Verdict;
     use std::path::PathBuf;
     use task_engine::OverwritePolicy;
+
+    /// 找一份真字体并读成字节。找不到就 `None`（调用方明确跳过）。
+    ///
+    /// 用真字体而不是伪造字节：附件解析会校验"读回来还是不是字体"，
+    /// 伪字节会（正确地）被拒，那些用例就变成在测错误路径。
+    fn real_font_bytes() -> Option<Vec<u8>> {
+        for c in [r"C:\Windows\Fonts\arial.ttf", r"C:\Windows\Fonts\ARIAL.TTF"] {
+            if let Ok(b) = std::fs::read(c) {
+                return Some(b);
+            }
+        }
+        None
+    }
+
+    /// 附件名不能在 mkvmerge 的参数里变成路径：`--attach-file` 的值带分隔符
+    /// 就会被当成子目录，而报告里那段"照抄即可"的命令行也就不成立了。
+    #[test]
+    fn attachment_names_are_made_safe_for_the_command_line() {
+        assert_eq!(sanitize_attachment_name("Arial.ttf"), "Arial.ttf");
+        assert_eq!(sanitize_attachment_name("a/b\\c.ttf"), "a_b_c.ttf");
+        assert_eq!(
+            sanitize_attachment_name("C:\\fonts\\x.ttf"),
+            "C__fonts_x.ttf"
+        );
+        assert_eq!(sanitize_attachment_name("a\u{0}b.ttf"), "a_b.ttf");
+        assert_eq!(sanitize_attachment_name("   "), "font.ttf");
+        assert_eq!(sanitize_attachment_name(""), "font.ttf");
+        // 中文名字是合法的，不该被换掉
+        assert_eq!(sanitize_attachment_name("思源黑体.ttf"), "思源黑体.ttf");
+    }
+
+    /// 嵌入档在没有 `--out` 时必须明确拒绝：它没地方可写，
+    /// 而默默地"写回输入"是 15 §6 明禁的。
+    #[test]
+    fn embed_fonts_requires_an_explicit_output_path() {
+        let dir = scratch("embed-no-out");
+        let input = dir.join("a.ass");
+        std::fs::write(&input, "[Script Info]\nTitle: t\n").unwrap();
+        let Some(bytes) = real_font_bytes() else {
+            eprintln!("跳过：找不到字体");
+            return;
+        };
+        let inv = Invocation {
+            command: Command::Doctor,
+            json: true,
+            out: None,
+            dry_run: true,
+            overwrite: OverwritePolicy::Rename,
+            inject_fonts: false,
+            no_font_cache: true,
+        };
+        let e = embed_fonts(
+            &inv,
+            "[Script Info]\nTitle: t\n",
+            &input,
+            &[("a.ttf".to_string(), bytes)],
+            &dir,
+        )
+        .unwrap_err();
+        assert_eq!(e.code, 202, "{e:?}");
+        assert!(e.user_action.is_some(), "拒绝要给下一步");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// 嵌入产物必须真的能被解回，且**只能有一个** `[Fonts]` 段。
+    /// 这是 17 §6 第四档的交付判据。
+    #[test]
+    fn embed_fonts_writes_a_self_consistent_ass() {
+        let dir = scratch("embed");
+        let Some(bytes) = real_font_bytes() else {
+            eprintln!("跳过：找不到字体");
+            return;
+        };
+        let sha = font_service::attachments::digest_hex(&bytes);
+        // 输入本身已经带一段旧附件：嵌新的之后旧的那段必须消失
+        let old = font_service::encode_fonts_section(&[("old.ttf".to_string(), &bytes)]).unwrap();
+        let text = format!("{old}\n[Script Info]\nTitle: t\n\n[Events]\n");
+
+        let out = dir.join("embedded.ass");
+        let inv = Invocation {
+            command: Command::Doctor,
+            json: true,
+            out: Some(out.clone()),
+            dry_run: false,
+            overwrite: OverwritePolicy::Rename,
+            inject_fonts: false,
+            no_font_cache: true,
+        };
+        let r = embed_fonts(
+            &inv,
+            &text,
+            &dir.join("a.ass"),
+            &[("new.ttf".to_string(), bytes.clone())],
+            &dir,
+        )
+        .unwrap();
+        assert_eq!(r.report["replaced_existing_section"], true);
+        assert_eq!(r.report["verified_round_trip"], true);
+        assert_eq!(r.writes.len(), 1);
+
+        // 真的落盘了：从产物读回来验证
+        let written = std::fs::read_to_string(&r.writes[0].path).unwrap();
+        assert_eq!(written.matches("[Fonts]").count(), 1, "只能有一个 [Fonts]");
+        assert!(!written.contains("old.ttf"), "旧附件必须消失");
+        let items = font_service::parse_font_attachments(&written).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].declared_name, "new.ttf");
+        assert_eq!(items[0].sha256, sha, "字节必须完整往返");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// MKV 附件档：字节落盘、名字安全化、报告里那段命令行确实指向产出的文件。
+    #[test]
+    fn mkv_attachments_delivers_bytes_and_a_usable_hint() {
+        let dir = scratch("mkvatt");
+        let Some(bytes) = real_font_bytes() else {
+            eprintln!("跳过：找不到字体");
+            return;
+        };
+        let sha = font_service::attachments::digest_hex(&bytes);
+        let inv = Invocation {
+            command: Command::Doctor,
+            json: true,
+            out: None,
+            dry_run: false,
+            overwrite: OverwritePolicy::Rename,
+            inject_fonts: false,
+            no_font_cache: true,
+        };
+        let r = mkv_attachments(&inv, &[("sub/dir\\Arial.ttf".to_string(), bytes)], &dir).unwrap();
+        let entry = &r.report["attachments"][0];
+        assert_eq!(entry["sha256"], sha.as_str());
+        assert_eq!(entry["delivered_as"], "sub_dir_Arial.ttf", "名字要安全化");
+        // 落盘的字节必须与输入一致（自己读回来验，不信报告）
+        let path = PathBuf::from(entry["path"].as_str().unwrap());
+        assert!(path.is_file(), "{} 应该存在", path.display());
+        assert_eq!(
+            font_service::attachments::digest_hex(&std::fs::read(&path).unwrap()),
+            sha
+        );
+        // 提示里的路径必须就是刚写的那一个
+        let hint = r.report["remux_hint"].as_str().unwrap();
+        assert!(hint.contains("--attach-font"), "{hint}");
+        assert!(
+            hint.contains(path.to_str().unwrap()),
+            "提示要指向真实产物：{hint}"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
 
     fn face(path: &str, index: u32, len: u32) -> font_service::report::FaceSummary {
         font_service::report::FaceSummary {

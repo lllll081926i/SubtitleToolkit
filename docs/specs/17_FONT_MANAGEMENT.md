@@ -70,9 +70,16 @@ assfonts Rust 版本当前实现从 cmap 把 `required_chars` 映射为 glyph ID
 
 ### 实现状态（2026-10-17）
 
-已交付：report only、copy full fonts + manifest（`font scan --copy-fonts`）、
-copy subset fonts + manifest（`font subset`）。
-未交付：embed ASS `[Fonts]`、prepare MKV attachments（后者已有 `mkv remux --attach-font` 可手接）。
+**六档已全部交付**：
+
+| 档位 | 命令 |
+| --- | --- |
+| report only | `font scan` |
+| copy full fonts + manifest | `font scan --copy-fonts DIR` |
+| copy subset fonts + manifest | `font subset` |
+| embed ASS `[Fonts]` | `font subset --embed-fonts --out X.ass` |
+| prepare MKV attachments | `font subset --mkv-attachments` |
+| manifest（原 hash → subset hash → 请求）| 每档都带 |
 
 `font subset` 的行为：
 
@@ -81,6 +88,15 @@ copy subset fonts + manifest（`font subset`）。
 - 其余做 cmap 级等价检查（字符解出的字形存在性与水平 advance 必须一致），不过就回退；
 - 产物写到 `--subset-dir`（默认源字体目录下的 `.subtitletool-subset/`），**不覆盖原字体**；
 - manifest 同时记原字体 hash 与子集 hash，任何时刻都能回到原字体。
+
+两档新输出的纪律：
+
+- **embed**：先剥掉原有的 `[Fonts]` 段再嵌（不去重就有两份而解析器只认第一份）；
+  写完重新解一遍，逐份核对名字与 SHA-256；**`[Fonts]` 必须能被解析器读回**（
+  `font_service::attachments` 的编码器与解码器是严格互逆的一对，由往返用例守护）。
+- **MKV 附件**：只准备目录 + 给出可照抄的 `mkv remux --attach-font …` 命令行，
+  自己**不调 mkvmerge**（容器层的事留给 18 §2 的 `mkv remux`）；附件名做安全化
+  （去掉路径分隔符与控制字符），否则 `--attach-file` 会把它当子目录。
 
 ## 7. libass 字体注入
 Windows 路径为了稳健：

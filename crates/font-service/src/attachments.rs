@@ -112,9 +112,15 @@ pub fn parse(text: &str) -> Result<Vec<Attachment>> {
         Ok(())
     };
 
-    for line in text.lines() {
+    for (idx, line) in text.lines().enumerate() {
         let t = line.trim_end_matches('\r');
-        let trimmed = t.trim_start();
+        // BOM 只可能出现在第一行开头（文件开头），但把它剥干净的代价可以忽略，
+        // 而漏掉它的后果很具体：`\u{feff}[Fonts]` 不是一个段头，整个段都不会被读取。
+        let trimmed = if idx == 0 {
+            t.trim_start_matches('\u{feff}').trim_start()
+        } else {
+            t.trim_start()
+        };
         if trimmed.starts_with('[') && trimmed.ends_with(']') {
             // 段切换：先把手上这份结掉，再决定是否进入 [Fonts]
             flush(&mut name, &mut payload, &mut out, &mut total)?;
@@ -195,6 +201,155 @@ pub fn digest_hex(bytes: &[u8]) -> String {
 }
 
 const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+/// 标准 base64 编码（`+`/`/`：`=` 填充，每行 80 列）。
+///
+/// 与 [`decode_base64`] 严格互逆：行宽 80 是 4 的倍数，不会把编码单元拆到两行
+/// （拆了就拼不回去，因为解码器只在行间跳过空白、不跨行补位）。
+pub fn encode_base64(bytes: &[u8]) -> String {
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4 + bytes.len() / 60 + 2);
+    let mut col = 0usize;
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = *chunk.get(1).unwrap_or(&0) as u32;
+        let b2 = *chunk.get(2).unwrap_or(&0) as u32;
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        let quad = [
+            ALPHABET[(n >> 18) as usize & 63],
+            ALPHABET[(n >> 12) as usize & 63],
+            ALPHABET[(n >> 6) as usize & 63],
+            ALPHABET[n as usize & 63],
+        ];
+        let keep = match chunk.len() {
+            3 => 4,
+            2 => 3,
+            _ => 2,
+        };
+        for &c in &quad[..keep] {
+            out.push(c as char);
+        }
+        for _ in keep..4 {
+            out.push('=');
+        }
+        col += 4;
+        if col >= 80 {
+            out.push('\n');
+            col = 0;
+        }
+    }
+    if col != 0 {
+        out.push('\n');
+    }
+    out
+}
+
+/// 把附件编码成 libass / VSFilter 都认的 `[Fonts]` 段（`fontname:` + 分行 base64）。
+///
+/// 用 `fontname:` 而不是 `P:`：前者是 Aegisub/VSFilter 存出来那种真正带内嵌字体的
+/// ASS 文件用的写法（`strip_name_key` 的两个前缀都能解，但写出去要选在野那一份）。
+///
+/// `items` 是 `(名字, 字节)`；名字为空或含换行会被拒 —— 那样会写出一个自己都解不回来的段。
+pub fn encode_fonts_section(items: &[(String, &[u8])]) -> Result<String> {
+    let mut total = 0usize;
+    let mut out = String::from("[Fonts]\n");
+    for (name, bytes) in items {
+        if name.trim().is_empty() {
+            return Err(attach_err(
+                300,
+                "内嵌字体缺少名字",
+                "名字为空会写出无法解回的段",
+            ));
+        }
+        if name.contains(['\n', '\r']) {
+            return Err(attach_err(
+                301,
+                "内嵌字体名字含换行",
+                "名字行的边界就是换行",
+            ));
+        }
+        if bytes.is_empty() {
+            return Err(attach_err(302, "内嵌字体内容为空", name));
+        }
+        if bytes.len() > MAX_ATTACHMENT_BYTES {
+            return Err(attach_err(
+                303,
+                "内嵌字体超过单份大小上限",
+                &format!("{name}：{} 字节，上限 {MAX_ATTACHMENT_BYTES}", bytes.len()),
+            ));
+        }
+        total += bytes.len();
+        if total > MAX_TOTAL_BYTES {
+            return Err(attach_err(
+                304,
+                "内嵌字体合计超过上限",
+                &format!("累计 {total} 字节，上限 {MAX_TOTAL_BYTES}"),
+            ));
+        }
+        out.push_str("fontname: ");
+        out.push_str(name);
+        out.push('\n');
+        out.push_str(&encode_base64(bytes));
+    }
+    Ok(out)
+}
+
+/// 把 `[Fonts]` 段插进一份 ASS 文本，位置与 libass 的预期一致。
+///
+/// 插入点选在**第一个 `[` 段头之前**（也就是 `[Script Info]` 前面）：
+/// * `[Fonts]` 在 ASS 里不是标准段，libass 是顺序扫到的，放哪里都能识别；
+/// * 放最前面意味着不需要解析文件结构、也不会把任何已有内容切两半；
+/// * 原有的 `[Fonts]` 段（如果有）由调用方先移除，这里只管插，不负责去重。
+pub fn insert_fonts_section(text: &str, section: &str) -> String {
+    let bom = if text.starts_with('\u{feff}') {
+        "\u{feff}"
+    } else {
+        ""
+    };
+    let body = text.strip_prefix('\u{feff}').unwrap_or(text);
+    let mut out = String::with_capacity(text.len() + section.len() + 4);
+    out.push_str(bom);
+    out.push_str(section);
+    out.push('\n');
+    out.push_str(body);
+    out
+}
+
+/// 去掉文本里已有的 `[Fonts]` 段（含它到下一个段头之间的全部内容）。
+///
+/// 用于"重新嵌一份"的场景：不去掉就会写出两个 `[Fonts]`，而我们的解析器
+/// 只认第一份 —— 后面那份字节会静默留在文件里，体积涨了却没人用。
+/// 返回 `(去掉后的文本, 是否真的去过)`。
+pub fn strip_fonts_section(text: &str) -> (String, bool) {
+    let mut out = String::with_capacity(text.len());
+    let mut in_fonts = false;
+    let mut removed = false;
+    let mut seen_content = false;
+    for line in text.split_inclusive('\n') {
+        let trimmed = line.trim_start_matches('\u{feff}').trim_start();
+        let is_header = trimmed.starts_with('[') && trimmed.trim_end().ends_with(']');
+        if is_header {
+            in_fonts = trimmed.trim_end().eq_ignore_ascii_case("[fonts]");
+            if in_fonts {
+                removed = true;
+                continue;
+            }
+        }
+        if in_fonts {
+            continue;
+        }
+        // 被删掉的 [Fonts] 段会在开头留下一串空行（段落之间本就隔一个空行）。
+        // 只在**确实删过东西、且还没遇到正式内容**时丢掉：
+        // 没删过就一个字节都不动（否则会把用户正文里的空行吃掉）。
+        if removed && !seen_content && trimmed.is_empty() {
+            continue;
+        }
+        if !trimmed.is_empty() {
+            seen_content = true;
+        }
+        out.push_str(line);
+    }
+    (out, removed)
+}
 
 /// 标准 base64（`+`/`/`，`=` 填充）。换行与空白直接跳过 —— 脚本里的附件就是分行写的。
 /// 遇到字母表外的字符就报错而不是"跳过当噪声"：那会把一份坏字体读成一份短字体。
@@ -278,6 +433,133 @@ mod tests {
         assert_eq!(decode_base64("Zm8=v").unwrap_err().code, 246);
         // 不完整的组："Z" 只凑到 6 位，落不成一个字节
         assert_eq!(decode_base64("Z").unwrap_err().code, 248);
+    }
+
+    /// 编码器与解码器必须严格互逆：这是 embed 那一档正确性的**唯一**判据。
+    /// 把真字体字节走一遍 `encode → parse`，逐字节相同才算数。
+    ///
+    /// 用**整份真字体**而不是截断的字节：解析器会校验"读回来还是不是字体"
+    /// （code 243），截断的字节会（正确地）被拒。
+    #[test]
+    fn encoder_is_the_exact_inverse_of_the_parser() {
+        let Some(real) = std::fs::read("C:\\Windows\\Fonts\\arial.ttf").ok() else {
+            eprintln!("跳过编码往返：找不到真字体");
+            return;
+        };
+        let payloads: Vec<(String, Vec<u8>)> = vec![("Arial.ttf".to_string(), real.clone())];
+
+        let items: Vec<(String, &[u8])> = payloads
+            .iter()
+            .map(|(n, b)| (n.clone(), b.as_slice()))
+            .collect();
+        let section = encode_fonts_section(&items).unwrap();
+        // 写出去的确实是在野那一份的写法
+        assert!(
+            section.starts_with("[Fonts]\nfontname: Arial.ttf\n"),
+            "{}",
+            &section[..80.min(section.len())]
+        );
+
+        let text = format!("[Script Info]\nTitle: t\n\n{section}\n[Events]\n");
+        let back = parse(&text).unwrap();
+        assert_eq!(back.len(), payloads.len());
+        for (a, (name, bytes)) in back.iter().zip(payloads.iter()) {
+            assert_eq!(&a.declared_name, name, "名字要一字不差");
+            assert_eq!(
+                a.data,
+                *bytes,
+                "{name} 的字节必须逐字节相同（{} 字节）",
+                bytes.len()
+            );
+            assert_eq!(a.sha256, digest_hex(bytes));
+            assert!(a.parseable, "读回来的必须还是可解析的字体");
+        }
+    }
+
+    /// 编码器不能写出一个自己都解不回的段。
+    #[test]
+    fn encoder_refuses_names_that_would_break_its_own_parser() {
+        let bytes: &[u8] = b"\x00\x01\x02";
+        for (name, want_code) in [
+            ("".to_string(), 300),
+            ("   ".to_string(), 300),
+            ("a\nb".to_string(), 301),
+        ] {
+            let e = encode_fonts_section(&[(name.clone(), bytes)]).unwrap_err();
+            assert_eq!(e.code, want_code, "{name:?}");
+        }
+        let e = encode_fonts_section(&[("a.ttf".to_string(), &[])]).unwrap_err();
+        assert_eq!(e.code, 302);
+    }
+
+    /// base64 编码的行宽必须是 4 的倍数：拆开就拼不回去。
+    #[test]
+    fn base64_line_width_keeps_quads_intact() {
+        let data = vec![0xABu8; 1000];
+        let enc = encode_base64(&data);
+        for line in enc.lines() {
+            assert_eq!(line.len() % 4, 0, "行宽必须是 4 的倍数：{line:?}");
+            assert!(line.len() <= 80, "行不能超过 80 列：{}", line.len());
+        }
+        assert_eq!(decode_base64(&enc).unwrap(), data, "编码必须可解回");
+    }
+
+    #[test]
+    fn strip_fonts_section_removes_it_and_reports_whether_it_did() {
+        let with = "[Fonts]\nfontname: a.ttf\nQUJD\n\n[Script Info]\nTitle: t\n";
+        let (stripped, removed) = strip_fonts_section(with);
+        assert!(removed);
+        assert!(!stripped.contains("[Fonts]"), "{stripped:?}");
+        assert!(stripped.contains("[Script Info]"), "{stripped:?}");
+        assert!(!stripped.contains("QUJD"), "载荷也必须一起走：{stripped:?}");
+
+        // 没有就不改内容
+        let without = "[Script Info]\nTitle: t\n\n[Events]\n";
+        let (same, removed2) = strip_fonts_section(without);
+        assert!(!removed2);
+        assert_eq!(same, without, "没有 [Fonts] 就一个字节都不该动");
+    }
+
+    /// 去重后重新嵌一份：结果里只能有一个 `[Fonts]`。
+    /// 不去重会让第二份字节静默留在文件里——体积涨了却没人用。
+    #[test]
+    fn strip_then_insert_leaves_exactly_one_fonts_section() {
+        let Some(real) = std::fs::read("C:\\Windows\\Fonts\\arial.ttf").ok() else {
+            eprintln!("跳过去重重嵌：找不到真字体");
+            return;
+        };
+        // 造一份"已经内嵌过旧字体"的文件
+        let old = encode_fonts_section(&[("old.ttf".to_string(), &real)]).unwrap();
+        let original = format!("{old}\n[Script Info]\nTitle: t\n\n[Events]\n");
+
+        let (clean, removed) = strip_fonts_section(&original);
+        assert!(removed);
+        let section = encode_fonts_section(&[("new.ttf".to_string(), &real)]).unwrap();
+        let rebuilt = insert_fonts_section(&clean, &section);
+        assert_eq!(rebuilt.matches("[Fonts]").count(), 1, "只能有一个 [Fonts]");
+        assert!(!rebuilt.contains("old.ttf"), "旧附件必须彻底消失");
+        assert!(rebuilt.contains("new.ttf"));
+        // 且新文件必须能被解回（真的自洽，不是看起来对）
+        let items = parse(&rebuilt).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].declared_name, "new.ttf");
+        assert_eq!(items[0].data, real, "新附件字节必须完整");
+    }
+
+    /// BOM 不能被插到附件名后面去：那会让名字带上一个不可见字节。
+    #[test]
+    fn insert_keeps_a_leading_bom_at_the_very_front() {
+        let Some(real) = std::fs::read("C:\\Windows\\Fonts\\arial.ttf").ok() else {
+            eprintln!("跳过 BOM 用例：找不到真字体");
+            return;
+        };
+        let text = "\u{feff}[Script Info]\nTitle: t\n";
+        let section = encode_fonts_section(&[("a.ttf".to_string(), &real)]).unwrap();
+        let out = insert_fonts_section(text, &section);
+        assert!(out.starts_with('\u{feff}'), "BOM 必须还在最前");
+        assert_eq!(out.matches('\u{feff}').count(), 1, "只能有一个 BOM");
+        let items = parse(&out).unwrap();
+        assert_eq!(items[0].declared_name, "a.ttf", "名字不能带 BOM");
     }
 
     #[test]

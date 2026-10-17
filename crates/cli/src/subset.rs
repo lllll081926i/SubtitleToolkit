@@ -49,6 +49,8 @@ pub fn run_subset(inv: &Invocation) -> Result<Envelope> {
         registry,
         subset_dir,
         fallback_full,
+        embed_fonts,
+        mkv_attachments,
     } = &inv.command
     else {
         return Err(cli_err(280, "font 命令分派错误"));
@@ -119,6 +121,9 @@ pub fn run_subset(inv: &Invocation) -> Result<Envelope> {
     let mut total_source = 0usize;
     let mut total_output = 0usize;
     let mut fallbacks: Vec<serde_json::Value> = Vec::new();
+    // 两档新输出要用到"最终交付的字节"（可能是子集，也可能是整份回退），
+    // 所以在循环里存下来，而不是到后面再去读文件——读了就可能读到刚被别人换掉的版本。
+    let mut delivered: Vec<(String, Vec<u8>)> = Vec::new();
 
     for req in &plan {
         let src = Path::new(&req.path);
@@ -146,6 +151,13 @@ pub fn run_subset(inv: &Invocation) -> Result<Envelope> {
         }
 
         let name = subset::subset_path(&dest, src, &outcome.source_sha256);
+        // 附件名用原子字体文件名：mkv 附件与 ASS `[Fonts]` 都是按名字被人看的，
+        // `<stem>.<sha8>.subset.ttf` 这种名字在播放器里会很难认。
+        let attach_name = src
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "font.ttf".to_string());
+        delivered.push((attach_name.clone(), outcome.bytes.clone()));
         let verify_sha = outcome.output_sha256.clone();
         let verify_parseable = outcome.outcome == Outcome::Subset;
         let emitted = pipeline::emit(
@@ -183,6 +195,7 @@ pub fn run_subset(inv: &Invocation) -> Result<Envelope> {
             "subset_sha256": outcome.output_sha256,
             "output_bytes": outcome.bytes.len(),
             "delivered_as": name.file_name().map(|s| s.to_string_lossy().into_owned()),
+            "attachment_name": attach_name,
             "outcome": outcome.outcome,
             "fallback_reason": outcome.fallback.as_ref().map(|r| r.code()),
             "fallback_detail": outcome.fallback.as_ref().map(|r| r.describe()),
@@ -256,12 +269,27 @@ pub fn run_subset(inv: &Invocation) -> Result<Envelope> {
         return Err(e);
     }
 
+    // 17 §6 第四/五档：两档都基于“最终交付的字节”（子集或整份回退），
+    // 所以必须在同一份 `delivered` 上做，不能各自再去读一次磁盘。
+    let mut extra_outputs: Vec<serde_json::Value> = Vec::new();
+    if *embed_fonts {
+        let out = crate::deliver::embed_fonts(inv, &loaded.text, input, &delivered, &dest)?;
+        writes.extend(out.writes);
+        extra_outputs.push(out.report);
+    }
+    if *mkv_attachments {
+        let out = crate::deliver::mkv_attachments(inv, &delivered, &dest)?;
+        writes.extend(out.writes);
+        extra_outputs.push(out.report);
+    }
+
     let mut env = Envelope::ok(
         cmd,
         serde_json::json!({
             "ass_input": input.display().to_string(),
             "delivered_dir": dest.display().to_string(),
             "manifest": manifest,
+            "outputs": extra_outputs,
         }),
     );
     env.writes = writes;

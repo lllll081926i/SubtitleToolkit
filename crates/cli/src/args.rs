@@ -58,9 +58,12 @@ commands:
                      不带 --copy-fonts 时只出报告：不写字体、不装字体、不 subset（17 §6 第一档）
   font subset  <file.ass> [--fonts-dir DIR]... [--no-registry]
                      [--subset-dir ABS_DIR] [--fallback-full]
-                     17 §5：把 ASS 真正用到的字符做成字体子集，并做 cmap 级等价检查
+                     [--embed-fonts --out EMBEDDED.ass] [--mkv-attachments]
+                     17 §5/§6：把 ASS 真正用到的字符做成字体子集，并做 cmap 级等价检查
                      复杂脚本（Arabic/Indic/combining/vertical/IVS/emoji）一律回退整份
                      默认写到源字体目录下的 .subtitletool-subset/，不覆盖原字体
+                     --embed-fonts：把字体写进产物 ASS 的 [Fonts] 段（需 --out）
+                     --mkv-attachments：生成可直接嗂给 mkv remux --attach-font 的附件目录
   mkv identify <file.mkv> [--tools-dir DIR]
                      18 §2：列出轨道（语言/名称/default/forced）与附件（含字体附件）
   mkv extract  <file.mkv> --track ID:OUT... [--attachment ID:OUT]... [--tools-dir DIR]
@@ -131,6 +134,8 @@ const SWITCHES: &[&str] = &[
     "--drop-video",
     "--drop-audio",
     "--fallback-full",
+    "--embed-fonts",
+    "--mkv-attachments",
 ];
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -212,6 +217,10 @@ pub enum Command {
         subset_dir: Option<PathBuf>,
         /// 有任何一份回退就整体失败，而不是混合交付
         fallback_full: bool,
+        /// 17 §6 第四档：把字体写进产物 ASS 的 `[Fonts]` 段
+        embed_fonts: bool,
+        /// 17 §6 第五档：生成可直接喂给 `mkv remux --attach-font` 的附件目录
+        mkv_attachments: bool,
     },
     /// 18 §2 的 MKV 助手：identify / extract / remux，全部走外部 MKVToolNix。
     Mkv {
@@ -859,12 +868,16 @@ pub fn parse(argv: &[String]) -> Result<Invocation, ArgError> {
                     let mut registry = true;
                     let mut subset_dir: Option<PathBuf> = None;
                     let mut fallback_full = false;
+                    let mut embed_fonts = false;
+                    let mut mkv_attachments = false;
                     let input = scan(tail, &mut |name, value| {
                         match name {
                             "--fonts-dir" => dirs.push(PathBuf::from(value)),
                             "--no-registry" => registry = false,
                             "--subset-dir" => subset_dir = Some(PathBuf::from(value)),
                             "--fallback-full" => fallback_full = true,
+                            "--embed-fonts" => embed_fonts = true,
+                            "--mkv-attachments" => mkv_attachments = true,
                             _ => {
                                 return Err(ArgError::value(format!(
                                     "font subset 不支持开关 {name}"
@@ -887,6 +900,8 @@ pub fn parse(argv: &[String]) -> Result<Invocation, ArgError> {
                         registry,
                         subset_dir,
                         fallback_full,
+                        embed_fonts,
+                        mkv_attachments,
                     }
                 }
                 other => {

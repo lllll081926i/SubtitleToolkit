@@ -56,6 +56,11 @@ commands:
                      并读注册表 HKLM/HKCU\\...\\CurrentVersion\\Fonts 的登记（--no-registry 可关）
                      [--copy-fonts DIR] 17 §6 第二档：把解析到的字体文件连 manifest 一起复制过去
                      不带 --copy-fonts 时只出报告：不写字体、不装字体、不 subset（17 §6 第一档）
+  font subset  <file.ass> [--fonts-dir DIR]... [--no-registry]
+                     [--subset-dir ABS_DIR] [--fallback-full]
+                     17 §5：把 ASS 真正用到的字符做成字体子集，并做 cmap 级等价检查
+                     复杂脚本（Arabic/Indic/combining/vertical/IVS/emoji）一律回退整份
+                     默认写到源字体目录下的 .subtitletool-subset/，不覆盖原字体
   mkv identify <file.mkv> [--tools-dir DIR]
                      18 §2：列出轨道（语言/名称/default/forced）与附件（含字体附件）
   mkv extract  <file.mkv> --track ID:OUT... [--attachment ID:OUT]... [--tools-dir DIR]
@@ -73,7 +78,6 @@ commands:
          / --inject-fonts（17 §7：把解析到的字体字节交给 libass，让渲染用的就是那份字节）
 覆盖策略默认 rename：目标已存在就换个名字写，绝不直接截断原文件（15 §6、AT-OUT-001）
 尚未实现（返回 STK-INP-0060 并指明所属 Phase，不会假装成功）：
-  font subset
   --preset FILE                        等 TOML 依赖按 21 §1 批准（ISSUES E4）；现在会明确报错
 ";
 
@@ -126,6 +130,7 @@ const SWITCHES: &[&str] = &[
     "--all-subtitles",
     "--drop-video",
     "--drop-audio",
+    "--fallback-full",
 ];
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -196,6 +201,17 @@ pub enum Command {
         registry: bool,
         /// 17 §6 的第二档：把解析到的 face 文件连同 manifest 复制到指定目录
         copy_fonts: Option<PathBuf>,
+    },
+    /// 17 §5/§6 的子集：把 ASS 真正用到的字符做成字体子集（复杂脚本回退整份）。
+    FontSubset {
+        input: PathBuf,
+        fonts_dirs: Vec<PathBuf>,
+        /// 读不读注册表登记的字体（默认读，与 font scan 一致）
+        registry: bool,
+        /// 子集输出目录；None = 源字体目录下的 `.subtitletool-subset/`
+        subset_dir: Option<PathBuf>,
+        /// 有任何一份回退就整体失败，而不是混合交付
+        fallback_full: bool,
     },
     /// 18 §2 的 MKV 助手：identify / extract / remux，全部走外部 MKVToolNix。
     Mkv {
@@ -303,6 +319,7 @@ impl Command {
             Command::Render { .. } => "render",
             Command::Batch { .. } => "batch",
             Command::FontScan { .. } => "font scan",
+            Command::FontSubset { .. } => "font subset",
             Command::Mkv { action, .. } => match action {
                 MkvAction::Identify { .. } => "mkv identify",
                 MkvAction::Extract { .. } => "mkv extract",
@@ -837,10 +854,41 @@ pub fn parse(argv: &[String]) -> Result<Invocation, ArgError> {
                         copy_fonts: copy_to,
                     }
                 }
-                "subset" => not_built(
-                    "font subset",
-                    "Phase 6（子集等价 corpus 未建立，17 §5 / ISSUES AG2）",
-                ),
+                "subset" => {
+                    let mut dirs: Vec<PathBuf> = Vec::new();
+                    let mut registry = true;
+                    let mut subset_dir: Option<PathBuf> = None;
+                    let mut fallback_full = false;
+                    let input = scan(tail, &mut |name, value| {
+                        match name {
+                            "--fonts-dir" => dirs.push(PathBuf::from(value)),
+                            "--no-registry" => registry = false,
+                            "--subset-dir" => subset_dir = Some(PathBuf::from(value)),
+                            "--fallback-full" => fallback_full = true,
+                            _ => {
+                                return Err(ArgError::value(format!(
+                                    "font subset 不支持开关 {name}"
+                                )))
+                            }
+                        }
+                        Ok(())
+                    })?;
+                    if let Some(p) = &subset_dir {
+                        if !p.is_absolute() {
+                            return Err(ArgError::value(format!(
+                                "--subset-dir 需要绝对路径，收到 {}",
+                                p.display()
+                            )));
+                        }
+                    }
+                    Command::FontSubset {
+                        input,
+                        fonts_dirs: dirs,
+                        registry,
+                        subset_dir,
+                        fallback_full,
+                    }
+                }
                 other => {
                     return Err(ArgError::usage(format!(
                         "font 子命令未知：{other}（可用：scan|subset）"
@@ -1027,6 +1075,14 @@ fn parse_u64_str(value: &str, flag: &str) -> Result<(u64, String), ArgError> {
     Ok((id, rest.to_string()))
 }
 
+/// 把一个命令登记为"已规划但未实现"。
+///
+/// **当前没有任何命令用它**（2026-10-17：`font subset` 与 `mkv` 落地后
+/// `doctor` 的 `not_built` 为空）。保留它是因为：
+/// * `COMMAND_CATALOG` 上加一条新命令而还没实现时，这是唯一的正确写法；
+/// * `not_built_commands()` 靠它推导清单，删掉它就等于删掉那条门禁的入口。
+/// * `--preset` 仍旧走解析层的明确拒绝（它不是命令，所以不在这里）。
+#[allow(dead_code)]
 fn not_built(name: &str, phase: &str) -> Command {
     Command::NotBuilt {
         name: name.to_string(),
@@ -1508,34 +1564,76 @@ mod tests {
         assert!(parse(&argv(&["mkv", "identify"])).is_err());
     }
 
+    /// `font subset` 的解析：它已落地（17 §5），必须走真命令而不是占位。
+    #[test]
+    fn font_subset_parses_as_a_real_command() {
+        let inv = parse(&argv(&[
+            "font",
+            "subset",
+            "x.ass",
+            "--subset-dir",
+            "D:\\out",
+            "--fallback-full",
+        ]))
+        .unwrap();
+        assert_eq!(inv.command.name(), "font subset");
+        match inv.command {
+            Command::FontSubset {
+                subset_dir,
+                fallback_full,
+                registry,
+                ..
+            } => {
+                assert_eq!(subset_dir, Some(PathBuf::from("D:\\out")));
+                assert!(fallback_full);
+                assert!(registry, "默认读注册表，与 font scan 一致");
+            }
+            other => panic!("{other:?}"),
+        }
+        // 相对路径的子集目录要在解析层挡住（输出事务只对绝对路径负责）
+        let e = parse(&argv(&[
+            "font",
+            "subset",
+            "x.ass",
+            "--subset-dir",
+            "rel/out",
+        ]))
+        .unwrap_err();
+        assert!(e.message.contains("绝对路径"), "{e:?}");
+        // 默认不整体拒绝回退
+        let bare = parse(&argv(&["font", "subset", "x.ass"])).unwrap();
+        match bare.command {
+            Command::FontSubset {
+                fallback_full,
+                subset_dir,
+                ..
+            } => {
+                assert!(!fallback_full);
+                assert_eq!(subset_dir, None);
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(parse(&argv(&["font", "subset", "x.ass", "--bogus", "1"])).is_err());
+    }
+
     #[test]
     fn unimplemented_commands_are_not_silently_ok() {
         // 未实现清单问解析器要（`not_built_commands`），不手抄第二份：
         // 手抄的那份在命令落地之后还在宣称它未实现，而且没有任何测试会发现（ISSUES AC4）。
         let pending = not_built_commands();
+        // 2026-10-17：catalog 里的每条命令都已实现，未实现清单为空。
+        // 这个断言反过来守住"不能悄悄多出一条占位命令"。
         assert!(
-            pending.contains(&"font subset"),
-            "font subset 必须仍然在未实现清单里：{pending:?}"
+            pending.is_empty(),
+            "所有已规划命令都已实现，清单必须为空：{pending:?}"
         );
-        assert!(
-            !pending.contains(&"mkv"),
-            "mkv 已经落地（container-adapter），不能再列为未实现：{pending:?}"
-        );
-        for name in &pending {
-            let mut args: Vec<String> = name.split(' ').map(str::to_string).collect();
-            args.push("x.in".to_string());
-            let inv = parse(&args).unwrap();
-            assert!(
-                matches!(inv.command, Command::NotBuilt { .. }),
-                "{args:?} 不应被当成已实现命令"
-            );
-        }
         // 已落地的命令不许继续躺在清单里；pgs encode 与 render 都曾经是占位
         for done in [
             "render",
             "pgs encode",
             "batch",
             "font scan",
+            "font subset",
             "mkv identify",
             "mkv extract",
             "mkv remux",

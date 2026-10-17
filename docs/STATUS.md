@@ -12,6 +12,8 @@
 - 2026-10-17 **用真实第三方商业 SUP（98.97 MB）驱动 PGS 校验与 Fast Path，修正四个真实现缺陷**：ODS `data_length` 语义算错（应含宽高 4 字节，编码器与校验器都错）、`PGS.TML.02` 基于发明出来的不变量（段间时钟本可不同）、Fast Path 要求逐段 PTS 单调、对象定义被判为不跨 display set 持续（真实文件有 1641 个复用集合）。修复后 `standard` 校验 `error=0`；**AT-PGS-001/002/003 均已执行并通过**（时间平移后 11286 个 ODS payload 逐字节一致、PTS/DTS 精确 +90000 tick；Forced 只改 PCS、调色板只改 PDS，ODS 摘要均不变）。详见[真实 SUP 互操作裁决](reviews/2026-10-17-pgs-real-corpus.md)。
 - 2026-10-17 依赖许可门禁已全绿（`NOTICES OK … 0 个问题`）：补齐了 `notices.py` 的 SPDX OR 语义与 `.crate` 归档回退，`gui` 关闭 iced 的 `svg` 特性去掉强制 MPL-2.0 依赖，并恢复了两份被工作区删除的第三方源码归档。MKVToolNix v102.0 已按 21 §9 登记可用性与哈希。
 - 2026-10-17 **实现 MKV 容器助手（18_CONTAINER_HELPER，AUDIT-A002），AT-MKV-001 用真实 MKVToolNix 执行通过（23/23 断言）**：新增 `container-adapter` crate（只调用 mkvmerge/mkvextract，不含任何 EBML 实现）与 `mkv identify|extract|remux` 三个子命令。`remux` 写临时文件后原子改名，写完重新 identify 并逐轨核对元数据（类型/编码/语言/名称/default/forced、附件数、章节数），对不上就删半成品并失败——源文件全程只读（内容哈希前后一致）。过程中修正四个真实现缺陷（mkvmerge v102.0 的 `chapters` 是对象列表而非计数；选项名与取值必须是两个 argv 元素，拼成一个带空格的串会 exit=2 且 stderr 为空；列表选项是 `--subtitle-tracks` 而"全丢"是 `--no-subtitles`；把"按要求改元数据"误判成"元数据漂移"），另发现并绕开一处既存撞码（`Input/200` 已被 `codec-srt` 占用，本命令改用 250–260 段）。详见[MKV 助手裁决](reviews/2026-10-17-mkv-container-helper.md)。
+- 2026-10-17 **实现字体子集（17 §5/§6，ISSUES AG2/E4），AT-FONT-003 用真 libass 执行通过**：新增 `font subset` 与 `font-service::subset`。选 `allsorts` 0.17.0（Apache-2.0，符合 21 §1）；复杂脚本按码位区间一律回退整份；其余做 cmap 级等价检查（字符解出的字形存在性与 advance 一致）。**渲染级等价用真 libass 验证**：同一 ASS/canvas/fps 下整份 Arial 与子集各经 `--inject-fonts` 注入渲染，2 帧 PNG 逐像素一致（1,045,720 → 29,240 字节）。过程中发现并绕开 `allsorts` 的真实缺陷：请求列表不含 glyph 0 时子集会把 `U+0020` 的 cmap 映射写成 0（空格渲染成 .notdef）。详见[子集裁决](reviews/2026-10-17-font-subset.md)。
+- 2026-10-17 **全部已规划命令落地**：`doctor` 的 `not_built` 已为空（`font subset` 与 `mkv *` 是最后两条）。占位机制（`Command::NotBuilt` + `not_built_commands`）保留，供后续新增命令使用。
 
 ## 项目边界
 
@@ -36,7 +38,7 @@
 
 ## 未交付或未裁决
 
-- `font subset`、CSRI/VSFilterMod provider、x86 renderer host、桌面 GUI 和发行安装链未实现。
+- CSRI/VSFilterMod provider、x86 renderer host、桌面 GUI 和发行安装链未实现。
 - 字体服务未使用 DirectWrite 作为权威 resolver；字体子集正确性尚无复杂文字渲染语料。
 - PGS Basic 编码不等于 Strict Blu-ray 合规。PCS 帧率字段、palette range/matrix、ODS 图末标记尚无真盘/设备结论；当前 ffprobe 证据只覆盖 `.sup` 容器段布局与时钟。
 - Strict validator 需要尚未实现的缓冲模型和设备语料，因此不会给出 Strict 通过结论。

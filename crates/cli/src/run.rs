@@ -125,6 +125,7 @@ pub(crate) fn execute_ctx(
         ),
         Command::Batch { spec } => crate::batch::run_batch(inv, spec, cmd),
         Command::FontScan { .. } => crate::font::run_font(inv),
+        Command::FontSubset { .. } => crate::subset::run_subset(inv),
         Command::Mkv { .. } => crate::mkv::run_mkv(inv),
         Command::NotBuilt { name, phase } => Err(StkError::simple(
             Domain::Input,

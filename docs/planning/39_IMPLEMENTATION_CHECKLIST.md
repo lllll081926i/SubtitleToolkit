@@ -42,6 +42,7 @@
 - **AT-RENDER-002**：需真实 VSFilterMod provider 二进制。当前仅能用宿主故障/超时证明隔离，不能代替 provider 崩溃结论。
 - **AT-RENDER-003**：x86 renderer host 产物不存在，不验收自动路由。
 - **AT-MKV-001**：已实现并执行通过（2026-10-17，真实 MKVToolNix v102.0，23/23 断言；见[裁决](../reviews/2026-10-17-mkv-container-helper.md)）。未覆盖：第 7 层设备语料、逐包内容 diff。
+- **AT-FONT-003（子集渲染等价）**：已执行并通过（2026-10-17）。同一 ASS/canvas/fps 下，整份 Arial 与子集各经 `--inject-fonts` 注入真 libass 渲染，**2 帧 PNG 逐像素一致**（1,045,720 → 29,240 字节）。入口 `crates/cli/tests/subset_render.rs`。未覆盖：非拉丁文字、合字序列、TTC/OTC、variable font（当前一律回退整份）。见[子集裁决](../reviews/2026-10-17-font-subset.md)。
 - **AT-UI-001**：GUI 未实现（用户指示本轮不推进）。
 - **AT-BD-001 的 GUI 部分**：UI 禁用解释留到 GUI 阶段。
 

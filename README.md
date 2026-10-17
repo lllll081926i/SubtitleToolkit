@@ -2,7 +2,7 @@
 
 面向 Windows 的 Rust 字幕转换与适配工具箱。输入现有字幕，通过 CLI 完成文本转换、时间调整、颜色调整、字体检查和批量处理。
 
-**当前处于开发阶段，不是正式发布版本。** GUI、CSRI/VSFilterMod、字体子集和安装包尚未完成。现有实现与验证范围见[当前状态](docs/STATUS.md)和[2026-10-08 代码审查](docs/reviews/2026-10-08.md)。新增规划与文档审查建议的处理结果见[文档审查采纳记录](docs/planning/AUDIT_ADOPTION_20261008.md)。
+**当前处于开发阶段，不是正式发布版本。** GUI、CSRI/VSFilterMod 和安装包尚未完成。现有实现与验证范围见[当前状态](docs/STATUS.md)和[2026-10-08 代码审查](docs/reviews/2026-10-08.md)。新增规划与文档审查建议的处理结果见[文档审查采纳记录](docs/planning/AUDIT_ADOPTION_20261008.md)。
 
 ## 快速开始
 

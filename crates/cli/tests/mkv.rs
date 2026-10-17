@@ -299,12 +299,27 @@ fn missing_mkvtoolnix_is_a_dependency_error_not_a_panic() {
     assert!(v["errors"][0]["action"].is_string(), "要给安装指引");
 }
 
-/// 未实现命令必须仍然明确失败（不能因为 mkv 落地就把占位机制拆了）。
+/// 未实现命令的占位机制仍然在：`not_built_commands()` 靠解析器推导，
+/// 当前为空（所有已规划命令都落地了），且 `doctor` 报出来的清单必须与之一致。
+/// 这条守护的是"清单不能停在旧结论上"，不是某一个具体命令。
 #[test]
-fn font_subset_is_still_explicitly_unimplemented() {
-    let out = run(&["font", "subset", "x.ass", "--json"]);
+fn font_subset_is_now_a_real_command_with_real_behaviour() {
+    // 已实现：不再报占位码，而是像其它命令一样报输入问题
+    let out = run(&["font", "subset", "Z:\\no-such-dir-9k2\\x.ass", "--json"]);
     assert_eq!(out.status.code(), Some(1));
     let v = json(&out);
     assert_eq!(v["ok"], false);
-    assert_eq!(v["errors"][0]["code"], "STK-INP-0060");
+    assert_eq!(v["errors"][0]["code"], "STK-INP-0110");
+    assert_ne!(v["errors"][0]["code"], "STK-INP-0060");
+
+    // 参数用法仍然要严：相对路径的 --subset-dir 在解析层挡住
+    let out = run(&[
+        "font",
+        "subset",
+        "x.ass",
+        "--subset-dir",
+        "rel/out",
+        "--json",
+    ]);
+    assert_eq!(out.status.code(), Some(2), "参数错误应为 2");
 }

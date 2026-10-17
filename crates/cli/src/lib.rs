@@ -14,6 +14,7 @@ pub mod output;
 pub mod pipeline;
 pub mod render;
 pub mod run;
+pub mod subset;
 
 use core_model::error::StkError;
 use std::io::Write;

@@ -46,17 +46,29 @@ fn doctor_json_is_one_line_and_names_missing_capabilities() {
     assert_eq!(v["command"], "doctor");
     assert_eq!(v["ok"], true);
     let nb = v["data"]["not_built"].as_array().unwrap();
-    // 未实现清单现在只剩 font subset：`render`、`font scan` 与 `mkv *` 都从占位变成了实命令，
-    // 如果这里还写着它们，就是 doctor 在替产品撒一个过期的谎
-    assert!(!nb.contains(&serde_json::json!("render")), "{nb:?}");
-    assert!(!nb.contains(&serde_json::json!("font scan")), "{nb:?}");
-    assert!(nb.contains(&serde_json::json!("font subset")), "{nb:?}");
-    // mkv 已落地（18 §2/§4）：三个子命令都不该再出现。
-    // 注意 catalog 里的是 "mkv identify" 这种子命令形式，不是裸的 "mkv"。
-    assert!(!nb.contains(&serde_json::json!("mkv")), "{nb:?}");
-    assert!(!nb.contains(&serde_json::json!("mkv identify")), "{nb:?}");
-    assert!(!nb.contains(&serde_json::json!("mkv extract")), "{nb:?}");
-    assert!(!nb.contains(&serde_json::json!("mkv remux")), "{nb:?}");
+    // 2026-10-17：catalog 里的每条命令都已实现（`font subset` 与 `mkv *` 都已落地），
+    // 所以未实现清单必须为空。
+    // 这个断言反过来守住"清单不能停留在旧结论上"：doctor 报告的是
+    // "这个产品能干什么"，它说错就等于用户对功能面的判断错（ISSUES AC4）。
+    assert!(
+        nb.is_empty(),
+        "所有已规划命令都已实现，not_built 必须为空：{nb:?}"
+    );
+    // 这几条都曾经是占位：现在必须不出现在任何"未实现"的说法里
+    for done in [
+        "render",
+        "font scan",
+        "font subset",
+        "mkv",
+        "mkv identify",
+        "mkv extract",
+        "mkv remux",
+    ] {
+        assert!(
+            !nb.contains(&serde_json::json!(done)),
+            "{done} 已实现：{nb:?}"
+        );
+    }
     // doctor 的清单是从解析器推出来的，所以它必须和实际退出码一致：
     // 列在未实现里的命令真的回 STK-INP-0060，没列的必须不报这个码
     for listed in nb {
@@ -291,12 +303,17 @@ fn usage_errors_exit_two_and_run_errors_exit_one() {
     assert_eq!(v["errors"][0]["code"], "STK-INP-0110");
     assert!(v["errors"][0]["action"].is_null() || true);
 
-    // 占位命令：明确失败、给 0060，而不是假成功。
-    // mkv 已经落地（18 §2/§4），所以拿仍然未实现的 font subset 当样本。
-    let out = run(&["font", "subset", "x.ass", "--json"]);
+    // 2026-10-17：catalog 里的命令全部已实现，所以已经没有占位命令可测。
+    // 但"占位机制"本身必须还在（`Command::NotBuilt` 与 `not_built_commands`）——
+    // 它靠 doctor 的清单与解析器一致性守护（见 doctor 那条用例），
+    // 这里改测已实现命令对**不存在的输入**也走 0110 而不是 0060。
+    let out = run(&["font", "subset", "Z:\\no-such-dir-9k2\\x.ass", "--json"]);
     assert_eq!(out.status.code(), Some(1));
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(v["errors"][0]["code"], "STK-INP-0060");
+    assert_eq!(
+        v["errors"][0]["code"], "STK-INP-0110",
+        "已实现命令的输入缺失是 0110，而不是未实现的 0060"
+    );
 
     // mkv 的未知子命令是**用法错误**(2)，不是运行错误(1)：
     // 命令拼错与命令跑不起来是两件事，退出码不能混。
@@ -342,15 +359,16 @@ fn usage_errors_exit_two_and_run_errors_exit_one() {
             "{cmd} 已实现，却还留在\"尚未实现\"里：\n{help}"
         );
     }
-    for pending in ["font subset", "--preset", "STK-INP-0060"] {
+    // `--preset` 仍是一个已规划但未实现的特性（它不是命令，所以不进 not_built）。
+    // STK-INP-0060 必须还在这段说明里，因为这条代码路径还在。
+    for pending in ["--preset", "STK-INP-0060"] {
         assert!(
             pending_part.contains(pending),
-            "usage 少了未实现项 {pending}：\n{help}"
+            "usage 少了未完成项 {pending}：\n{help}"
         );
     }
-    // mkv 已经落地（18 §2/§4）：它的三个子命令必须在"已实现"段落里，
-    // 且不得再出现在"尚未实现"那一段里
-    for done in ["mkv identify", "mkv extract", "mkv remux"] {
+    // 已落地的命令必须在"已实现"段落里，且不得再出现在"尚未实现"那一段里
+    for done in ["font subset", "mkv identify", "mkv extract", "mkv remux"] {
         assert!(
             impl_part.contains(done),
             "usage 的已实现段落少了 {done}：\n{help}"
@@ -831,18 +849,18 @@ fn font_scan_reports_against_the_real_font_library() {
     );
     std::fs::remove_dir_all(&dir).ok();
 
-    // subset 仍是占位：不能因为 scan 落地就顺带宣称子集可用（17 §5 的 corpus 没建）
-    let out = run(&["font", "subset", "x.ass", "--json"]);
+    // subset 已落地（17 §5）：不再报"未实现"。
+    // 但输入不存在时仍是 0110；这里用一个不存在的路径证明它走的是真执行路径。
+    let out = run(&["font", "subset", "Z:\\no-such-dir-9k2\\x.ass", "--json"]);
     assert_eq!(out.status.code(), Some(1), "{out:?}");
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(v["errors"][0]["code"], "STK-INP-0060", "{v}");
-    assert!(
-        v["errors"][0]["title"]
-            .as_str()
-            .unwrap()
-            .contains("font subset"),
-        "{v}"
+    assert_eq!(v["errors"][0]["code"], "STK-INP-0110", "{v}");
+    assert_ne!(
+        v["errors"][0]["code"], "STK-INP-0060",
+        "font subset 已实现，不得再报占位码"
     );
+    // 命令名在信封的 command 字段上（不能在错误标题里找它，那是两回事）
+    assert_eq!(v["command"], "font subset", "{v}");
 }
 
 /// 17 §6 第二档：`--copy-fonts` 复制整份字体并写 manifest。

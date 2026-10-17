@@ -582,6 +582,7 @@ dependencies = [
  "codec-srt",
  "container-adapter",
  "core-model",
+ "flate2",
  "font-service",
  "format-detect",
  "image-core",

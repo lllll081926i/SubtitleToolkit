@@ -23,6 +23,11 @@ pub const TAG_BLOB: u8 = 2;
 /// 单条消息的上限。帧本身（1080p RGBA = 8 337 920 字节）远小于它，
 /// 而恶意/错乱的长度字段绝不允许换来一次巨型分配（25 AT-SEC-001 的同一纪律）。
 pub const MAX_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
+
+/// 崩溃注入的测试通道开关。只有宿主进程的**环境变量**能让宿主自杀，
+/// 控制面协议本身不再携带任何自毁指令（2026-10-09 审查：正式二进制不得留有
+/// 可被客户端控制的 abort/hang 后门）。AT-RENDER-002 的崩溃用例经此开关触发。
+pub const CRASH_ENV: &str = "STK_HOST_CRASH";
 pub const FRAME_CHUNK_BYTES: usize = 16 * 1024 * 1024;
 
 /// 握手结果：12 §2 要求逐项交代 provider 类型、名字、版本、PE 位数、API 版本、像素格式。
@@ -65,11 +70,6 @@ pub enum Request {
     Render {
         /// 整数毫秒：libass 的 `ass_render_frame` 只接受整毫秒
         pts_ms: i64,
-    },
-    /// 测试用的自伤开关（AT-RENDER-002 需要"第三方 provider 崩了会怎样"，
-    /// 而本机没有可下载的 VSFilterMod 二进制，所以由我们自己制造崩溃）。
-    Poison {
-        how: String,
     },
     Bye,
 }

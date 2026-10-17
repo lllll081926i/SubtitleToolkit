@@ -38,8 +38,12 @@ fn external_entity_doctype_is_rejected_not_resolved() {
     assert_eq!(code_of(xml), "STK-BDN-0051");
 }
 
+/// XXE 底线：DTD/外部实体一律拒绝。quick-xml 本就不解外部实体、不触网，这里只需保证
+/// 解析器不会因为 DOCTYPE 而改变行为。注意：这是 XXE 加固，不是 SSRF 防御 ——
+/// 本工具单机运行、无出站网络栈，不需要按“云元数据窃取”威胁模型做额外处理。
+/// 用内网元数据 URL 做输入，只是为了拿一个典型的危险 SYSTEM 值。
 #[test]
-fn doctype_with_network_uri_is_rejected() {
+fn doctype_with_external_system_uri_is_rejected() {
     let xml = r#"<!DOCTYPE BDN SYSTEM "http://169.254.169.254/latest/meta-data">
 <BDN Version="0.93"/></!DOCTYPE>"#;
     let e = codec_bdn::parse(xml).unwrap_err();
@@ -306,6 +310,26 @@ fn mutated_and_truncated_inputs_never_panic() {
         err > 0 && mutations > 20,
         "ok={ok} err={err} mutations={mutations}"
     );
+}
+
+/// 默认 4096 字节的文本额度不能误杀真实长路径：超长中文 UNC 路径也在额度内。
+/// （审查怀疑这个上限会挑真实文件，这里把它锁成一个可执行合同。）
+#[test]
+fn default_text_limit_admits_a_very_long_path() {
+    let deep = format!("{}\\subtitle.png", "\\长目录名".repeat(90));
+    assert!(
+        deep.len() > 1024,
+        "前提：构造出的路径确实很长：{}",
+        deep.len()
+    );
+    assert!(deep.len() < TEXT_LEN_HARD_MAX, "构造成本超限，测试无意义");
+    let xml = format!(
+        "<BDN Version=\"0.93\"><BDNSubtitleData><Event InTC=\"00:00:01:00\" OutTC=\"00:00:02:00\">\
+         <Graphic><FileName>{deep}</FileName><Width>10</Width><Height>10</Height><X>0</X><Y>0</Y></Graphic></Event>\
+         </BDNSubtitleData></BDN>"
+    );
+    let doc = codec_bdn::parse(&xml).expect("默认额度必须容得下真实长路径");
+    assert_eq!(doc.events.len(), 1);
 }
 
 /// 控制字符不能进 XML 字符串字段（写出后会破坏往返）。

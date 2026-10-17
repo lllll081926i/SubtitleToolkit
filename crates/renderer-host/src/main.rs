@@ -4,8 +4,9 @@
 //! 业务判断（变化检测、编码、校验）全部留在主进程侧，这样 host 崩溃不会带走任何
 //! 已经算好的结果，重试也只是重做像素。
 //!
-//! `Poison` 是给验收测试用的自伤开关（AT-RENDER-002 要的是"第三方 provider 崩了怎么办"，
-//! 而本机没有可下载的 VSFilterMod 二进制，所以由我们自己把 host 打死）。
+//! 崩溃注入（AT-RENDER-002 的"第三方 provider 崩了怎么办"）只由宿主进程自己的
+//! 环境变量 `STK_HOST_CRASH` 触发。控制面协议不携带自毁指令，所以发布二进制没有
+//! 任何可被客户端控制的 abort/hang 入口。
 
 use std::io::{self, BufWriter, Write};
 use std::path::PathBuf;
@@ -57,6 +58,10 @@ fn reply_err(w: &mut impl Write, code: &str, title: &str) -> io::Result<()> {
 }
 
 fn serve() -> Result<(), String> {
+    // 在读取任何控制面消息之前就处理崩溃注入：环境变量只有宿主进程自己的启动环境能设，
+    // 管道对端无论发什么都无法在运行时自毁宿主。
+    maybe_inject_crash_from_env();
+
     let stdin = io::stdin();
     let mut reader = stdin.lock();
     let stdout = io::stdout();
@@ -197,7 +202,6 @@ fn serve() -> Result<(), String> {
                 reply_err(&mut writer, "STK-RND-0205", "LoadScript 之前不能渲染")
                     .map_err(|e| e.to_string())?;
             }
-            Request::Poison { how } => poison(&how),
             Request::Bye => {
                 reply(&mut writer, &Response::ByeOk).map_err(|e| e.to_string())?;
                 writer.flush().map_err(|e| e.to_string())?;
@@ -280,7 +284,6 @@ fn serve_render_requests(
                     reply_err(writer, &code, &title).map_err(|e| e.to_string())?
                 }
             },
-            Request::Poison { how } => poison(&how),
             Request::Bye => {
                 reply(writer, &Response::ByeOk).map_err(|e| e.to_string())?;
                 writer.flush().map_err(|e| e.to_string())?;
@@ -326,9 +329,16 @@ fn render_at(
     ))
 }
 
-/// 测试用的自伤开关：每种都对应一类"第三方 provider 会怎么死"。
-fn poison(how: &str) -> ! {
-    match how {
+/// 崩溃注入：每种都对应一类"第三方 provider 会怎么死"。
+///
+/// 只有宿主进程自己的环境变量 `STK_HOST_CRASH` 能走到这里。它在 `serve()` 的最早阶段
+/// 被消费，所以发布二进制里没有任何来自控制面的自杀路径（2026-10-09 审查）。
+/// 未知取值直接退出：静默忽略会让测试以为崩溃注入生效了，实际却在正常跑。
+fn maybe_inject_crash_from_env() {
+    let Ok(how) = std::env::var(protocol::CRASH_ENV) else {
+        return;
+    };
+    match how.as_str() {
         // 3 号：像 assert/abort 那样死掉，没有 Rust panic 信息
         "abort" => std::process::abort(),
         // 77 号：像 provider 自己 exit 的非零码
@@ -340,7 +350,7 @@ fn poison(how: &str) -> ! {
             std::thread::sleep(Duration::from_secs(3600));
         },
         other => {
-            eprintln!("[renderer-host] 未知的 poison 种类：{other}");
+            eprintln!("[renderer-host] 未知的崩溃注入种类：{other}");
             std::process::exit(78)
         }
     }

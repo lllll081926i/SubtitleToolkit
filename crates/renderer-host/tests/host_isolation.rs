@@ -56,9 +56,14 @@ macro_rules! need_libass {
     };
 }
 
-/// 起一个 host。exe 必须活到 `Host::start` 返回之后，所以整个构造放在函数里，
-/// 而不是返回一个借用它的 `HostSpec`。
-fn start(dll: &Path, timeout: Duration) -> Result<Host, HostFailure> {
+/// 起一个 host。`crash` 非空时，宿主进程会在启动环境里收到 `STK_HOST_CRASH`，
+/// 在读取任何控制面消息之前自我了断（AT-RENDER-002）。
+/// exe 必须活到 `Host::start` 返回之后，所以整个构造放在函数里，而不是返回一个借用它的 `HostSpec`。
+fn start_with_crash(
+    dll: &Path,
+    timeout: Duration,
+    crash: Option<&str>,
+) -> Result<Host, HostFailure> {
     let exe = host_exe();
     Host::start(&HostSpec {
         host_exe: &exe,
@@ -67,7 +72,12 @@ fn start(dll: &Path, timeout: Duration) -> Result<Host, HostFailure> {
         output: Canvas::FHD1080,
         default_font: "Arial",
         timeout,
+        crash_injection: crash,
     })
+}
+
+fn start(dll: &Path, timeout: Duration) -> Result<Host, HostFailure> {
+    start_with_crash(dll, timeout, None)
 }
 
 fn temp_dir(tag: &str) -> PathBuf {
@@ -133,18 +143,22 @@ fn at_render_001_the_host_hands_back_the_same_pixels_as_an_in_process_render() {
 
 /// AT-RENDER-002：provider 崩溃只能终止 host。主进程必须拿到退出码与 provider 日志，
 /// 并且**能重试**——重试是新的一个 host，不是"假设刚才那个还能用"。
+///
+/// 崩溃由启动环境注入（`STK_HOST_CRASH`），不是控制面消息：正文二进制里没有可远程触发的自杀入口。
 #[test]
-fn at_render_002_a_crashing_provider_only_kills_the_host_and_a_retry_works() {
+fn at_render_002_a_crashing_host_is_reported_and_a_retry_works() {
     let dll = need_libass!();
-    let mut host = start(&dll, Duration::from_secs(60)).expect("host 必须起得来");
-    host.load_script(ASS.as_bytes()).unwrap();
-    // 崩之前先证明这个会话是好的
-    assert!(host.render(1500).is_ok(), "崩溃之前就该出帧");
+    // 先证正常会话是好的，再起一个必崩的 host
+    let mut good = start(&dll, Duration::from_secs(60)).expect("host 必须起得来");
+    good.load_script(ASS.as_bytes()).unwrap();
+    assert!(good.render(1500).is_ok(), "崩溃之前就该出帧");
+    good.shutdown().expect("正常收尾");
 
-    host.poison("abort").expect("poison 请求要能发出去");
-    let err = host
-        .render(1600)
-        .expect_err("host 已经自杀，这一句必须失败而不是永远等");
+    // 注入崩溃的宿主连握手都完成不了，主进程必须拿到 Crashed 而不是永远等
+    let err = match start_with_crash(&dll, Duration::from_secs(60), Some("abort")) {
+        Ok(_) => panic!("带崩溃注入的 host 不应该握手成功"),
+        Err(e) => e,
+    };
     let HostFailure::Crashed {
         exit_code,
         contained,
@@ -155,7 +169,6 @@ fn at_render_002_a_crashing_provider_only_kills_the_host_and_a_retry_works() {
         panic!("崩溃必须报成 Crashed，收到 {err:?}");
     };
     assert!(exit_code.is_some(), "崩溃必须带退出码：{err:?}");
-    // 约束状态必须被如实报出来，而不是假装干净（Z6：nextest 下附着必然失败）
     let _ = (contained, job_error);
 
     // 主进程此刻还活着——测试继续跑本身就是证据。重试：新起一个 host
@@ -172,19 +185,14 @@ fn at_render_002_a_crashing_provider_only_kills_the_host_and_a_retry_works() {
 #[test]
 fn at_render_002_a_hanging_host_times_out_and_can_be_abandoned() {
     let dll = need_libass!();
-    let mut host = start(&dll, Duration::from_millis(700)).expect("host 必须起得来");
-    host.poison("hang").expect("poison 请求要能发出去");
+    // 宿主在启动阶段就挂死，所以 `Host::start` 的握手等待必须超时返回
     let started = std::time::Instant::now();
-    let err = host
-        .render(1500)
-        .expect_err("host 挂住了，这里必须超时而不是拿到帧");
+    let err = match start_with_crash(&dll, Duration::from_millis(700), Some("hang")) {
+        Ok(_) => panic!("挂住的 host 不应该握手成功"),
+        Err(e) => e,
+    };
     let waited = started.elapsed();
-    let HostFailure::Timeout {
-        waited_ms,
-        contained,
-        job_error,
-    } = &err
-    else {
+    let HostFailure::Timeout { waited_ms, .. } = &err else {
         panic!("挂住必须报成 Timeout，收到 {err:?}");
     };
     assert_eq!(*waited_ms, 700, "{err:?}");
@@ -192,8 +200,14 @@ fn at_render_002_a_hanging_host_times_out_and_can_be_abandoned() {
         waited < Duration::from_secs(20),
         "等了 {waited:?}，超时没有生效"
     );
-    let _ = (contained, job_error);
-    // 放手：kill + 关 Job 句柄。返回值必须把"约束是否生效"讲清楚
+}
+
+/// 超时后放弃一个活着的 host：`abandon()` 必须交代"直接子进程有没有被杀掉、
+/// Job 约束有没有生效"，不允许静默退化（Z6）。
+#[test]
+fn abandoning_a_live_host_reports_kill_and_containment() {
+    let dll = need_libass!();
+    let mut host = start(&dll, Duration::from_secs(60)).expect("host 必须起得来");
     let abandoned = host.abandon();
     assert!(abandoned.killed, "直接子进程没被杀掉：{abandoned:?}");
     assert!(
@@ -231,6 +245,7 @@ fn at_render_003_an_x86_provider_is_never_handed_to_the_x64_host() {
             output: Canvas::FHD1080,
             default_font: "Arial",
             timeout: Duration::from_secs(5),
+            crash_injection: None,
         })
         .expect_err("x86 provider 交给 x64 host 必须被拒绝");
         assert_eq!(err.code(), "STK-RND-0201", "{err:?}");
@@ -255,6 +270,7 @@ fn at_render_003_an_x86_provider_is_never_handed_to_the_x64_host() {
         output: Canvas::FHD1080,
         default_font: "Arial",
         timeout: Duration::from_secs(5),
+        crash_injection: None,
     })
     .expect_err("非 PE 文件必须被拒");
     let HostFailure::Io(msg) = &err else {

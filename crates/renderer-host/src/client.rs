@@ -34,6 +34,10 @@ pub struct HostSpec<'a> {
     pub default_font: &'a str,
     /// 单次请求（含握手）的等待上限
     pub timeout: Duration,
+    /// 测试专用：让宿主进程以指定方式自我了断（AT-RENDER-002）。
+    /// 它是**启动环境**的一部分，不是控制面指令，所以发布二进制没有可远程触发的自杀路径。
+    /// 传 `None` 就是正常宿主，占用该进程的 `STK_HOST_CRASH` 环境变量。
+    pub crash_injection: Option<&'a str>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -141,7 +145,11 @@ impl Host {
             });
         }
 
-        let mut child = Command::new(spec.host_exe)
+        let mut command = Command::new(spec.host_exe);
+        if let Some(how) = spec.crash_injection {
+            command.env(protocol::CRASH_ENV, how);
+        }
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -381,18 +389,6 @@ impl Host {
             images,
             loss,
         })
-    }
-
-    /// 让 host 自我了断（只为 AT-RENDER-002 制造崩溃；`how` 的取值见 host 侧）。
-    /// 返回 Ok 只表示"请求发出去了"，崩溃的证据由后续调用（或 `crash_evidence`）取出。
-    pub fn poison(&mut self, how: &str) -> Result<(), HostFailure> {
-        protocol::write_message(
-            &mut self.stdin,
-            &protocol::to_json(&Request::Poison {
-                how: how.to_string(),
-            })?,
-        )?;
-        Ok(())
     }
 
     pub fn shutdown(&mut self) -> Result<(), HostFailure> {

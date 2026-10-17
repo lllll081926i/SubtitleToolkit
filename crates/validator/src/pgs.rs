@@ -3,8 +3,10 @@
 //! 分工：`codec-pgs` 负责"能不能读"（结构性非法直接报错），本模块负责"读得懂但合不合规"，
 //! 并且一次给出全部发现。第 5 层（coded object buffer / acquisition 的完整解码器模型）与
 //! 第 7 层（设备语料）在这里**不做假通过**：它们分别需要 Advanced Author 的缓冲模型和
-//! 真机语料。按 Strict 申请徽章时这两层缺失会给出 `PGS.DEC.01` / `PGS.DEV.01` 两条 **error**：
-//! 没跑过的层不能被成本地算作"通过"。
+//! 真机语料。按 Strict 跑时这两层缺失各给一条 `PGS.DEC.01` / `PGS.DEV.01`，
+//! 级别是 **warning 而不是 error**：没跑过的层不能说成"文件有致命格式错误"，
+//! 那会剥夺用户用 Strict 检查其余已实现规则的权利（2026-10-09 审查）。
+//! "未覆盖第 5/7 层"这件事由 `strict_badge_allowed` 单独把关：报告可以过，徽章不发。
 
 use codec_pgs::display_set::{parse_ods_header, parse_pcs, parse_wds, DisplaySet};
 use codec_pgs::segment::{Segment, SEG_END, SEG_ODS, SEG_PCS, SEG_PDS, SEG_WDS};
@@ -675,18 +677,19 @@ pub fn profile(segments: &[Segment], want: &ProfileWant) -> ValidationReport {
             "把本报告的 error/warning 清零只是必要条件，不是充分条件",
         );
     }
-    // 第 5 层与设备语料不在这里假通过：按 Strict 申请徽章时它们是 error，
-    // 因为"没跑过"不能让任何自称 Strict 的输出过关（13 §6 末段）。
+    // 第 5 层与设备语料不在这里假通过：按 Strict 跑时它们是 warning。
+    // 不能做成 error：否则 strict 模式对已实现规则的检查权也被一并剥夺。
+    // "未覆盖"这件事由 strict_badge_allowed 单独把关（13 §6 末段）。
     if want.level == ValidationLevel::Strict {
         r.add(
             "PGS.DEC.01",
-            Severity::Error,
+            Severity::Warning,
             "未执行解码器缓冲模型（coded object buffer / acquisition point / window decode time）",
             "需要 pgs-author 的 Advanced Author 缓冲计算（13 §5）；没有它就不能自称 Strict",
         );
         r.add(
             "PGS.DEV.01",
-            Severity::Error,
+            Severity::Warning,
             "未执行设备与软件播放器语料（13 §6 第 7 层）",
             "先跑 corpus 清单里的播放器矩阵，再谈 Strict badge",
         );
@@ -888,6 +891,45 @@ mod tests {
         );
         let p = profile(&segs, &want(ValidationLevel::Basic));
         assert!(p.no_blocking_findings(), "{:?}", p.text_lines());
+    }
+
+    /// 回归（2026-10-09 审查）：未实现层不能报 error，否则 strict 模式会永远因为
+    /// "第 5/7 层没实现"而失败，用户连其余已实现规则都查不了。
+    /// 正确契约：结构合法时 strict **可以过**（只有 warning），但徽章仍不发。
+    #[test]
+    fn strict_stays_usable_and_denies_the_badge_on_coverage_gaps() {
+        let segs = stream();
+        let r = profile(
+            &segs,
+            &ProfileWant {
+                level: ValidationLevel::Strict,
+                claim_compliant: false,
+            },
+        );
+        // 两条覆盖缺口必须如实报，但级别是 warning
+        for check in ValidationReport::COVERAGE_GAP_CHECKS {
+            let f = r
+                .findings
+                .iter()
+                .find(|f| f.check == check)
+                .unwrap_or_else(|| panic!("strict 必须报告覆盖缺口 {check}：{:?}", r.text_lines()));
+            assert_eq!(
+                f.severity,
+                Severity::Warning,
+                "{check} 是未实现层，不能报成 error：{f:?}"
+            );
+        }
+        // 合法编码输出时，strict 不得被覆盖缺口阻断
+        assert!(
+            r.no_blocking_findings(),
+            "strict 被未实现层阻断了：{:?}",
+            r.text_lines()
+        );
+        // 但不覆盖第 5/7 层就不能发徽章
+        assert!(
+            !r.strict_badge_allowed(ValidationLevel::Strict),
+            "有覆盖缺口还发 Strict 徽章，就是拿没跑过的层冒充通过"
+        );
     }
 
     #[test]

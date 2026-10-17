@@ -161,9 +161,9 @@ fn a_changed_font_file_invalidates_the_fingerprint() {
 /// 这条测试锁的是整份设计的立足点：**发现它的地方是使用点，而不是命中前的全库复核**
 /// （复核整座库的代价 ≈ 重扫一遍，那样缓存就没意义了，见 ISSUES AI5 的实测）。
 #[test]
-fn a_poisoned_cache_is_caught_where_the_bytes_are_used() {
+fn a_stale_index_is_caught_where_the_bytes_are_used() {
     let _g = env_lock().lock().unwrap_or_else(|e| e.into_inner());
-    let dir = scratch("poison");
+    let dir = scratch("stale-index");
     let fonts = dir.join("fonts");
     std::fs::create_dir_all(&fonts).unwrap();
     one_font(&fonts);
@@ -172,8 +172,8 @@ fn a_poisoned_cache_is_caught_where_the_bytes_are_used() {
 
     let good = FontDb::scan_cached(&[fonts.as_path()], &[], CacheMode::Use);
     // 手工写一份"指纹正确但哈希是假的"缓存：模拟指纹骗人的一种极端形式
-    let mut poisoned = good.clone();
-    for rec in poisoned.faces.iter_mut() {
+    let mut stale = good.clone();
+    for rec in stale.faces.iter_mut() {
         rec.sha256 = "0".repeat(64);
     }
     let files: Vec<PathBuf> = std::fs::read_dir(&fonts)
@@ -184,7 +184,7 @@ fn a_poisoned_cache_is_caught_where_the_bytes_are_used() {
         .collect();
     let mut fp = cache::fingerprint(&files);
     fp.push("registry=0".to_string());
-    cache::store(&fp, &poisoned);
+    cache::store(&fp, &stale);
     assert!(cpath.exists());
 
     // 缓存这层照旧命中：它没有义务读每个文件（那样就等于没有缓存）
@@ -200,7 +200,7 @@ fn a_poisoned_cache_is_caught_where_the_bytes_are_used() {
 
     // 走真正的入口：它会把这次退回全量重扫，并给出与"压根没用缓存"一致的答案
     let mut db = hit;
-    let m = evaluate_or_rescan(&mut db, &[fonts.as_path()], &[], &requests).expect("该自愈");
+    let m = evaluate_or_rescan(&mut db, &[fonts.as_path()], &[], &requests).expect("该重扫一次");
     assert_eq!(db.cache, CacheState::Refreshed, "{:?}", db.cache);
     assert!(db.faces.iter().all(|r| r.sha256 != "0".repeat(64)));
     let plain = FontDb::scan(&[fonts.as_path()]);
@@ -208,13 +208,58 @@ fn a_poisoned_cache_is_caught_where_the_bytes_are_used() {
     assert_eq!(
         m.iter().map(|x| x.verdict).collect::<Vec<_>>(),
         expect.iter().map(|x| x.verdict).collect::<Vec<_>>(),
-        "自愈后的结论必须与全量扫描一致"
+        "重扫后的结论必须与全量扫描一致"
     );
     std::env::remove_var("STK_FONTCACHE");
     std::fs::remove_dir_all(&dir).ok();
 }
 
-/// 自愈之后身份不变：缓存命中、退回重扫、完全不用缓存，三条路必须给出同一个摘要。
+/// 坏缓存（JSON 读不懂 / 版本不符 / 空 face）一律“用坏即弃”：
+/// 退回全量扫描（不能把用户挡在门外），并且 `load` 必须把那份缓存文件删掉，
+/// 而不是留着等下次再碰一遍同一块石头。
+#[test]
+fn a_broken_cache_file_is_deleted_rather_than_kept() {
+    let _g = env_lock().lock().unwrap_or_else(|e| e.into_inner());
+    let dir = scratch("broken");
+    let fonts = dir.join("fonts");
+    std::fs::create_dir_all(&fonts).unwrap();
+    one_font(&fonts);
+    let cpath = dir.join("cache.json");
+    std::env::set_var("STK_FONTCACHE", &cpath);
+
+    std::fs::write(&cpath, b"not json at all").unwrap();
+    let db = FontDb::scan_cached(&[fonts.as_path()], &[], CacheMode::Use);
+    assert_eq!(db.cache, CacheState::Scanned, "读不懂就当没命中：{db:?}");
+    assert!(!db.faces.is_empty(), "退回全量扫描后必须仍有答案");
+
+    // 版本换了也要作废：记录结构变了还吃旧缓存 = 读到错的东西。
+    // 先建一份好缓存，再把版本字段改成不兼容的值。
+    let good = FontDb::scan_cached(&[fonts.as_path()], &[], CacheMode::Use);
+    let raw = std::fs::read_to_string(&cpath).unwrap();
+    std::fs::write(&cpath, raw.replace(CACHE_VERSION, "stk-fontdb-v0-不再兼容")).unwrap();
+    assert!(cpath.exists(), "前提：此时磁盘上确实有一份版本不符的缓存");
+    let after = FontDb::scan_cached(&[fonts.as_path()], &[], CacheMode::Use);
+    assert_eq!(after.cache, CacheState::Scanned, "版本不符的缓存不能吃");
+    assert_eq!(after.faces, good.faces);
+
+    // 最后直接验证“坏就用坏即弃”的契约：不可解析字节会被删掉
+    std::fs::write(&cpath, b"not json at all").unwrap();
+    let files: Vec<PathBuf> = std::fs::read_dir(&fonts)
+        .unwrap()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_file())
+        .collect();
+    let mut fp = cache::fingerprint(&files);
+    fp.push("registry=0".to_string());
+    assert!(cache::load(&fp).is_none(), "读不懂的缓存不能当命中");
+    assert!(!cpath.exists(), "坏缓存必须被删掉，而不是留在磁盘上");
+
+    std::env::remove_var("STK_FONTCACHE");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// 重扫后身份不变：缓存命中、退回重扫、完全不用缓存，三条路必须给出同一个摘要。
 /// 否则"有没有缓存"本身就会让渲染缓存反复失效（`CacheState` 是成本事实，不进摘要）。
 #[test]
 fn every_cache_path_gives_the_same_render_identity() {
@@ -244,32 +289,5 @@ fn every_cache_path_gives_the_same_render_identity() {
     let first = identify(&used, &hits, &[]);
     assert_eq!(first.digest, again.digest, "命中与首扫必须同一身份");
     assert_eq!(first.digest, off_env.digest, "--no-font-cache 不该换身份");
-    std::fs::remove_dir_all(&dir).ok();
-}
-
-/// 缓存文件坏了或版本不符：退回全量扫描，不能把用户挡在门外。
-#[test]
-fn an_unreadable_cache_falls_back_instead_of_failing() {
-    let _g = env_lock().lock().unwrap_or_else(|e| e.into_inner());
-    let dir = scratch("broken");
-    let fonts = dir.join("fonts");
-    std::fs::create_dir_all(&fonts).unwrap();
-    one_font(&fonts);
-    let cpath = dir.join("cache.json");
-    std::env::set_var("STK_FONTCACHE", &cpath);
-
-    std::fs::write(&cpath, b"not json at all").unwrap();
-    let db = FontDb::scan_cached(&[fonts.as_path()], &[], CacheMode::Use);
-    assert_eq!(db.cache, CacheState::Scanned, "读不懂就当没命中：{db:?}");
-    assert!(!db.faces.is_empty(), "退回全量扫描后必须仍有答案");
-
-    // 版本换了也要作废：记录结构变了还吃旧缓存 = 读到错的东西
-    let good = FontDb::scan_cached(&[fonts.as_path()], &[], CacheMode::Use);
-    let raw = std::fs::read_to_string(&cpath).unwrap();
-    std::fs::write(&cpath, raw.replace(CACHE_VERSION, "stk-fontdb-v0-不再兼容")).unwrap();
-    let after = FontDb::scan_cached(&[fonts.as_path()], &[], CacheMode::Use);
-    assert_eq!(after.cache, CacheState::Scanned, "版本不符的缓存不能吃");
-    assert_eq!(after.faces, good.faces);
-    std::env::remove_var("STK_FONTCACHE");
     std::fs::remove_dir_all(&dir).ok();
 }

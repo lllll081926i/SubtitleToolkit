@@ -143,7 +143,7 @@ pub const FONT_CHANGED_AFTER_SCAN: u16 = 222;
 pub enum CacheMode {
     /// 指纹相符就吃缓存，否则全量解析并写回。
     Use,
-    /// 无论如何都全量解析并写回 —— 发现缓存与文件现状不一致之后的自愈路径。
+    /// 无条件全量解析并写回。调用者是“使用点完整性复核发现索引已过期后的重扫一次”。
     Refresh,
     /// 完全不碰磁盘缓存，也不写。`--no-font-cache` 用它：想确认"没有缓存时答案是什么"就靠这条。
     Off,
@@ -160,14 +160,16 @@ pub enum CacheState {
     Scanned,
     /// 命中缓存：索引来自上一次，本次只重读并复核真正被用到的那些 face
     Hit,
-    /// 缓存与文件现状在使用点被复核推翻，本次退回全量重扫
+    /// 缓存里的索引在使用点被判为过期（内容哈希与文件不符），本次退回全量重扫。
+    /// 这是“重建一次索引”，不是“从投毒中恢复”。
     Refreshed,
     /// 调用方明确不要缓存（`--no-font-cache`）
     Disabled,
 }
 
 impl CacheState {
-    /// 这份索引是不是"上一次读到的东西"。只有它才值得在使用点发现不一致时重来一次。
+    /// 这份索引是不是"上一次读到的东西"。只有它才值得在使用点发现不一致时重扫一次（
+    /// 现扫的库就是本次读的字节，再不一致说明文件正在被并发覆盖）。
     pub fn is_hit(self) -> bool {
         self == CacheState::Hit
     }
@@ -186,9 +188,9 @@ impl CacheState {
     pub fn meaning(self) -> &'static str {
         match self {
             CacheState::Scanned => "这次把每个字体文件都读了一遍并解析；没有可用的磁盘缓存",
-            CacheState::Hit => "索引来自上次扫描，本次只重读并复核了真正被用到的每个 face 的字节",
+            CacheState::Hit => "索引来自上次扫描，本次只重读了真正被用到的每个 face 的字节",
             CacheState::Refreshed => {
-                "指纹没变但内容变了（同长度的原地覆盖），已退回全量重扫，本次结论与新索引一致"
+                "索引里的内容哈希与文件现状不符，已退回全量重扫，本次结论与新索引一致"
             }
             CacheState::Disabled => "--no-font-cache：完全没用磁盘缓存，这是最慢也最独立的一条路",
         }

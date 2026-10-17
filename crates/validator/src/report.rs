@@ -99,15 +99,29 @@ impl ValidationReport {
         !self.findings.iter().any(|f| f.severity.blocks_strict())
     }
 
-    /// Strict 徽章的两个必要条件（13 §6）：
+    /// 本次校验有没有落在"未实现层"上。这些层不报 error（否则 strict 就没法用了），
+    /// 但它们的存在足以让 Strict 徽章作废：没跑过的层不能被当成"通过"。
+    pub const COVERAGE_GAP_CHECKS: [&'static str; 2] = ["PGS.DEC.01", "PGS.DEV.01"];
+
+    /// 本次报告是否声明了某个未覆盖的校验层。
+    pub fn has_coverage_gap(&self) -> bool {
+        self.findings
+            .iter()
+            .any(|f| Self::COVERAGE_GAP_CHECKS.contains(&f.check))
+    }
+
+    /// Strict 徽章的三个必要条件（13 §6）：
     ///
     /// 1. 这次确实**按 Strict** 跑了七层里我们能跑的部分（Basic/Standard 的报告不能倒推 Strict）；
-    /// 2. 没有 error/fatal。
+    /// 2. 没有 error/fatal；
+    /// 3. 没有落在未实现层上的覆盖缺口。
     ///
-    /// 本实现覆盖不到第 5/7 层，按 Strict 跑时一定会拿到 `PGS.DEC.01`/`PGS.DEV.01` 两条 error，
-    /// 因此当前**永远返回 false**；这是刻意的，不是遗漏。
+    /// 本实现覆盖不到第 5/7 层，按 Strict 跑时一定会拿到 `PGS.DEC.01`/`PGS.DEV.01`，
+    /// 因此当前**仍总是返回 false**——但它们是 warning，不会阻断 strict 对其余规则的检查。
     pub fn strict_badge_allowed(&self, validated_at: ValidationLevel) -> bool {
-        validated_at == ValidationLevel::Strict && self.no_blocking_findings()
+        validated_at == ValidationLevel::Strict
+            && self.no_blocking_findings()
+            && !self.has_coverage_gap()
     }
 
     pub fn merge(&mut self, other: ValidationReport) {

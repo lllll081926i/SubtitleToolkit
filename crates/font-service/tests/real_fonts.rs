@@ -22,6 +22,9 @@ fn fonts_dir() -> Option<PathBuf> {
         }
         return None;
     }
+    if std::env::var("STK_REQUIRE_FONTS").is_err() {
+        return None;
+    }
     let windir = std::env::var("WINDIR").ok()?;
     let p = Path::new(&windir).join("Fonts");
     p.is_dir().then_some(p)
@@ -35,7 +38,7 @@ macro_rules! need_fonts {
                 if std::env::var("STK_REQUIRE_FONTS").is_ok() {
                     panic!("STK_REQUIRE_FONTS=1，但找不到字体目录（设 STK_FONTS_DIR）");
                 }
-                eprintln!("SKIP：本机没有可读的字体目录");
+                eprintln!("SKIP：未启用真实系统字体扫描测试（设 STK_REQUIRE_FONTS=1 开启）");
                 return;
             }
         }

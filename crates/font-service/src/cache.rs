@@ -3,23 +3,24 @@
 //!
 //! 缓存的是**索引**（解析出来的名字/字重/轴），不是字节：字节永远在使用点重读。
 //!
-//! 关键的设计约束是：**缓存只可能让我们慢，不可能让我们答错**，靠的是两层各自的失效判据。
-//! * 第一层是这里指纹：`文件名 + 大小 + mtime`。它会骗人（同长度覆盖安装、mtime 被回拨），
-//!   所以不能单独当结论用；
-//! * 第二层在使用点：`FontDb::missing_glyphs` 判 cmap 覆盖时本来就要重读那个 face 的文件，
-//!   顺手把内容哈希与记录比一遍（不一致报 `FONT_CHANGED_AFTER_SCAN`）。凡是进了结论的 face，
-//!   字节都是本次进程真读过的。
+//! 设计基调是**简单**：缓存只可能让我们慢，不可能让我们答错。
+//! * 指纹（`文件名 + 大小 + mtime`）对不上、或缓存读不懂 —— **直接把缓存文件删掉重扫**，
+//!   不做任何局部修补或自愈。它在单机桌面工具里不是一个需要防守的威胁模型，
+//!   只是一个可以用坏即弃的加速产物（2026-10-09 审查：去掉“投毒自愈状态机”）。
+//! * 指纹会骗人（同长度覆盖安装、mtime 被回拨），所以它不单独当结论用：
+//!   凡进结论的 face，字节都是本次进程在使用点真读过的（`missing_glyphs` 判 cmap 覆盖时
+//!   本就要重读那个文件，顺手把内容哈希与记录比一遍）。
 //!
-//! 为什么不做成"命中前把整座库重读复核一遍"：本机实测复核 154 个文件要 2.63 s，
+//! 为什么不在命中前把整座库重读复核：本机实测复核 154 个文件要 2.63 s，
 //! 而一次全量解析总共 2.69 s —— 读文件才是大头，复核掉的就是缓存唯一省下的那部分。
 //! 代价要如实说：没被用到的 face，它的名字/字重仍是上一次的索引，
-//! 于是"哪一条 face 胜出"这个判断在"同长度且同 mtime 的原地覆盖"这种几乎不会发生
+//! 于是“哪一条 face 胜出”这个判断在“同长度且同 mtime 的原地覆盖”这种几乎不会发生
 //! （Windows 装字体是拷新文件）的情形下可能滞后一次。要完全绕开就 `--no-font-cache`。
 //!
 //! 缓存不可用（不存在、版本不符、JSON 坏了、权限）一律退回全量扫描：
-//! 那是性能问题，不是交付问题，不能让它变成"命令跑不了"。
+//! 那是性能问题，不是交付问题，不能让它变成“命令跑不了”。
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -80,10 +81,21 @@ pub fn fingerprint(files: &[PathBuf]) -> Vec<String> {
     out
 }
 
-/// 读缓存。任何不匹配/读不懂都返回 `None`（调用方退回全量扫描），不报错。
+/// 读缓存。任何不匹配/读不懂都返回 `None`（调用方退回全量扫描），并且**删掉坏缓存**：
+/// 可以用坏即弃的加速产物不需要“自愈”，下次扫描会重新写一份好的（审查：坏了就全删重扫）。
 pub fn load(expected: &[String]) -> Option<CachedDb> {
     let path = cache_path()?;
-    let bytes = std::fs::read(&path).ok()?;
+    let usable = read_usable(&path, expected);
+    if usable.is_none() {
+        // 删不掉也不报错：缓存是性能路径，不该让命令失败。下次仍会重新写一份。
+        let _ = std::fs::remove_file(&path);
+    }
+    usable
+}
+
+/// 纯读取与校验，不产生副作用，便于测试直接验证判据本身。
+fn read_usable(path: &Path, expected: &[String]) -> Option<CachedDb> {
+    let bytes = std::fs::read(path).ok()?;
     let db: CachedDb = serde_json::from_slice(&bytes).ok()?;
     if db.version != CACHE_VERSION || db.fingerprint != expected {
         return None;

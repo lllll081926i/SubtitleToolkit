@@ -2,7 +2,8 @@
 //!
 //! 关键立场：
 //! - 一次给出全部发现（不是遇错即停），每条都带严重级别、位置与修复建议（22 §错误模型）；
-//! - **只有**没有任何 error/fatal 才允许 Strict/compliant 标签（39 门禁）；
+//! - 允许 Strict/compliant 标签需要三个条件：无 error/fatal、按 Strict 跑过、且没有未覆盖层
+//!   （`ValidationReport::strict_badge_allowed`，39 门禁）；
 //! - 码率只做**测量**，绝不声称编码会把流压到预算内（13 §5.1 的命名分离）；
 //! - 解码器缓冲模型与设备语料不在本 crate 假通过，缺失时以 warning 显式声明。
 

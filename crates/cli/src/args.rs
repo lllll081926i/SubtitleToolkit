@@ -35,7 +35,7 @@ commands:
   pgs validate <file.sup>   [--level probe|structure|basic|standard|strict]
                      [--peak-bitrate-bps N]
                      分层校验：1 结构 / 2 时间线 / 3 生命周期 / 4 profile / 6 码率测量
-                     （第 5 层缓冲模型与第 7 层设备语料未覆盖，按 strict 跑会被拦下）
+                     （第 5 层缓冲模型与第 7 层设备语料未覆盖，按 strict 跑会给出 warning 并拒绝发徽章）
   render       <file.ass>   [--fps R] [--canvas WxH] [--libass-dll PATH]
                      [--default-font FAMILY] [--min-axis N]
                      14 §ASS→BDN：渲染 → 变化检测 → tight 裁剪 → PNG → BDN XML → 目录校验

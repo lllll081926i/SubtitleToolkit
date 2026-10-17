@@ -108,6 +108,7 @@ pub(crate) fn render_to_plan(job: &RenderJob<'_>) -> Result<Rendered> {
         output: job.canvas,
         default_font: job.default_font,
         timeout: std::time::Duration::from_secs(30),
+        crash_injection: None,
     };
     let mut host = renderer_host::client::Host::start(&spec).map_err(render_host_error)?;
     // 17 §7：把"我们解析到并读过的那份字节"直接交给 libass。

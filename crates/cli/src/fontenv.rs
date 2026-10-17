@@ -239,16 +239,45 @@ mod tests {
         L.get_or_init(|| std::sync::Mutex::new(()))
     }
 
+    /// 创建包含极少量字体的临时目录，避免单元测试全量扫描系统数千个字体导致卡死。
+    fn with_test_fonts<F: FnOnce()>(f: F) {
+        let dir = std::env::temp_dir().join(format!("stk-cli-testfonts-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::create_dir_all(&dir);
+        if let Ok(w) = std::env::var("WINDIR") {
+            let sys = Path::new(&w).join("Fonts");
+            if let Ok(rd) = std::fs::read_dir(&sys) {
+                for ent in rd.flatten() {
+                    let p = ent.path();
+                    if p.extension().and_then(|s| s.to_str()) == Some("ttf") {
+                        let _ = std::fs::copy(&p, dir.join(p.file_name().unwrap()));
+                        break;
+                    }
+                }
+            }
+        }
+        let old = std::env::var("STK_FONTS_DIR").ok();
+        std::env::set_var("STK_FONTS_DIR", &dir);
+        f();
+        match old {
+            Some(o) => std::env::set_var("STK_FONTS_DIR", o),
+            None => std::env::remove_var("STK_FONTS_DIR"),
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// 库只建一次：两次请求之间第二次不该再花建库的时间。
     #[test]
     fn the_library_is_built_once_per_scanner() {
         let _g = env_lock().lock().unwrap_or_else(|e| e.into_inner());
-        let mut s = Scanner::with_cache(CacheMode::Use);
-        let (a, ms_a) = s.env_for(ASS).expect("本机该有字体目录");
-        let (b, ms_b) = s.env_for(ASS).expect("同上");
-        assert_eq!(a.digest, b.digest, "同一份脚本、同一个环境必须给同一个身份");
-        assert_eq!(ms_a, ms_b, "建库耗时只算一次，之后是缓存值");
-        assert_eq!(a.faces_used + a.faces_missing, 1, "{a:?}");
+        with_test_fonts(|| {
+            let mut s = Scanner::with_cache(CacheMode::Use);
+            let (a, ms_a) = s.env_for(ASS).expect("测试字体目录该可用");
+            let (b, ms_b) = s.env_for(ASS).expect("同上");
+            assert_eq!(a.digest, b.digest, "同一份脚本、同一个环境必须给同一个身份");
+            assert_eq!(ms_a, ms_b, "建库耗时只算一次，之后是缓存值");
+            assert_eq!(a.faces_used + a.faces_missing, 1, "{a:?}");
+        });
     }
 
     /// 读不到字体来源时不能停摆，但要被标成"不完整"，且不与"空库"同值。
@@ -268,56 +297,61 @@ mod tests {
     #[test]
     fn a_different_requested_family_gives_a_different_identity() {
         let _g = env_lock().lock().unwrap_or_else(|e| e.into_inner());
-        let other = ASS.replace("Arial", "Times New Roman");
-        let a = Scanner::with_cache(CacheMode::Use).env_for(ASS).unwrap().0;
-        let b = Scanner::with_cache(CacheMode::Use)
-            .env_for(&other)
-            .unwrap()
-            .0;
-        assert_ne!(a.digest, b.digest, "{a:?} {b:?}");
+        with_test_fonts(|| {
+            let other = ASS.replace("Arial", "Times New Roman");
+            let a = Scanner::with_cache(CacheMode::Use).env_for(ASS).unwrap().0;
+            let b = Scanner::with_cache(CacheMode::Use)
+                .env_for(&other)
+                .unwrap()
+                .0;
+            assert_ne!(a.digest, b.digest, "{a:?} {b:?}");
+        });
     }
 
-    /// CLI 这一层的端到端：缓存被写成"指纹对得上、内容哈希是假的"那种撒谎状态时，
+    /// CLI 这一层的端到端：缓存被写成"指纹对得上、内容哈希是假的"那种过期状态时，
     /// `Scanner` 必须照样给出身份（不是报错），而且给出的身份与干净那条路**逐字节相同**。
     /// 这条就是 AI5 那笔性能债允许存在的前提。
     #[test]
-    fn a_poisoned_font_cache_still_gives_the_same_identity() {
+    fn a_stale_font_cache_still_gives_the_same_identity() {
         let _g = env_lock().lock().unwrap_or_else(|e| e.into_inner());
-        let dir = std::env::temp_dir().join(format!("stk-cli-fontcache-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let cpath = dir.join("cache.json");
-        std::env::set_var("STK_FONTCACHE", &cpath);
+        with_test_fonts(|| {
+            let dir =
+                std::env::temp_dir().join(format!("stk-cli-fontcache-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            let cpath = dir.join("cache.json");
+            std::env::set_var("STK_FONTCACHE", &cpath);
 
-        let clean = Scanner::with_cache(CacheMode::Use).env_for(ASS);
-        std::env::remove_var("STK_FONTCACHE");
-        let (clean_env, _) = clean.expect("第一次建库该成功");
-        let raw = std::fs::read_to_string(&cpath).expect("建库该留下缓存");
-        let poisoned = zero_out_hashes(&raw);
-        assert_ne!(poisoned, raw, "没改到哈希，这条测试就没测到东西");
-        std::fs::write(&cpath, &poisoned).unwrap();
-        std::env::set_var("STK_FONTCACHE", &cpath);
+            let clean = Scanner::with_cache(CacheMode::Use).env_for(ASS);
+            std::env::remove_var("STK_FONTCACHE");
+            let (clean_env, _) = clean.expect("第一次建库该成功");
+            let raw = std::fs::read_to_string(&cpath).expect("建库该留下缓存");
+            let stale = zero_out_hashes(&raw);
+            assert_ne!(stale, raw, "没改到哈希，这条测试就没测到东西");
+            std::fs::write(&cpath, &stale).unwrap();
+            std::env::set_var("STK_FONTCACHE", &cpath);
 
-        let (healed, _) = Scanner::with_cache(CacheMode::Use)
-            .env_for(ASS)
-            .expect("缓存撒谎不该让命令失败");
-        std::env::remove_var("STK_FONTCACHE");
+            let (rescanned, _) = Scanner::with_cache(CacheMode::Use)
+                .env_for(ASS)
+                .expect("缓存过期不该让命令失败");
+            std::env::remove_var("STK_FONTCACHE");
 
-        assert_eq!(
-            clean_env.digest, healed.digest,
-            "自愈之后的身份必须与干净那条路一模一样，否则缓存就是在改答案"
-        );
-        if clean_env.faces_used > 0 {
             assert_eq!(
-                healed.cache,
-                CacheState::Refreshed,
-                "用到了 face 却没触发自愈，说明使用点复核根本没跑：{:?}",
-                healed.cache
+                clean_env.digest, rescanned.digest,
+                "重扫之后的身份必须与干净那条路一模一样，否则缓存就是在改答案"
             );
-        }
-        let j = env_json(&healed, 0);
-        assert_eq!(j["cache"], "stale-refreshed", "{j}");
-        std::fs::remove_dir_all(&dir).ok();
+            if clean_env.faces_used > 0 {
+                assert_eq!(
+                    rescanned.cache,
+                    CacheState::Refreshed,
+                    "用到了 face 却没触发重扫，说明使用点复核根本没跑：{:?}",
+                    rescanned.cache
+                );
+            }
+            let j = env_json(&rescanned, 0);
+            assert_eq!(j["cache"], "stale-refreshed", "{j}");
+            std::fs::remove_dir_all(&dir).ok();
+        });
     }
 
     /// 把 `"sha256":"<64 位十六进制>"` 的值换成全 0：指纹字段一个都不动。

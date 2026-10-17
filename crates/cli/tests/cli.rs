@@ -407,7 +407,8 @@ fn pgs_validate_reports_structure_for_streams_we_encoded() {
     assert_eq!(v["data"]["no_blocking_findings"], true);
     // 默认 Basic：没跑 Strict 的层，就不可能给出 Strict 徽章
     assert_eq!(v["data"]["strict_badge_allowed"], false);
-    // 按 Strict 申请时必须被 DEC/DEV 两条 error 拦下（不许假通过）
+    // 按 Strict 跑合法输出：未实现层是 warning，不得阻断其余已实现规则的检查，
+    // 但覆盖缺口依然让徽章作废（2026-10-09 审查：不能把未实现层当成文件的致命错误）
     let strict = run(&[
         "pgs",
         "validate",
@@ -416,19 +417,30 @@ fn pgs_validate_reports_structure_for_streams_we_encoded() {
         "strict",
         "--json",
     ]);
-    assert!(!strict.status.success(), "Strict 校验应返回非零");
+    assert!(
+        strict.status.success(),
+        "结构合法的输出不该因为第 5/7 层未实现而失败：{strict:?}"
+    );
     let sv: serde_json::Value = serde_json::from_slice(&strict.stdout).unwrap();
+    assert_eq!(sv["data"]["no_blocking_findings"], true);
     assert_eq!(sv["data"]["strict_badge_allowed"], false);
     let findings = sv["data"]["findings"].as_array().unwrap();
     assert!(
         findings
             .iter()
             .any(|s| s.as_str().unwrap_or("").contains("PGS.DEC.01")),
-        "未覆盖第 5 层要作为 error 出现：{findings:?}"
+        "未覆盖第 5 层必须被报出来：{findings:?}"
     );
     assert!(findings
         .iter()
         .any(|s| s.as_str().unwrap_or("").contains("PGS.DEV.01")));
+    assert!(
+        findings
+            .iter()
+            .all(|s| !s.as_str().unwrap_or("").starts_with("[error]")
+                && !s.as_str().unwrap_or("").starts_with("[fatal]")),
+        "覆盖缺口不能报成 error/fatal：{findings:?}"
+    );
 
     let shifted = d.join("g.shift.sup");
     let out = run(&[

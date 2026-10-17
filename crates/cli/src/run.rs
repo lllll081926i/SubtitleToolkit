@@ -1030,6 +1030,7 @@ fn render_host_report() -> serde_json::Value {
         output: Canvas::FHD1080,
         default_font: "Arial",
         timeout: std::time::Duration::from_secs(10),
+        crash_injection: None,
     };
     match renderer_host::client::Host::start(&spec) {
         Ok(mut host) => {

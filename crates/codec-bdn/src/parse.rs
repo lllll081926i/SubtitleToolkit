@@ -10,7 +10,8 @@
 //!
 //! 严格（23 §XML）：`<!DOCTYPE>` 与任何非预定义实体（外部实体的入口）直接拒绝；裸 `&`、
 //! 错配/未闭合标签由 quick-xml 报错并翻成 `STK-BDN-0052`；quick-xml 本身不解外部实体、不触网
-//! （属性侧 `normalized_value` 只认 5 个预定义实体）。
+//! （属性侧 `normalized_value` 只认 5 个预定义实体）。这是 XXE 加固：拒绝 DTD 就能避免
+//! "读本地文件"这类解析器副作用；本工具无出站网络栈，不另做 SSRF 处理。
 //!
 //! 时间：`BdnTimecode::parse` + `to_time(fps)` 反算 start/end；fps 走 `Fps::from_label`，
 //! 因此 `"23.976"` 回到精确的 24000/1001，而不是十进制的 2997/125。

@@ -172,15 +172,15 @@ pub fn evaluate(db: &FontDb, requests: &[FaceRequest]) -> Result<Vec<FontMatch>>
     Ok(out)
 }
 
-/// 用现成的库解析请求，并且**缓存撒谎时自己重来**，不把内部一致性问题丢给用户去猜。
+/// 用现成的库解析请求，并且在索引真的过期时重扫一次，不把内部一致性问题丢给用户去猜。
 ///
 /// 唯一的发现地点就是使用点：`FontDb::missing_glyphs` 判覆盖时要重读那条 face 的文件，
 /// 内容与记录不符会报 [`FONT_CHANGED_AFTER_SCAN`]（指纹只记大小与 mtime，同长度的原地覆盖
-/// 它看不出来）。只有 `db` 本身是缓存来的（`cache == CacheState::Hit`）才值得重来 ——
+/// 它看不出来）。只有 `db` 本身是缓存来的（`cache == CacheState::Hit`）才值得重扫一次 ——
 /// 现扫的库就是刚才读的字节，再报不一致说明文件正在被并发覆盖，那是照实报错的事，
-/// 不是重试能解决的事。重来那次换的是 `CacheMode::Refresh`：读当前字节重建，并把新索引写回缓存。
+/// 不是重试能解决的事。重扫那次换的是 `CacheMode::Refresh`：读当前字节重建索引，并把新索引写回缓存。
 ///
-/// 代价说清楚：命中且没撒谎时省掉整座库的解析；撒谎时多付一次全量扫描，仍然只付一次。
+/// 代价说清楚：命中且索引未过期时省掉整座库的解析；过期时多付一次全量扫描，仍然只付一次。
 pub fn evaluate_or_rescan(
     db: &mut FontDb,
     dirs: &[&Path],

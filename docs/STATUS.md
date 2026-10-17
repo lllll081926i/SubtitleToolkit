@@ -1,8 +1,11 @@
 # 当前项目状态
 
-核对日期：2026-10-08。本文描述当前工作区源码和实际执行的验证，不引用历史门阶结果充当本轮通过证据。
+核对日期：2026-10-09。本文描述当前工作区源码和实际执行的验证，不引用历史门阶结果充当本轮通过证据。
 
-同日后续更新：维护文档已按[38 项建议采纳记录](planning/AUDIT_ADOPTION_20261008.md)优化。新增用户提供的 libass 运行库与真实验证见[追加记录](reviews/2026-10-08-docs.md)；下面的早前代码审查保留原执行范围。
+同日后续更新：
+- 维护文档已按[38 项建议采纳记录](planning/AUDIT_ADOPTION_20261008.md)优化。新增用户提供的 libass 运行库与真实验证见[追加记录](reviews/2026-10-08-docs.md)。
+- 2026-10-09 完成了全项目深度审查、测试过度防御修复与纯 Rust 前端规格重构，详见[2026-10-09 审查报告](reviews/2026-10-09-code-audit-defense.md)。
+- 2026-10-16 落地了该审查的四项代码建议（IPC 自残后门、字体缓存坏就用坏即弃、Strict 不再被未实现层阻断、XML 加固幅述校正），证据与未做项见[审查报告第五节](reviews/2026-10-09-code-audit-defense.md)。新增 GUI crate（`crates/gui`，Iced 工作台骨架）可编译，但任务执行链未接通真实引擎、无测试，不计为已交付。
 
 ## 项目边界
 
@@ -19,6 +22,9 @@
 - libass 渲染、renderer-host 进程隔离、BDN XML/PNG 输出和 Basic PGS 编码链。
 - PGS 段解析、Fast Path 变换、分层校验及 ODS 内容摘要。
 - 字体扫描、缺字报告、整字体复制与 manifest、渲染字体身份和字体注入。
+- 全局环境测试加速：配置 `[profile.dev.package."*"] opt-level = 3`，纯算法与字体计算在 dev 模式下提速 10~50 倍。
+- 优化了测试门禁：真实系统字体测试默认跳过（显式指定 `STK_REQUIRE_FONTS=1` 或 `STK_FONTS_DIR` 触发），`fontenv` 单测使用隔离单字体测试目录，彻底消除全量扫描 `C:\Windows\Fonts` 导致的单测超时卡死。
+- 前端设计重构：将原本物理割裂的 10 个独立页面重塑为“三栏一体化主工作台 + 单帧实时预览 Canvas + 多 Profile 矩阵”，见 [05 UI 页面规格](specs/05_UI_SCREEN_SPEC.md) 与 [35 UI 交互规范](specs/35_UI_STATE_INTERACTION.md)。
 
 实现边界和验收要求见[功能矩阵](specs/03_FEATURE_MATRIX.md)及[验收用例](specs/25_ACCEPTANCE_TESTS.md)。
 

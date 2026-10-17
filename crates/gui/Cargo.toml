@@ -1,0 +1,34 @@
+[package]
+name = "gui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "SubtitleToolkit 纯 Rust 桌面 GUI（Iced 原生框架，三栏一体化工作台）"
+
+[[bin]]
+name = "subtitletoolkit-gui"
+path = "src/main.rs"
+
+[dependencies]
+core-model = { workspace = true }
+format-detect = { workspace = true }
+codec-ass = { workspace = true }
+codec-srt = { workspace = true }
+codec-pgs = { workspace = true }
+codec-bdn = { workspace = true }
+transform-time = { workspace = true }
+transform-hdr = { workspace = true }
+transform-resolution = { workspace = true }
+task-engine = { workspace = true }
+renderer-host = { workspace = true }
+render-libass = { workspace = true }
+media-probe = { workspace = true }
+font-service = { workspace = true }
+image-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time"] }
+iced = { version = "0.13", default-features = false, features = ["wgpu", "tokio", "image", "canvas", "advanced", "svg"] }
+rfd = "0.15"
+icondata = { version = "0.7", default-features = false, features = ["lucide"] }

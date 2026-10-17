@@ -25,6 +25,12 @@ fn cli_err(code: u16, msg: &str) -> StkError {
 /// 用户在 设置→字体 里装的字体落在 `%LOCALAPPDATA%\Microsoft\Windows\Fonts`，
 /// 系统目录里根本没有那个文件。
 pub(crate) fn default_font_dirs() -> Vec<PathBuf> {
+    if let Ok(p) = std::env::var("STK_FONTS_DIR") {
+        let pb = PathBuf::from(p);
+        if pb.is_dir() {
+            return vec![pb];
+        }
+    }
     let mut dirs = Vec::new();
     for var in ["WINDIR", "SYSTEMROOT"] {
         if let Ok(w) = std::env::var(var) {
@@ -124,12 +130,9 @@ pub fn run_font(inv: &Invocation) -> Result<Envelope> {
         .count();
     let mut warnings: Vec<String> = Vec::new();
     if db.cache == CacheState::Refreshed {
-        // 缓存被使用点复核推翻：多付的那次全量重扫算在 evaluate_ms 里，不说明的话
+        // 索引在使用点被判为过期：多付的那次全量重扫算在 evaluate_ms 里，不说明的话
         // 读者看到的是"评级突然变慢了"。
-        warnings.push(
-            "磁盘缓存的索引与文件现状不符（同长度且同 mtime 的原地覆盖），本次已退回全量重扫，新索引已写回"
-                .to_string(),
-        );
+        warnings.push("磁盘缓存的索引与文件现状不符，本次已退回全量重扫，新索引已写回".to_string());
     }
     if db.faces.is_empty() {
         warnings.push("字体库里一条 face 都没读到：上面的 Missing 全部不可信".to_string());

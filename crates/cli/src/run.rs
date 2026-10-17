@@ -229,8 +229,10 @@ fn suggestion_row(it: &media_probe::Suggestion) -> serde_json::Value {
 }
 
 fn probe(path: &Path, cmd: &str) -> Result<Envelope> {
-    let bytes = std::fs::read(path)
-        .map_err(|e| cli_err(110, "无法读取输入文件").with_detail(format!("{path:?}：{e}")))?;
+    // `probe` 也要先看大小：它是用户”拿错文件“时最可能先跑的命令，
+    // 而把一个几十 GB 的镜像整份读进内存只是为了说“这不是字幕”，
+    // 代价与收益完全不成比例（23 §文件）。
+    let bytes = crate::pipeline::read_bounded(path, crate::pipeline::MAX_BINARY_BYTES, "输入")?;
     let hint_name = if is_video(path) { None } else { Some("") };
     let detection = format_detect::probe_bytes(&bytes, hint_name);
     let mut data = serde_json::json!({
@@ -668,10 +670,11 @@ fn pgs_adjust(
     ops: &[codec_pgs::fastpath::FastOp],
     cmd: &str,
 ) -> Result<Envelope> {
-    let stream =
-        codec_pgs::read_file(&std::fs::read(input).map_err(|e| {
-            cli_err(110, "无法读取输入文件").with_detail(format!("{input:?}：{e}"))
-        })?)?;
+    let stream = codec_pgs::read_file(&crate::pipeline::read_bounded(
+        input,
+        crate::pipeline::MAX_BINARY_BYTES,
+        "PGS/SUP 二进制",
+    )?)?;
     let before = stream.segments.clone();
     let after = apply_pgs(&before, ops)?;
     check_timeline(&after)?;
@@ -1011,8 +1014,8 @@ fn pgs_validate(
     peak_bps: Option<i64>,
     cmd: &str,
 ) -> Result<Envelope> {
-    let bytes = std::fs::read(input)
-        .map_err(|e| cli_err(110, "无法读取输入文件").with_detail(format!("{input:?}：{e}")))?;
+    let bytes =
+        crate::pipeline::read_bounded(input, crate::pipeline::MAX_BINARY_BYTES, "PGS/SUP 二进制")?;
     // 故意用 parse_stream 而不是 read_file：损坏文件也要能拿到全部发现（校验器的职责）
     let segments = parse_stream(&bytes)?;
     let want = validator::ProfileWant {

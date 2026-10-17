@@ -597,8 +597,7 @@ pub fn run_batch_with_cancel(
     let skipped: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
     for input in &found.files {
-        let raw = std::fs::read(input)
-            .map_err(|e| cli_err(110, "无法读取输入文件").with_detail(format!("{input:?}：{e}")))?;
+        let raw = crate::pipeline::read_bounded(input, crate::pipeline::MAX_BINARY_BYTES, "输入")?;
         let input_sha = sha256_hex(&raw);
         let stem = input
             .file_stem()

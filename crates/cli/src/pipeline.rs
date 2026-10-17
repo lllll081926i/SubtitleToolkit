@@ -118,11 +118,54 @@ fn detect_utf16(bytes: &[u8]) -> Utf16 {
     }
 }
 
+/// 字幕文本的输入上限：1 GiB。
+///
+/// 依据（23 §文件“大文件…不相关格式拒绝”）：本工具处理的是**字幕**，
+/// 不是视频。一部 3 小时的 5000 行 ASS 不到 5 MiB，带大量特效与 `[Fonts]`
+/// 内嵌字体的也就几百 MiB。1 GiB 比真字幕高两个数量级，而它拦住的
+/// 正是“把 20 GB 的 ts 误当成字幕摍进来”这类误操作。
+///
+/// 为什么必须**在读取之前**先查字节数：`fs::read` 会先把整份读进内存，
+/// 而 `String::from_utf8` 还会再拷一份。一个不该处理的文件
+/// 应当以一条“太大了”的消息被拒，而不是把机器的内存吃完再失败
+/// —— 后者在 32 位环境或内存本来就紧张时有真实的伤害。
+pub const MAX_TEXT_BYTES: u64 = 1024 * 1024 * 1024;
+
+/// 二进制字幕（PGS/SUP）的输入上限：4 GiB。
+///
+/// 比文本大一档：真实商业 SUP 可以很大（本机那份 1080p 双语特效 SUP 是 98.97 MB，
+/// 4K 长片版的 SUP 到 GB 级不奇怪）。4 GiB 仍然挡住了“把几百 GB 的镜像摍进来”这种。
+///
+/// 不能只看段级别上限（`codec-pgs` 已对每个段的长度做了 checked 校验）：
+/// 那些上限防的是“单段声明自己不存在的长度”，而这里是“整个文件就不该被读”。
+pub const MAX_BINARY_BYTES: u64 = 4 * 1024 * 1024 * 1024;
+
+/// 按上限读文件。**先 stat 再读**，不把超限的文件先读进内存。
+///
+/// 错误码 113 单独立一个，而不是并进 110（无法读取）：
+/// “文件太大”与“文件读不了”的用户动作完全不同 —— 前者要换个输入，
+/// 后者要修权限或路径。
+pub(crate) fn read_bounded(path: &Path, limit: u64, what: &str) -> Result<Vec<u8>> {
+    let md = std::fs::metadata(path)
+        .map_err(|e| cli_err(110, "无法读取输入文件").with_detail(format!("{:?}：{e}", path)))?;
+    if md.len() > limit {
+        return Err(cli_err(113, &format!("{what}输入超过本工具的处理上限"))
+            .with_detail(format!(
+                "{}：{:} 字节，上限 {} 字节",
+                path.display(),
+                md.len(),
+                limit
+            ))
+            .with_action("确认选对了文件；本工具处理字幕，不处理视频/音频容器"));
+    }
+    std::fs::read(path)
+        .map_err(|e| cli_err(110, "无法读取输入文件").with_detail(format!("{:?}：{e}", path)))
+}
+
 /// 读入并解码。UTF-8（含 BOM）与 UTF-16（BOM 声明，或无 BOM 但结构可判）都接受；
 /// Windows ANSI/CP936 这类**没有声明又无法判定**的编码仍然明确拒绝（J10 剩余那半）。
 pub fn load_text(path: &Path) -> Result<Loaded> {
-    let bytes = std::fs::read(path)
-        .map_err(|e| cli_err(110, "无法读取输入文件").with_detail(format!("{:?}：{e}", path)))?;
+    let bytes = read_bounded(path, MAX_TEXT_BYTES, "字幕文本")?;
     let hint = format_detect::probe_bytes(&bytes, None).encoding_hint;
     match detect_utf16(&bytes) {
         Utf16::Ok(text, encoding) => Ok(Loaded {
@@ -512,6 +555,16 @@ pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     let mut h = Sha256::new();
     h.update(bytes);
     h.finalize().iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// 测试用的窄接口：直接验边界（`>` vs `>=`）而不跑整个命令。
+///
+/// 存在的理由与 `read_bounded` 的注释同一条：集成用例已经证明了
+/// “超限会被真 CLI 拒”，所以边界那一个比较运算符可以在这一层用小文件钉住，
+/// 不必为了测它去读 1 GiB。暴露给测试而不是把它变成 `pub` API。
+#[doc(hidden)]
+pub fn pipeline_probe_read(path: &Path, limit: u64) -> Result<Vec<u8>> {
+    read_bounded(path, limit, "测试")
 }
 
 #[cfg(test)]

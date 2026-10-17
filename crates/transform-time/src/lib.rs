@@ -2,7 +2,8 @@
 //!
 //! 复用 `core-model` 的 `Rational`/`Time`/`Fps`，不重造时间类型；全部纯函数，无 IO、无 GUI。
 //! ADR-007：时间运算全程精确有理数，float 只出现在 `TimePreview::ratio_label` 一处显示格式化。
-//! 10 §1 + 05 §4：Offset / FrameSnap / SpeedScale / TwoPoint 四种语义严格分离，绝不自动升级或降级。
+//! 10 §1 + 05 §4：Offset / FrameSnap / SpeedScale / TwoPoint / Piecewise 五种语义严格分离，
+//! 绝不自动升级或降级。
 
 #![forbid(unsafe_code)]
 

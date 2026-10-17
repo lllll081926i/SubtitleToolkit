@@ -46,6 +46,19 @@ pub struct Envelope {
     pub version: &'static str,
     pub command: String,
     pub ok: bool,
+    /// 22 §2 的 correlation id：本次 Job 的 UUID。
+    ///
+    /// 它必须出现在**每一条**信封里（成功与失败都含），因为它的用途是
+    /// “把用户看到的这一次执行与日志里的那几行对上”。
+    /// 只在失败时给就不够了：用户可能因为“跑得太慢”而想去找那一次。
+    pub corr_id: String,
+    /// 这个 id 是**命令自己**定的还是 `Envelope` 随手生成的。
+    ///
+    /// 区分这两者是必需的：批量路径会生成一个 id 并用它的子 id 标识每个输出，
+    /// 那时信封上的 id 必须服从命令给的（否则报告与信封会是两个值）。
+    /// 不序列化：它是构造状态，不是契约的一部分。
+    #[serde(skip)]
+    pub came_with_corr_id: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -63,6 +76,8 @@ impl Envelope {
             tool: TOOL,
             version: env!("CARGO_PKG_VERSION"),
             command: command.to_string(),
+            corr_id: core_model::CorrId::new_job().as_string(),
+            came_with_corr_id: false,
             ok: true,
             data: Some(data),
             loss: None,
@@ -71,12 +86,24 @@ impl Envelope {
         }
     }
 
+    /// 用给定的 corr_id 构造成功信封。
+    ///
+    /// 批量路径用这个：一次 batch 的全部输出必须共享**同一个** Job id，
+    /// 否则用户在日志里看到几条记录也不知道它们是不是同一次执行（22 §2）。
+    pub fn ok_with_id(command: &str, data: serde_json::Value, corr_id: &str) -> Envelope {
+        let mut e = Envelope::ok(command, data);
+        e.corr_id = corr_id.to_string();
+        e
+    }
+
     pub fn fail(command: &str, e: &StkError) -> Envelope {
         let mut env = Envelope {
             schema: SCHEMA,
             tool: TOOL,
             version: env!("CARGO_PKG_VERSION"),
             command: command.to_string(),
+            corr_id: core_model::CorrId::new_job().as_string(),
+            came_with_corr_id: false,
             ok: false,
             data: None,
             loss: None,
@@ -102,10 +129,36 @@ impl Envelope {
         self
     }
 
+    /// 换成指定的 correlation id（22 §2）。
+    ///
+    /// `ok`/`fail` 里各生成一个只是为了让单独构造的信封也**总有**一个 id；
+    /// 真正发出去的那一份一律由 `dispatch` 用同一个值覆盖，
+    /// 否则日志与报告会是两个不同的 id。
+    ///
+    /// 带了 `came_with_corr_id = true` 的用 [`Envelope::claim_corr_id`]：
+    /// 后者表示“这个 id 是命令自己定的，输出 id 都以它为父”。
+    pub fn with_corr_id(mut self, id: &str) -> Envelope {
+        self.corr_id = id.to_string();
+        self
+    }
+
+    /// 声明“这个 id 由命令自己生成”，并返回自己。
+    /// 批量路径用它：它的子 id 已经按这个共享段生成好了，
+    /// 改成别的值会让 `output_ids` 与 `corr_id` 分成两家。
+    pub fn claim_corr_id(mut self, id: &str) -> Envelope {
+        self.corr_id = id.to_string();
+        self.came_with_corr_id = true;
+        self
+    }
+
     pub fn to_json_line(&self) -> String {
         // 单行 JSON：便于 `| jq` 与日志采集；序列化失败时给出可诊断的兜底而不是 panic
         serde_json::to_string(self).unwrap_or_else(|e| {
-            format!(r#"{{"schema":{SCHEMA},"tool":"{TOOL}","ok":false,"errors":[{{"code":"STK-OUT-9001","domain":"OUT","title":"结果序列化失败","details":["{e}"]}}]}}"#)
+            // 兜底里也要带 corr_id：用户拿到的唯一可用线索就是它（22 §2）。
+            format!(
+                r#"{{"schema":{SCHEMA},"tool":"{TOOL}","corr_id":"{}","ok":false,"errors":[{{"code":"STK-OUT-9001","domain":"OUT","title":"结果序列化失败","details":["{e}"]}}]}}"#,
+                self.corr_id
+            )
         })
     }
 
@@ -133,6 +186,15 @@ impl Envelope {
             }
         }
         out
+    }
+
+    /// 人读输出末尾那行 correlation id。
+    ///
+    /// 22 §2 要求“用户看到的错误卡可复制 ID”，所以失败时把它单独一行打印出来，
+    /// 而不是埋在 JSON 里。成功时也打：用户可能因为“跑得太慢”想去找那一次。
+    /// 一行、无修饰、不含空格与路径——抄下来就能用（见 `corrid` 的字符集约束）。
+    pub fn corr_line(&self) -> String {
+        format!("corr-id: {}", self.corr_id)
     }
 }
 

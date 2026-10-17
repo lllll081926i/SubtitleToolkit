@@ -176,8 +176,54 @@ fn the_diagnostic_bundle_carries_the_logs_and_does_not_call_them_user_content() 
         "{v}"
     );
 
-    // 包里的日志内容要真的是日志（不是空文件占位）
+    // 包里的日志内容要真的是日志（不是空文件占位）。
+    //
+    // 不能直接搜 zip 的原始字节：条目是 deflate 压缩过的，
+    // 明文不在里面 —— 那种写法会让“空占位文件”也能通过（只要存个同名文件）。
+    // 所以这里真去解出 `logs/` 条目的内容。
     let zip = std::fs::read(&out).unwrap();
-    let t = String::from_utf8_lossy(&zip);
-    assert!(t.contains("command="), "包里的日志该有真内容");
+    let log =
+        read_zip_entry(&zip, |name| name.starts_with("logs/")).expect("包里该有一个 logs/ 条目");
+    let text = String::from_utf8_lossy(&log);
+    assert!(text.contains("command="), "包里的日志该有真内容：{text}");
+}
+
+/// 从一个 zip 里解出名字匹配的第一个条目。
+///
+/// 只够这个测试用（不支持 zip64、加密、目录项），而它**不复用生产码的写入逻辑**，
+/// 所以“写读自洽”不会自证。
+fn read_zip_entry(zip: &[u8], want: impl Fn(&str) -> bool) -> Option<Vec<u8>> {
+    let eocd = zip.len().checked_sub(22)?;
+    let count = u16::from_le_bytes(zip[eocd + 10..eocd + 12].try_into().ok()?) as usize;
+    let cd = u32::from_le_bytes(zip[eocd + 16..eocd + 20].try_into().ok()?) as usize;
+    let mut at = cd;
+    for _ in 0..count {
+        let method = u16::from_le_bytes(zip[at + 10..at + 12].try_into().ok()?);
+        let csize = u32::from_le_bytes(zip[at + 20..at + 24].try_into().ok()?) as usize;
+        let nlen = u16::from_le_bytes(zip[at + 28..at + 30].try_into().ok()?) as usize;
+        let elen = u16::from_le_bytes(zip[at + 30..at + 32].try_into().ok()?) as usize;
+        let clen = u16::from_le_bytes(zip[at + 32..at + 34].try_into().ok()?) as usize;
+        let lho = u32::from_le_bytes(zip[at + 42..at + 46].try_into().ok()?) as usize;
+        let name = String::from_utf8(zip[at + 46..at + 46 + nlen].to_vec()).ok()?;
+        if want(&name) {
+            let l_nlen = u16::from_le_bytes(zip[lho + 26..lho + 28].try_into().ok()?) as usize;
+            let l_elen = u16::from_le_bytes(zip[lho + 28..lho + 30].try_into().ok()?) as usize;
+            let data_at = lho + 30 + l_nlen + l_elen;
+            let payload = &zip[data_at..data_at + csize];
+            return match method {
+                0 => Some(payload.to_vec()),
+                8 => {
+                    use flate2::read::DeflateDecoder;
+                    use std::io::Read;
+                    let mut d = DeflateDecoder::new(payload);
+                    let mut buf = Vec::new();
+                    d.read_to_end(&mut buf).ok()?;
+                    Some(buf)
+                }
+                _ => None,
+            };
+        }
+        at += 46 + nlen + elen + clen;
+    }
+    None
 }

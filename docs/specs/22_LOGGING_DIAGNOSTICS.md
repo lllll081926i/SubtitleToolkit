@@ -30,8 +30,30 @@
 ## 2. Correlation ID
 每个 Job/Output/renderer session 都有 UUID；用户看到的错误卡可复制 ID。
 
-**实现状态**：**未实现**。当前用 PID 与输出路径定位一次执行（`diagnose` 的包里就有），
-没有逐 Job 的 UUID。
+**实现状态（2026-10-17）**：**已实现**（`core_model::corrid`）。
+
+格式 `{层级前缀}-{8hex 共享段}-{12hex 唯一尾}`，前缀 `J`ob / `O`utput / `R`enderer。
+
+| 规格要求 | 落法 |
+|---|---|
+| 每个 Job 有 | 信封顶层 `corr_id`（成功与失败都带） |
+| 每个 Output 有 | batch 报告的 `output_ids[].corr_id` |
+| 每个 renderer session 有 | batch 报告的 `renderer_id` |
+| 错误卡可复制 ID | 人读输出末尾单独一行 `corr-id: J-…`（无空格、无路径，直接可抄） |
+
+四点设计决定：
+
+- **必须能对上**：日志里那一条的 `corr_id` 与用户报告里的**是同一个值**。
+  两边各自生成过一版，结果“都像 UUID 但对不上” —— 用户贴出来的 id 在日志里搜不到。
+  已有一条测试专门钉这件事（它抳出了批量路径的一个真缺陷，见裁决文档）。
+- **必须能分层**：同一个 Job 的全部下级共享中间那段（`stem`），
+  于是“这三条记录是一家人”在字面上就成立，按共享段分组即可聚一次执行。
+- **不携带用户数据**：id 会被贴进公开的 issue，所以结构上只由固定前缀与随机字节组成，
+  没有路径/文件名/用户名。
+- **不引 `uuid` crate**：只需要“两次运行的 id 不撞上”，Windows 上走 `BCryptGenRandom`
+  （系统 CSPRNG），拿不到时退回时间+计数器混合。它**不用于任何安全用途**。
+
+`tracing` 的 span（22 §1）自动带上这个 id，所以后续每条 event 不必重复写。
 
 ## 3. 错误域
 INPUT / PARSE / TRANSFORM / RENDER / FILTER / IMAGE / PGS / BDN / CONTAINER / OUTPUT / VALIDATE / DEPENDENCY。

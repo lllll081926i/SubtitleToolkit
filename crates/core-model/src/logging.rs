@@ -111,6 +111,41 @@ fn directive(level: &str) -> (String, Option<String>) {
     )
 }
 
+/// 无 ANSI 的字段格式化器：给文件那份日志用。
+///
+/// 为什么不直接用 `DefaultFields`：它的 ANSI 开关不跟 `layer.with_ansi(false)` 走，
+/// 于是 span 的 `corr_id=` 这类字段名会在文件里留下 `ESC[3m` 序列 ——
+/// 而那份文件要进诊断包（22 §5）。
+///
+/// 实现很小，因为只需要“名字=值 + 空格”这个形状；
+/// `FormatFields` 这个 trait 就是 `tracing` 为这种定制准备的。
+struct NoAnsiFields;
+
+impl<'writer> tracing_subscriber::fmt::format::FormatFields<'writer> for NoAnsiFields {
+    fn format_fields<R: tracing_subscriber::field::RecordFields>(
+        &self,
+        writer: tracing_subscriber::fmt::format::Writer<'writer>,
+        fields: R,
+    ) -> core::fmt::Result {
+        let mut buf = String::new();
+        let mut v = PlainFields(&mut buf);
+        fields.record(&mut v);
+        let mut writer = writer;
+        writer.write_str(buf.trim_end())
+    }
+}
+
+/// 逐字段写成 `name=value`。
+struct PlainFields<'a>(&'a mut String);
+
+impl tracing_subscriber::field::Visit for PlainFields<'_> {
+    fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn core::fmt::Debug) {
+        use core::fmt::Write as _;
+        // 值走 `{:?}`：字符串会带引号，与终端那份的写法一致。
+        let _ = write!(self.0, "{}={:?} ", field.name(), value);
+    }
+}
+
 fn init_file_and_stderr(level: &str, file: &Path) {
     use tracing_subscriber::layer::SubscriberExt as _;
     use tracing_subscriber::util::SubscriberInitExt as _;
@@ -121,14 +156,28 @@ fn init_file_and_stderr(level: &str, file: &Path) {
         Err(_) => tracing_subscriber::EnvFilter::new("stk=info,info"),
     };
     // 文件那份用无颜色的纯文本：它会被塞进诊断包，ANSI 转义码在那里只是噪声。
+    //
+    // 为什么 `with_ansi(false)` 不够：它只关掉**事件字段**的着色，
+    // 而 span 的字段名（`stk{corr_id=…}` 里的 `corr_id`）走的是另一个开关。
+    // 两个都关才能得到真无转义字节的文件 —— 而“文件里没有 ESC 字节”
+    // 是一条断言过的事实（见 cli/tests/logging.rs）。
     let file_layer = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .open(file)
         .ok()
         .map(|f| {
+            // 三处都要关：`layer.with_ansi`（事件）、`format.with_ansi`（时间/级别/目标）、
+            // 以及 `DefaultFields`（**span 的字段名**）。第三处是最容易漏的那个 ——
+            // span 的 `corr_id=` 这类字段名走它自己的开关。
+            let fmt = tracing_subscriber::fmt::format()
+                .with_ansi(false)
+                .with_target(true)
+                .with_level(true);
             tracing_subscriber::fmt::layer()
                 .with_ansi(false)
+                .event_format(fmt)
+                .fmt_fields(NoAnsiFields)
                 .with_writer(std::sync::Mutex::new(f))
         });
     let stderr_layer = tracing_subscriber::fmt::layer()

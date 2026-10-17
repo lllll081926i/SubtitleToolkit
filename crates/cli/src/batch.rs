@@ -893,8 +893,33 @@ pub fn run_batch_with_cancel(
     // classify 的规则是"没成功就是失败"，而 dry-run 什么都没写：
     // 直接把 WouldWrite 交给它，一次演练就会被判成 failed——那等于没人敢用 --dry-run 检查任务。
     let outcome = judge(&all, inv.dry_run);
+    // 22 §2 的三层 id。
+    //
+    // `job_id` 是**用户给的** spec id（“我这次任务叫什么”），而 `corr_id` 是
+    // **本次执行**的 id（“这一次跑”）—— 两者不能合并：同一个 spec 会跑很多次，
+    // 而用户要能定位其中**那一次**。
+    //
+    // `output_ids` 与 `renderer_id` 都继承 job 的共享段，于是列表里按共享段
+    // 分组就能把一次执行的全部输出聚在一起（见 `core_model::corrid`）。
+    let corr = core_model::CorrId::new_job();
+    let output_ids: Vec<serde_json::Value> = resolved
+        .iter()
+        .map(|r| {
+            let o = corr.child(core_model::CorrScope::Output);
+            serde_json::json!({
+                "profile": r.profile.name,
+                "corr_id": o.as_string(),
+            })
+        })
+        .collect();
+    let renderer_id = renderer
+        .as_ref()
+        .map(|_| corr.child(core_model::CorrScope::Renderer).as_string());
     let report = serde_json::json!({
         "job_id": spec.id,
+        "corr_id": corr.as_string(),
+        "output_ids": output_ids,
+        "renderer_id": renderer_id,
         "outcome": outcome.label(),
         "inputs": found.files.len(),
         "profiles": resolved.len(),
@@ -939,6 +964,11 @@ pub fn run_batch_with_cancel(
     });
     let data = serde_json::json!({
         "job_id": spec.id,
+        // 22 §2：同一个 corr_id 也进顶层信封（`Envelope::with_corr_id` 会覆盖），
+        // 于是 `data` 里的这一份与信封上那一份、日志里那一份三处一致。
+        "corr_id": corr.as_string(),
+        "output_ids": output_ids,
+        "renderer_id": renderer_id,
         "outcome": outcome.label(),
         "inputs": found.files.len(),
         "profiles": resolved.len(),
@@ -955,7 +985,10 @@ pub fn run_batch_with_cancel(
         "font_env": font_env_report,
         "report": report,
     });
-    let mut env = Envelope::ok(cmd, data);
+    // 22 §2：批量**自己**定 corr_id —— 它的子 id（`output_ids`）已经按这个
+    // 共享段生成好了，所以不能用 `with_corr_id`（那只是换个显示值），
+    // 而要用 `claim_corr_id` 声明“这个 id 由我定”。
+    let mut env = Envelope::ok(cmd, data).claim_corr_id(&corr.as_string());
     env.writes = writes;
     if outcome != JobOutcome::Success {
         // 部分成功/失败/取消都要 ok=false 与非零退出码阻断流水线（38 §2、20 §契约），

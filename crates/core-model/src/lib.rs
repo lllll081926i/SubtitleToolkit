@@ -2,6 +2,7 @@
 
 pub mod canvas;
 pub mod color;
+pub mod corrid;
 pub mod datadir;
 pub mod error;
 pub mod geometry;
@@ -15,6 +16,7 @@ pub mod time;
 
 pub use canvas::Canvas;
 pub use color::AssColor;
+pub use corrid::{span_for, CorrId, Scope as CorrScope};
 pub use datadir::{DataDir, DataDirKind};
 pub use error::{Domain, Result, StkError};
 pub use geometry::{

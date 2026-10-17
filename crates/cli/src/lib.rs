@@ -21,7 +21,6 @@ pub(crate) mod rendercache;
 pub mod run;
 pub mod subset;
 
-use core_model::error::StkError;
 use std::io::Write;
 
 /// 退出码约定：0 成功；1 运行错误；2 用法错误。
@@ -46,17 +45,36 @@ pub fn dispatch(argv: Vec<String>) -> i32 {
         }
     };
     let cmd = inv.command.name().to_string();
+    // 22 §2：**一次执行一个 id**，在 dispatch 这一层生成。
+    //
+    // 为什么不在 `Envelope::ok/fail` 里各自生成：那样日志里记的那个 id
+    // 与用户报告里看到的会是**两个不同的值** —— 而 correlation id 的全部用途
+    // 就是让这两处能对上。"看起来像 UUID"不够，必须是同一个。
+    let corr = core_model::CorrId::new_job();
+    // 22 §1 / §2 的联动：把 id 放进 span，`execute` 里的每条 `tracing` event
+    // 都自动带着它，不必在每处 `info!` 里重复写一遍。
+    // 这也是选 `tracing` 而不是 `log` 的直接好处。
+    let span = core_model::span_for(corr, "run");
+    let _guard = span.enter();
     match run::execute(&inv) {
-        Ok(env) => emit(&env, inv.json),
-        Err(e) => emit(&EnvelopeFailed(&e).build(&cmd), inv.json),
-    }
-}
-
-struct EnvelopeFailed<'a>(&'a StkError);
-
-impl EnvelopeFailed<'_> {
-    fn build(&self, cmd: &str) -> output::Envelope {
-        output::Envelope::fail(cmd, self.0)
+        Ok(env) => {
+            // 批量路径会**自己**生成一个 id，并用它的子 id 去标识每个输出
+            // （`output_ids` 的共享段就是它）。那种情况下信封上的 id 必须
+            // 用**那一个**：否则报告里 `corr_id` 与信封上的 `corr_id` 是两个值，
+            // 而 correlation id 的全部用途就是让这两处是同一个。
+            //
+            // 所以这里的规则是：命令自己带了就尊重它，没带才用本层的。
+            let id = if env.came_with_corr_id {
+                env.corr_id.clone()
+            } else {
+                corr.as_string()
+            };
+            emit(&env.with_corr_id(&id), inv.json)
+        }
+        Err(e) => emit(
+            &output::Envelope::fail(&cmd, &e).with_corr_id(&corr.as_string()),
+            inv.json,
+        ),
     }
 }
 
@@ -65,7 +83,9 @@ fn emit(env: &output::Envelope, json: bool) -> i32 {
     let text = if json {
         format!("{}\n", env.to_json_line())
     } else {
-        env.to_text()
+        // 22 §2：人读输出末尾单独一行 corr-id，用户抄下来就能用。
+        // 放在末尾而不是开头：失败时已有信息在前，一行 id 不抢眼但总在。
+        format!("{}{}\n", env.to_text(), env.corr_line())
     };
     if out.write_all(text.as_bytes()).is_err() {
         // stdout 关闭（管道提前退出）不是任务失败，但必须能被诊断

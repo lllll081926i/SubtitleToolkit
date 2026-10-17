@@ -42,6 +42,17 @@
   （含真 libass 通过检查并真的渲染出 BDN XML，以及“同位 PE 不被误判”的负基线）；
   `core-model/src/pe.rs` 的 4 用例把 Itanium（0x0200）正确归为 `Other` 而不是 x64。
   详见[PE 架构检测裁决](reviews/2026-10-17-pe-arch-check.md)。
+- 2026-10-17 **实现 22 §2 correlation id**：新增 `core_model::corrid`。
+  格式 `{J|O|R}-{8hex 共享段}-{12hex 唯一尾}`：前缀标出层级，共享段让“同一个 Job 的
+  全部下级”在字面上就是一家人（按它分组即可聚一次执行）。信封、人读输出末尾的
+  `corr-id: ` 行与日志 span 三处是**同一个值** —— 两边各自生成过一版，结果
+  “都像 UUID 但对不上”，用户贴出的 id 在日志里搜不到；现在有一条测试专门钉这件事。
+  过程中抳出两个真缺陷：批量路径的信封与报告是两个不同的 id
+  （新增 `claim_corr_id` 区分“命令自己定的 id”），以及文件日志里 span 字段名带 ANSI
+  转义（`layer.with_ansi(false)` 不覆盖 span 字段，需换自定义 field formatter）——
+  后者是上一轮刚加的“日志文件无 ESC 字节”断言当场拦住的回归。
+  `job_id`（用户给的任务名）与 `corr_id`（本次执行）刻意不合并。
+  详见[关联 ID 裁决](reviews/2026-10-17-correlation-id.md)。
 - 2026-10-17 **实现 22 §5 诊断包**（CLI `diagnose`）：把故障现场打成 zip（环境/版本/脱敏设置/依赖身份/缓存账目）。规格最要紧的一句是“**默认不包含原字幕/视频**”，所以默认是**白名单**而不是黑名单——诊断包天生要被贴到 issue、发邮件，“先收进来、发之前再删”会在没读说明的用户身上失效。脱敏判据是**键名**而不是值，且保留“这个键存在”这个事实。包内自带 `README.txt` 说明自己的边界。ZIP 写入器是手写的（`flate2` 已在依赖树里，不引 zip crate），因此**必须自己验**：独立读取器逐条解压 + 验 CRC，并用 Python `zipfile` 做第三方复核（`testzip() -> None`）。开发中抳出三个真缺陷，其中一个会被“写读自洽”的测试整批放过（中央目录项漏写名字：包开头签名全对而 EOCD 的 `cd_size` 偏小，Python 报 `Truncated central directory`）。详见[诊断包裁决](reviews/2026-10-17-diagnostic-bundle.md)。
 
 ## 项目边界
@@ -61,6 +72,8 @@
 - 36 §1 AppSettings 落盘（未知字段保留、坏文件不阻塞、原子写）。
 - 22 §5 诊断包（默认白名单，附样本需显式点名；脱敏保留键的存在；含本程序自己的日志）。
 - 22 §1 结构化日志（`tracing`），按日轮转 7 天 + 10 MiB 总量上限，随 `DataDir` 落盘。
+- 22 §2 correlation id（`J/O/R` 三层 + 共享段）：信封、人读输出和日志三处是同一个值，
+  batch 另有 `output_ids[]` 与 `renderer_id`。
 - 23 §DLL 的 PE arch 检测（单份实现在 `core_model::pe`，主程序与 host 共用）；
   CLI 把“不存在/不是 PE/位数不符”分成三个可分的错误码；`JobSnapshot` 的 `arch` 读 PE 头而非写死。
 - 23 §文件 的大文件拒绝（`pipeline::read_bounded`）：**先 stat 再读**，
@@ -85,7 +98,8 @@
 - 仓库已补根目录 MIT/Apache-2.0 license 正文（`LICENSE-MIT`、`LICENSE-APACHE`，2026-10-17）；portable 包可由 [tools/make_portable.ps1](../tools/README.md) 生成（含三个 exe、`portable.flag`、`sbom.cdx.json`、许可正文与 `SHA256SUMS.txt`）。**安装器与 Authenticode 签名仍未完成**（这是发布链上剩下的一项）；第三方 DLL 分发审计也未完成。
 - 22 §1 日志文件已实现（`core_model::logging`，`tracing` + 按日轮转 + 启动清理，
   随 `DataDir` 落盘、便携包内自动进 `data/logs/`）；日志已进 `diagnose` 的诊断包。
-  22 §2 correlation ID 与 22 §6 的 SEH minidump 仍未实现。
+  **22 §2 correlation id 已实现**（`J/O/R` 三层，日志与报告同一个值）。
+  22 §6 的 SEH minidump 仍未实现。
 - 36 §1 的另外两层（ToolDefaults、Preset）未实现；Preset 需要 TOML 依赖获批（ISSUES E4）。
 
 ## 2026-10-08 早前代码审查验证

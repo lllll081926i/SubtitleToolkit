@@ -38,7 +38,8 @@
 - `font scan`、`font subset`（含 `--embed-fonts` / `--mkv-attachments`）、`mkv identify|extract|remux`、`cache stat|clear`、`settings show|init|set`、`diagnose`、`batch`、`render`、`doctor`。
 - 37 §2 两级渲染缓存：内存（批量内同 key 共享）与磁盘（配额、清理、损坏自愈、跨运行复用）。
 - 36 §1 AppSettings 落盘（未知字段保留、坏文件不阻塞、原子写）。
-- 22 §5 诊断包（默认白名单，附样本需显式点名；脱敏保留键的存在）。
+- 22 §5 诊断包（默认白名单，附样本需显式点名；脱敏保留键的存在；含本程序自己的日志）。
+- 22 §1 结构化日志（`tracing`），按日轮转 7 天 + 10 MiB 总量上限，随 `DataDir` 落盘。
 - libass 渲染、renderer-host 进程隔离、BDN XML/PNG 输出和 Basic PGS 编码链。
 - PGS 段解析、Fast Path 变换、分层校验及 ODS 内容摘要。
 - 字体扫描、缺字报告、整字体复制与 manifest、渲染字体身份和字体注入。
@@ -55,7 +56,9 @@
 - PGS Basic 编码不等于 Strict Blu-ray 合规。PCS 帧率字段、palette range/matrix、ODS 图末标记尚无真盘/设备结论；当前 ffprobe 证据只覆盖 `.sup` 容器段布局与时钟。第 5 层的不变式取的是**必要条件**（不满足一定有问题），不是充分条件。
 - Strict validator 已实现第 1–6 层（含第 5 层解码器模型）；**第 7 层设备语料**仍未取得，因此 `strict_badge_allowed` 仍恒为 false（报告给出 `coverage_gap`）。第 5 层本身未含缓冲区占用曲线与 acquisition/seamless 分支。
 - 仓库已补根目录 MIT/Apache-2.0 license 正文（`LICENSE-MIT`、`LICENSE-APACHE`，2026-10-17）；portable 包可由 [tools/make_portable.ps1](../tools/README.md) 生成（含三个 exe、`portable.flag`、`sbom.cdx.json`、许可正文与 `SHA256SUMS.txt`）。**安装器与 Authenticode 签名仍未完成**（这是发布链上剩下的一项）；第三方 DLL 分发审计也未完成。
-- 22 §1 日志文件（没有 `tracing` 依赖）、22 §2 correlation ID、22 §6 的 SEH minidump 均未实现；诊断包里不包含这三项（不用空文件占位）。
+- 22 §1 日志文件已实现（`core_model::logging`，`tracing` + 按日轮转 + 启动清理，
+  随 `DataDir` 落盘、便携包内自动进 `data/logs/`）；日志已进 `diagnose` 的诊断包。
+  22 §2 correlation ID 与 22 §6 的 SEH minidump 仍未实现。
 - 36 §1 的另外两层（ToolDefaults、Preset）未实现；Preset 需要 TOML 依赖获批（ISSUES E4）。
 
 ## 2026-10-08 早前代码审查验证

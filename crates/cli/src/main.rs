@@ -17,6 +17,21 @@ fn main() -> std::process::ExitCode {
             expanded.push(a);
         }
     }
+    // 22 §1：日志在**解析之前**初始化，否则早期错误（例如参数拼错）就落不了盘。
+    // 级别取自 36 §1 的 AppSettings；读设置本身不靠日志，所以没有循环依赖。
+    // 注意 `STK_LOG` 优先于设置：与 `STK_DATA_DIR` 同一理由——
+    // 排查“为什么日志没出来”时需要一条不依赖设置文件的路。
+    let level = match std::env::var("STK_LOG") {
+        Ok(v) if !v.trim().is_empty() => v,
+        _ => {
+            core_model::SettingsStore::current()
+                .load()
+                .settings
+                .log_level
+        }
+    };
+    core_model::init_logging(&level);
+    tracing::debug!(log_level = %level, "日志已初始化");
     std::process::ExitCode::from(cli::dispatch(expanded) as u8)
 }
 

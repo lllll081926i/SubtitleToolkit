@@ -10,6 +10,7 @@
 | ab_glyph_rasterizer | 0.1.10 | Apache-2.0 | https://github.com/alexheretic/ab-glyph | 366ffbaa4442f468... | bundled(允许随包) |
 | adler2 | 2.0.1 | 0BSD OR MIT OR Apache-2.0 | https://github.com/oyvindln/adler2 | 320119579fcad9c2... | bundled(允许随包) |
 | ahash | 0.8.12 | MIT OR Apache-2.0 | https://github.com/tkaitchuck/ahash | 5a15f179cd60c458... | bundled(允许随包) |
+| aho-corasick | 1.1.5 | Unlicense OR MIT | https://github.com/BurntSushi/aho-corasick | c982642fa9e86060... | bundled(允许随包) |
 | aliasable | 0.1.3 | MIT | https://github.com/avitex/rust-aliasable | 250f629c0161ad81... | bundled(允许随包) |
 | alloc-no-stdlib | 2.0.4 | BSD-3-Clause | https://github.com/dropbox/rust-alloc-no-stdlib | cc7bb162ec39d46a... | bundled(允许随包) |
 | alloc-stdlib | 0.2.4 | BSD-3-Clause | https://github.com/dropbox/rust-alloc-no-stdlib | 0e76a019e91224d2... | bundled(允许随包) |
@@ -220,6 +221,7 @@
 | lyon_path | 1.0.19 | MIT OR Apache-2.0 | https://github.com/nical/lyon | 5c463f9c428b7fc5... | bundled(允许随包) |
 | lyon_tessellation | 1.0.22 | MIT OR Apache-2.0 | https://github.com/nical/lyon | 43b8dcf906637ece... | bundled(允许随包) |
 | malloc_buf | 0.0.6 | MIT | https://github.com/SSheldon/malloc_buf | 62bb907fe88d54d8... | bundled(允许随包) |
+| matchers | 0.2.0 | MIT | https://github.com/hawkw/matchers | d1525a2a28c7f4fa... | bundled(允许随包) |
 | memchr | 2.8.3 | Unlicense OR MIT | https://github.com/BurntSushi/memchr | cf8baf1c55e62ffc... | bundled(允许随包) |
 | memmap2 | 0.9.11 | MIT OR Apache-2.0 | https://github.com/RazrFalcon/memmap2-rs | d1219ed1b7f229ee... | bundled(允许随包) |
 | memoffset | 0.9.1 | MIT | https://github.com/Gilnaa/memoffset | 488016bfae457b03... | bundled(允许随包) |
@@ -233,6 +235,7 @@
 | ndk-context | 0.1.1 | MIT OR Apache-2.0 | https://github.com/rust-windowing/android-ndk-rs | 27b02d87554356db... | bundled(允许随包) |
 | ndk-sys | 0.5.0+25.2.9519653 | MIT OR Apache-2.0 | https://github.com/rust-mobile/ndk | 8c196769dd60fd4f... | bundled(允许随包) |
 | ndk-sys | 0.6.0+11769913 | MIT OR Apache-2.0 | https://github.com/rust-mobile/ndk | ee6cda3051665f1f... | bundled(允许随包) |
+| nu-ansi-term | 0.50.3 | MIT | https://github.com/nushell/nu-ansi-term | 7957b9740744892f... | bundled(允许随包) |
 | num-complex | 0.4.6 | MIT OR Apache-2.0 | https://github.com/rust-num/num-complex | 73f88a1307638156... | bundled(允许随包) |
 | num-traits | 0.2.19 | MIT OR Apache-2.0 | https://github.com/rust-num/num-traits | 071dfc062690e90b... | bundled(允许随包) |
 | num_enum | 0.7.6 | BSD-3-Clause OR MIT OR Apache-2.0 | https://github.com/illicitonion/num_enum | 5d0bca838442ec21... | bundled(允许随包) |
@@ -326,6 +329,8 @@
 | redox_syscall | 0.4.1 | MIT | https://gitlab.redox-os.org/redox-os/syscall | 4722d768eff46b75... | bundled(允许随包) |
 | redox_syscall | 0.5.18 | MIT | https://gitlab.redox-os.org/redox-os/syscall | ed2bf2547551a705... | bundled(允许随包) |
 | redox_syscall | 0.9.4 | MIT | https://gitlab.redox-os.org/redox-os/kernel | 737970939a87c6fa... | bundled(允许随包) |
+| regex-automata | 0.4.18 | MIT OR Apache-2.0 | https://github.com/rust-lang/regex | ad8553b9b2641325... | bundled(允许随包) |
+| regex-syntax | 0.8.11 | MIT OR Apache-2.0 | https://github.com/rust-lang/regex | d6f6ff9a378485b2... | bundled(允许随包) |
 | renderdoc-sys | 1.1.0 | MIT OR Apache-2.0 | https://github.com/ebkalderon/renderdoc-rs | 19b30a45b0cd0bcc... | bundled(允许随包) |
 | rfd | 0.15.4 | MIT | https://github.com/PolyMeilex/rfd | ef2bee61e6cffa46... | bundled(允许随包) |
 | roxmltree | 0.20.0 | MIT OR Apache-2.0 | https://github.com/RazrFalcon/roxmltree | 6c20b6793b5c2fa6... | bundled(允许随包) |
@@ -348,6 +353,7 @@
 | serde_json | 1.0.151 | MIT OR Apache-2.0 | https://github.com/serde-rs/json | c841b55ecdae098c... | bundled(允许随包) |
 | serde_repr | 0.1.21 | MIT OR Apache-2.0 | https://github.com/dtolnay/serde-repr | 8d3b1629de253c70... | bundled(允许随包) |
 | sha2 | 0.10.9 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes | a7507d819769d01a... | bundled(允许随包) |
+| sharded-slab | 0.1.7 | MIT | https://github.com/hawkw/sharded-slab | f40ca3c46823713e... | bundled(允许随包) |
 | shlex | 2.0.1 | MIT OR Apache-2.0 | https://github.com/comex/rust-shlex | f8fadd59c855ef20... | bundled(允许随包) |
 | signal-hook-registry | 1.4.8 | MIT OR Apache-2.0 | https://github.com/vorner/signal-hook | c4db69cba1110aff... | bundled(允许随包) |
 | simd-adler32 | 0.3.10 | MIT | https://github.com/mcountryman/simd-adler32 | 3a219298ac11a56e... | bundled(允许随包) |
@@ -381,6 +387,7 @@
 | thiserror | 2.0.21 | MIT OR Apache-2.0 | https://github.com/dtolnay/thiserror | 09e52cb86a36cede... | bundled(允许随包) |
 | thiserror-impl | 1.0.69 | MIT OR Apache-2.0 | https://github.com/dtolnay/thiserror | 4fee6c4efc90059e... | bundled(允许随包) |
 | thiserror-impl | 2.0.21 | MIT OR Apache-2.0 | https://github.com/dtolnay/thiserror | fe5197923287db20... | bundled(允许随包) |
+| thread_local | 1.1.10 | MIT OR Apache-2.0 | https://github.com/Amanieu/thread_local-rs | 1ad99c4c6d328033... | bundled(允许随包) |
 | tiff | 0.9.1 | MIT | https://github.com/image-rs/image-tiff | ba1310fcea54c6a9... | bundled(允许随包) |
 | tiny-skia | 0.11.4 | BSD-3-Clause | https://github.com/RazrFalcon/tiny-skia | 83d13394d44dae32... | bundled(允许随包) |
 | tiny-skia-path | 0.11.4 | BSD-3-Clause | https://github.com/RazrFalcon/tiny-skia/tree/master/path | 9c9e7fc0c2e86a30... | bundled(允许随包) |
@@ -395,6 +402,7 @@
 | tracing | 0.1.44 | MIT | https://github.com/tokio-rs/tracing | 63e71662fa4b2a2c... | bundled(允许随包) |
 | tracing-attributes | 0.1.31 | MIT | https://github.com/tokio-rs/tracing | 7490cfa5ec963746... | bundled(允许随包) |
 | tracing-core | 0.1.36 | MIT | https://github.com/tokio-rs/tracing | db97caf9d906fbde... | bundled(允许随包) |
+| tracing-subscriber | 0.3.23 | MIT | https://github.com/tokio-rs/tracing | cb7f578e5945fb24... | bundled(允许随包) |
 | ttf-parser | 0.20.0 | MIT OR Apache-2.0 | https://github.com/RazrFalcon/ttf-parser | 17f77d76d837a783... | bundled(允许随包) |
 | ttf-parser | 0.21.1 | MIT OR Apache-2.0 | https://github.com/RazrFalcon/ttf-parser | 2c591d83f6977786... | bundled(允许随包) |
 | ttf-parser | 0.25.1 | MIT OR Apache-2.0 | https://github.com/harfbuzz/ttf-parser | d2df906b07856748... | bundled(允许随包) |

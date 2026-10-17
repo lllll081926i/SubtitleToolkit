@@ -3,9 +3,29 @@
 ## 1. 日志
 `tracing` structured logging；默认 `%LOCALAPPDATA%/SubtitleToolkit/logs`；滚动 7 天/容量限制。
 
-**实现状态（2026-10-17）**：**未实现**。当前没有 `tracing` 依赖，程序只往 stderr 写人可读的错误；
-日志文件路径与滚动策略都还没落地。`diagnose` 报出的 `logs_dir` 是**位置上应当**的目录，
-不代表现在真有日志写在那儿。本节不能当作已实现来读。
+**实现状态（2026-10-17）**：**已实现**（`core_model::logging`，`tracing` 0.1 + `tracing-subscriber` 0.3，
+两者均 MIT，符合 21 §1）。
+
+| 规格要求 | 落法 |
+|---|---|
+| `tracing` structured logging | `tracing` 的 event 字段，不拼字符串 |
+| 默认 `%LOCALAPPDATA%/…/logs` | 走 `DataDir`，于是便携包内自动落在包内 `data/logs/` |
+| 滚动 7 天 | 文件名 `stk-YYYY-MM-DD.log`（**本地**日期），启动时删 7 天前的 |
+| 容量限制 | 启动时把总量压到 10 MiB 以内（从最旧的开始）；单文件超 2 MiB 同日轮转成 `.log.N` |
+
+四点实现决定：
+
+- **同时保留 stderr 与文件**。CLI 是管道里的程序，把日志完全藏进文件会让用户
+  在终端看不到任何东西。两份写的是同一个 event，不是两套日志。
+- **文件那份不带 ANSI 颜色**：它会被塞进诊断包（§5），转义码在那里只是噪声。
+- **级别来自 36 §1 的 `log_level`**，`STK_LOG` 环境变量优先于设置（与 `STK_DATA_DIR`
+  同一理由：排查“为什么日志没出来”需要一条不依赖设置文件的路）。
+- **不引 `tracing_appender` 的 rolling**：那要再引一条时区链依赖，而这里只需要
+  “按日切 + 启动清理”。自己写两段小逻辑能把“哪些文件会被删”变成可断言的事实 ——
+  删文件是破坏性动作，不该藏在黑盒 appender 里。清理**只碰自己生成的文件名**
+  （`stk-YYYY-MM-DD.log` 与 `.log.N`），不认识的路径一律不动。
+
+日志里只记**命令名与结果**，不记文件路径：诊断包默认要能直接外发（§5）。
 
 ## 2. Correlation ID
 每个 Job/Output/renderer session 都有 UUID；用户看到的错误卡可复制 ID。
@@ -36,7 +56,7 @@ zip 内容：app/version、OS、settings-redacted、job plan、logs、dependency
 | app/version | `environment.json` 的 `app_version` + OS + arch |
 | settings-redacted | `settings.json`；与路径/凭据相关的**键**替换为 `⟨已脱敏⟩` |
 | job plan | `--job-state FILE` 时收进 `job-state.json`；未实现自动定位 |
-| logs | **未实现**（§1 还没有日志文件可收） |
+| logs | **已实现**：`log_dir()` 下所有 `stk-*.log*` 都收进 `logs/` |
 | dependency versions/hashes | `dependencies.json`（ffprobe / render host / libass DLL 的路径） |
 | crash dump | **未实现**（需要一个能捕获 SEH 的宿主包装；当前只向 `renderer-host` 传 `STK_HOST_CRASH` 做注入测试） |
 | 默认不含原字幕/视频 | 已实现，且报告里 `contains_user_content` / `user_content_entries` 明确说出来 |

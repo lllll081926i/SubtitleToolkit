@@ -154,8 +154,24 @@ pub(crate) fn execute_ctx(
             &format!("`{name}` 还没有实现（{phase}）"),
         )
         .with_action("不要期待占位命令产生输出；已实现命令见 --help")),
-    }?;
-    Ok(outcome)
+    };
+    match outcome {
+        Ok(e) => {
+            tracing::info!(command = cmd, ok = true, "执行完成");
+            Ok(e)
+        }
+        Err(e) => {
+            // 错误也要进日志：这是“事后诊断”最需要的那一条。
+            // 带完整 code_string，与用户看到的报告是同一个标识（22 §4）。
+            tracing::error!(
+                command = cmd,
+                code = %e.code_string(),
+                title = %e.title,
+                "执行失败"
+            );
+            Err(e)
+        }
+    }
 }
 
 /// 已加载的输入 + 探测结果。
@@ -1390,13 +1406,42 @@ fn diagnose_cmd(
     b.text(
         "README.txt",
         "SubtitleToolkit 诊断包（22 §5）\n\n\
-         默认只包含环境、版本、依赖身份与脱敏后的设置，**不含用户的字幕或视频内容**。\n\
+         默认只包含环境、版本、依赖身份、脱敏后的设置与**本程序自己的日志**，\n\
+         不含用户的字幕或视频内容。日志里只记命令名与结果，不记文件路径。\n\
          `input/` 下的条目是用户用 --include-input 显式附上的，请在对外发送前自行确认。\n\
          settings.json 里与路径/凭据相关的键已替换为 ⟨已脱敏⟩。\n",
     );
 
     if let Some(js) = job_state {
         b.file(Some("job-state.json"), js, false);
+    }
+    // 22 §5 明确要求把 logs 收进诊断包。收**所有**现存的日志文件：
+    // 一次故障现场的“上一次跑过什么”往往就在前一天那个文件里，
+    // 只收今天那份等于把上下文切一半。
+    if let Some(d) = core_model::log_dir() {
+        if let Ok(rd) = std::fs::read_dir(d) {
+            let mut logs: Vec<std::path::PathBuf> = rd
+                .flatten()
+                .map(|e| e.path())
+                .filter(|p| {
+                    p.is_file()
+                        && p.file_name()
+                            .and_then(|n| n.to_str())
+                            .is_some_and(|n| n.starts_with("stk-") && n.contains(".log"))
+                })
+                .collect();
+            logs.sort();
+            for p in logs {
+                let name = p
+                    .file_name()
+                    .map(|n| format!("logs/{}", n.to_string_lossy()))
+                    .unwrap_or_else(|| "logs/unnamed.log".to_string());
+                // 日志**不是**用户内容：它们是本程序自己的输出，且不含字幕文本
+                // （只记命令名与结果）。标成用户内容会让报告把“可以外发”的东西
+                // 说成需要审查。
+                b.file(Some(&name), &p, false);
+            }
+        }
     }
     for f in include_input {
         // 放进 input/ 子目录：一眼能看出"这些是用户内容"

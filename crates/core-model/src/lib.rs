@@ -5,6 +5,7 @@ pub mod color;
 pub mod datadir;
 pub mod error;
 pub mod geometry;
+pub mod logging;
 pub mod loss;
 pub mod profile;
 pub mod settings;
@@ -18,6 +19,7 @@ pub use geometry::{
     Geometry, LayoutRes, LayoutResPolicy, PixelAspect, ScriptResolutionPolicy, ScriptSize,
     StorageSize,
 };
+pub use logging::{current_log_file, init as init_logging, log_dir};
 pub use loss::LossReport;
 pub use profile::{
     FormatKind, HdrMode, HdrSettings, JobSnapshot, OutputProfile, Plan, RendererChoice,

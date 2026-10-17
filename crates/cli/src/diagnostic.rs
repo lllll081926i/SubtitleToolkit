@@ -354,8 +354,12 @@ pub fn environment(app_version: &str) -> serde_json::Value {
             "kind": dir.kind.label(),
             "why": dir.why,
         },
-        // 22 §1 说日志落在数据目录；这里报出来，让人知道该去哪儿找
-        "logs_dir": dir.file("logs").map(|p| p.display().to_string()),
+        // 22 §1 说日志落在数据目录；优先报**实际生效**的那个目录
+        // （初始化失败时与数据目录不是一回事），报不出来时才退回推算值。
+        "logs_dir": core_model::log_dir()
+            .map(|p| p.display().to_string())
+            .or_else(|| dir.file("logs").map(|p| p.display().to_string())),
+        "logs_file": core_model::current_log_file().map(|p| p.display().to_string()),
     })
 }
 

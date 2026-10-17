@@ -55,6 +55,14 @@ font-service = { path = "crates/font-service", version = "0.1.0" }
 container-adapter = { path = "crates/container-adapter", version = "0.1.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# 22 §1 的日志。两者都是 MIT，符合 21 §1。
+# 选 tracing 而不是 log：22 §1 要求 structured logging，而 structured
+# （带字段的 span/event）正是 tracing 相对 log 的全部差异；用 log 就只能回到
+# "拼字符串再解析"那条老路，而那与 22 §3/§4 的结构化错误模型相抵。
+tracing = "0.1"
+# 只要 fmt layer 与 registry，加 env-filter 供级别过滤（36 §1 的 log_level）。
+# 默认特性关掉以少收无关传递依赖（21 §11）。
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "ansi", "std", "env-filter", "registry"] }
 # 13 §3.1 的 ODS payload 不变量与 12 §4 的 provider 身份都需要密码学哈希（Apache-2.0，21 §1 允许）
 sha2 = "0.10"
 # PNG 的 IDAT 必须是真压缩流（I001/B001：旧工程写 stored 块，体积失控）。

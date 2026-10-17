@@ -15,6 +15,7 @@
 - 2026-10-17 **实现字体子集（17 §5/§6，ISSUES AG2/E4），AT-FONT-003 用真 libass 执行通过**：新增 `font subset` 与 `font-service::subset`。选 `allsorts` 0.17.0（Apache-2.0，符合 21 §1）；复杂脚本按码位区间一律回退整份；其余做 cmap 级等价检查（字符解出的字形存在性与 advance 一致）。**渲染级等价用真 libass 验证**：同一 ASS/canvas/fps 下整份 Arial 与子集各经 `--inject-fonts` 注入渲染，2 帧 PNG 逐像素一致（1,045,720 → 29,240 字节）。过程中发现并绕开 `allsorts` 的真实缺陷：请求列表不含 glyph 0 时子集会把 `U+0020` 的 cmap 映射写成 0（空格渲染成 .notdef）。详见[子集裁决](reviews/2026-10-17-font-subset.md)。
 - 2026-10-17 **补齐 17 §6 的输出侧后两档（ISSUES AG8）**：新增 `font subset --embed-fonts --out X.ass`（把字体写进产物 ASS 的 `[Fonts]` 段）与 `font subset --mkv-attachments`（生成可直接嗂给 `mkv remux --attach-font` 的附件目录）。为此在 `font_service::attachments` 补了 base64 / `[Fonts]` 段的**编码器**，与既有解码器严格互逆（整份真字体字节往返用例守护）。过程中修正两个真实缺陷：**BOM 在文件头时 `\u{feff}[Fonts]` 不是一个段头，会导致整段隐形**；以及不去重会写出两份 `[Fonts]`（解析器只认第一份，第二份字节静默留下）。至此 17 §6 六档全部交付。见[子集裁决第七节](reviews/2026-10-17-font-subset.md)。
 - 2026-10-17 **全部已规划命令落地**：`doctor` 的 `not_built` 已为空（`font subset` 与 `mkv *` 是最后两条）。占位机制（`Command::NotBuilt` + `not_built_commands`）保留，供后续新增命令使用。
+- 2026-10-17 **GUI 与后端接通（20 §Repro）**：删掉 `task_worker` 里 `sleep+Ok(())` 的模拟执行，改把输入集与 Profile 矩阵编译成**真实 batch spec**（`cli::batch::Spec`）再交给 `cli::batch::run_batch` 跑——于是“GUI 复制的命令能直接重放”是结构上成立的，而不是靠事后对齐。同时修掉四个“看起来能用”的洞：`StartQueue` 从不调执行器、取消令牌跟引擎不是同一份（取消按钮无效）、`show_doctor` 设了但从不渲染、视频建议是写死字符串。预览占位色块新增 `FrameSource` 标记（不再冒充真实渲染），失败时清掉旧帧。仍**未**交付：AT-UI-001 的 60 秒持续响应实测、A/B 对比渲染、设置持久化。详见[GUI 接通裁决](reviews/2026-10-17-gui-backend-wiring.md)。
 - 2026-10-17 **实现便携数据目录（28 §4）**：新增 `core_model::DataDir`；`portable.flag` 存在时运行期状态落在 exe 同级 `data/`，否则退回 `%LOCALAPPDATA%\subtitletool`。优先级 `STK_DATA_DIR` > `portable.flag` > 用户目录；`doctor --json` 新增 `data_dir` 与 `font_cache` 两项，报出路径、来源与理由。`make_portable.ps1` 默认在包里生成 `portable.flag`，且校验和改为覆盖包内**所有文件**。实测：解包后 `data_dir.kind=portable`，`font scan` 的缓存确实落在 `<包>/data/fontdb-v1.json`；回归用例 `crates/cli/tests/portable.rs`。仍未实现：安装器、Authenticode 签名、SBOM、settings/presets 的落盘。
 
 ## 项目边界
@@ -40,7 +41,7 @@
 
 ## 未交付或未裁决
 
-- CSRI/VSFilterMod provider、x86 renderer host、桌面 GUI 和发行安装链未实现。
+- CSRI/VSFilterMod provider、x86 renderer host 和发行安装链未实现。
 - 字体服务未使用 DirectWrite 作为权威 resolver；字体子集正确性尚无复杂文字渲染语料。
 - PGS Basic 编码不等于 Strict Blu-ray 合规。PCS 帧率字段、palette range/matrix、ODS 图末标记尚无真盘/设备结论；当前 ffprobe 证据只覆盖 `.sup` 容器段布局与时钟。
 - Strict validator 需要尚未实现的缓冲模型和设备语料，因此不会给出 Strict 通过结论。

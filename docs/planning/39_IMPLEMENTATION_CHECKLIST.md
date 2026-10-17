@@ -13,7 +13,7 @@
 | BDN/PGS | B002, P002, P003, P004, V002 | AT-BDN-001、AT-PGS-001–004、AT-BD-001；独立解码与合法 Profile |
 | 多输出与缓存 | R040, J003 | AT-MULTI-001/002、AT-FONT-002；分组隔离、计数与身份失效 |
 | 输出事务与批处理 | J002, J004, J005 | AT-OUT-001、AT-BATCH-001、AT-PATH-001；真实文件失败路径与集合完整性 |
-| 后续界面与容器 | QA002, A002 | AT-UI-001、AT-MKV-001；AT-MKV-001 已用真实 MKVToolNix 执行通过（23/23）；AT-UI-001 未实现不签署 |
+| 后续界面与容器 | QA002, A002 | AT-UI-001、AT-MKV-001；AT-MKV-001 已用真实 MKVToolNix 执行通过（23/23）；AT-UI-001 的取消链已通并断言，60 秒响应实测仍缺 |
 
 每次签署记录执行人、代码提交、日期、日志、依赖与未覆盖范围。新增文档审查建议的处理状态见[采纳记录](AUDIT_ADOPTION_20261008.md)；“规范已补”不自动勾选下面的行为验收。
 
@@ -43,7 +43,7 @@
 - **AT-RENDER-003**：x86 renderer host 产物不存在，不验收自动路由。
 - **AT-MKV-001**：已实现并执行通过（2026-10-17，真实 MKVToolNix v102.0，23/23 断言；见[裁决](../reviews/2026-10-17-mkv-container-helper.md)）。未覆盖：第 7 层设备语料、逐包内容 diff。
 - **AT-FONT-003（子集渲染等价）**：已执行并通过（2026-10-17）。同一 ASS/canvas/fps 下，整份 Arial 与子集各经 `--inject-fonts` 注入真 libass 渲染，**2 帧 PNG 逐像素一致**（1,045,720 → 29,240 字节）。入口 `crates/cli/tests/subset_render.rs`。未覆盖：非拉丁文字、合字序列、TTC/OTC、variable font（当前一律回退整份）。见[子集裁决](../reviews/2026-10-17-font-subset.md)。
-- **AT-UI-001**：GUI 未实现（用户指示本轮不推进）。
+- **AT-UI-001**：**部分完成**（2026-10-17）。已接通：GUI 把输入×Profile 编译成真 batch spec、交 `cli::batch::run_batch` 执行、逐行回收状态；阻塞 IO 与渲染都在 `spawn_blocking` 里；取消令牌与引擎共享同一份 `Arc`（已断言）。**未完成**：60 秒持续响应的**实测**需真人操作与录屏，当前只有结构证据，不声称通过。见[GUI 接通裁决](../reviews/2026-10-17-gui-backend-wiring.md)。
 - **AT-BD-001 的 GUI 部分**：UI 禁用解释留到 GUI 阶段。
 
 ## 开工前

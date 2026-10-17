@@ -279,6 +279,21 @@ impl CancelToken {
         CancelToken(Arc::new(AtomicBool::new(false)))
     }
 
+    /// 用一个**外部已有的**标志位构造。
+    ///
+    /// 存在的理由：调用方需要“把取消权留在自己手里”。GUI 的取消按钮与任务执行
+    /// 处在两个不同的线程/闭包里，如果令牌只能在执行侧建，按钮就拿不到它
+    /// （AT-UI-001：取消可点击且**真的**生效）。
+    /// 它比“跑完再把外部标志拷回去”正确：拷贝只能事后发现，拦不住第二格。
+    pub fn from_shared(flag: Arc<AtomicBool>) -> CancelToken {
+        CancelToken(flag)
+    }
+
+    /// 拿到内部共享标志，便于调用方把取消权同时握在自己手里。
+    pub fn shared(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.0)
+    }
+
     pub fn cancel(&self) {
         self.0.store(true, Ordering::SeqCst);
     }

@@ -38,7 +38,7 @@ fn cli_err(code: u16, msg: &str) -> StkError {
     StkError::simple(Domain::Input, code, msg)
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SpecProfile {
     pub name: String,
@@ -65,7 +65,7 @@ fn default_fps() -> String {
     "25".to_string()
 }
 
-#[derive(Clone, Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SpecOutput {
     /// 默认与 spec 同目录
@@ -83,7 +83,7 @@ fn default_template() -> String {
     "{stem}.{profile}.{ext}".to_string()
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SpecRuntime {
     #[serde(default = "default_cpu")]
@@ -121,7 +121,7 @@ impl Default for SpecRuntime {
     }
 }
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Spec {
     pub id: String,
@@ -463,6 +463,23 @@ fn command_for(r: &Resolved, input: &Path, dll: Option<&str>) -> Command {
 }
 
 pub fn run_batch(inv: &Invocation, spec_path: &Path, cmd: &str) -> Result<Envelope> {
+    run_batch_with_cancel(inv, spec_path, cmd, None)
+}
+
+/// `run_batch` 的完整签名。
+///
+/// `external_cancel` 让调用方（GUI 的取消按钮）把取消权握在自己手里。
+/// 不传就是单命令语义：取消令牌只在本次调用内存在。
+///
+/// 为什么必须真共享同一个 flag，而不是“每跑完一格就把外部标志读一次”：
+/// 后者只能事后发现，挡不住下一格已经开始写入；
+/// 而“取消”这个词的含义就是“别再开始了”。
+pub fn run_batch_with_cancel(
+    inv: &Invocation,
+    spec_path: &Path,
+    cmd: &str,
+    external_cancel: Option<&CancelToken>,
+) -> Result<Envelope> {
     let started = std::time::Instant::now();
     let spec = load_spec(spec_path)?;
     let resolved = resolve_profiles(&spec)?;
@@ -653,7 +670,10 @@ pub fn run_batch(inv: &Invocation, spec_path: &Path, cmd: &str) -> Result<Envelo
             }
             v
         };
-        let cancel = CancelToken::new();
+        let cancel = match external_cancel {
+            Some(t) => CancelToken::from_shared(t.shared()),
+            None => CancelToken::new(),
+        };
         let budget = Mutex::new(CrashBudget::new(runtime.safe_to_restart));
         let skipped_ref = &skipped;
         let state_ref = &state;

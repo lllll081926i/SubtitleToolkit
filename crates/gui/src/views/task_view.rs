@@ -84,36 +84,64 @@ pub fn view<'a>(state: &'a TaskDrawerState, total_plan: usize) -> Element<'a, Me
 
     if state.is_expanded {
         let mut task_list = column![].spacing(4);
+
+        // 编译期“做不到”的说明与报告的 warnings 先摆出来：
+        // 它们解释了“为什么选了这个参数却没生效”，藏在抽屉最底下等于没说。
+        if !state.notes.is_empty() {
+            let mut notes_col = column![].spacing(2);
+            for n in &state.notes {
+                notes_col = notes_col.push(text(format!("· {n}")).size(11));
+            }
+            task_list = task_list.push(container(notes_col).padding(4).width(Length::Fill));
+        }
+
+        if let Some(outcome) = &state.outcome {
+            task_list = task_list.push(
+                text(format!(
+                    "整体判定：{outcome}（逐行计算得 {}）",
+                    state.derived_outcome()
+                ))
+                .size(12),
+            );
+        }
+        if let Some(p) = &state.spec_path {
+            task_list = task_list
+                .push(text(format!("spec（可直接喂给 CLI 重放）：{}", p.display())).size(11));
+        }
+        if let Some(p) = &state.report_path {
+            task_list = task_list.push(text(format!("报告：{}", p.display())).size(11));
+        }
+
         if state.tasks.is_empty() {
             task_list = task_list
                 .push(text("暂无任务历史，配置左侧输入与右侧Profile后点击开始。").size(12));
         } else {
             for task in &state.tasks {
+                // 状态文字直接取自 `TaskStatus::label()` 与 `detail()`：
+                // 这里不再自己把状态“翻译”一遍，否则 GUI 与 CLI 报告会出现两套词。
                 let status_row: Element<'a, Message> = match &task.status {
-                    TaskStatus::Queued => text("排队中").size(11).into(),
-                    TaskStatus::Running { progress, message } => {
-                        text(format!("运行中 ({:.0}%): {}", progress * 100.0, message))
-                            .size(11)
-                            .into()
-                    }
-                    TaskStatus::Completed => {
-                        row![icons::check(12.0), text("完成 (已通过原子校验)").size(11)]
+                    TaskStatus::Verified { .. } | TaskStatus::FromCache { .. } => {
+                        row![icons::check(12.0), text(status_line(&task.status)).size(11)]
                             .spacing(4)
                             .align_y(Alignment::Center)
                             .into()
                     }
-                    TaskStatus::Failed {
-                        code,
-                        reason,
-                        action,
-                    } => row![
+                    TaskStatus::WouldWrite { .. } => {
+                        text(status_line(&task.status)).size(11).into()
+                    }
+                    TaskStatus::Failed { code, .. } => row![
                         icons::close(12.0),
-                        text(format!("失败 [{}] {}: {}", code, reason, action)).size(11)
+                        text(format!("失败 [{code}] {}", task.status.detail())).size(11)
                     ]
                     .spacing(4)
                     .align_y(Alignment::Center)
                     .into(),
-                    TaskStatus::Cancelled => text("已取消").size(11).into(),
+                    TaskStatus::NotAttempted { .. } => {
+                        text(status_line(&task.status)).size(11).into()
+                    }
+                    TaskStatus::Queued | TaskStatus::Running | TaskStatus::Cancelled { .. } => {
+                        text(status_line(&task.status)).size(11).into()
+                    }
                 };
 
                 let item_row = row![
@@ -138,4 +166,14 @@ pub fn view<'a>(state: &'a TaskDrawerState, total_plan: usize) -> Element<'a, Me
         .width(Length::Fill)
         .padding([8, 16])
         .into()
+}
+
+/// 一行状态文字：`label + detail`。detail 为空时只给 label，不留个悬空的冒号。
+fn status_line(s: &TaskStatus) -> String {
+    let d = s.detail();
+    if d.is_empty() {
+        s.label().to_string()
+    } else {
+        format!("{}：{d}", s.label())
+    }
 }

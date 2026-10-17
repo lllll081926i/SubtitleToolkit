@@ -995,7 +995,7 @@ fn doctor(cmd: &str) -> Result<Envelope> {
 
 /// host 可执行文件在哪：`STK_RENDERER_HOST` → 与 CLI 同目录的 `subtitletool-render-host.exe`。
 /// 找不到不是错误，是诊断信息（28 §2 把它列为独立产物，没打包就是没有）。
-pub(crate) fn renderer_host_exe() -> Option<PathBuf> {
+pub fn renderer_host_exe() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("STK_RENDERER_HOST") {
         let p = PathBuf::from(p);
         if p.is_file() {

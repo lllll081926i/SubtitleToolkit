@@ -18,6 +18,7 @@
 - `SubtitleToolkit.exe`
 - `subtitletool-cli.exe`
 - `subtitletool-render-host.exe`（当前 x64 Cargo 产物）
+- `subtitletoolkit-gui.exe`（Iced 工作台；已接入真 batch 通路，见 [GUI 接通裁决](../reviews/2026-10-17-gui-backend-wiring.md)）
 - `renderer-host-x86.exe`（可选组件）
 - bundled permissive DLLs
 - installer `.exe`

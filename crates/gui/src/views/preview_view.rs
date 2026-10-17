@@ -22,6 +22,10 @@ pub fn view<'a>(state: &'a PreviewState) -> Element<'a, Message> {
     let top_bar = row![
         text("实时单帧渲染预览 (Live Preview)").size(15),
         Space::with_width(Length::Fill),
+        // 像素来源必须一直可见：占位色块与真渲染在画面上分辨不出来，
+        // 而它们的含义完全不同（前者是我们编的颜色，后者是可交付的根据）。
+        text(state.source.label()).size(12),
+        Space::with_width(Length::Fixed(12.0)),
         text(time_code).size(13),
         Space::with_width(Length::Fixed(12.0)),
         button(text(if state.is_split_ab {

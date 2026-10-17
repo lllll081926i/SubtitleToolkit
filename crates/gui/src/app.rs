@@ -10,6 +10,14 @@ pub struct SubtitleApp {
     pub profiles: ProfilesState,
     pub task_drawer: TaskDrawerState,
     pub show_doctor: bool,
+    /// 最近一次环境自检结果（`None` = 还没跑过）
+    pub doctor: Option<Result<serde_json::Value, String>>,
+    /// 当前任务的取消令牌。
+    ///
+    /// 以前这个标志是在后台闭包里建的，UI 根本拿不到，于是“取消”按钮
+    /// 只改了一个 bool 就什么都不做——点下去没有任何效果。
+    /// 令牌必须存在能被 UI 碰到的位置（AT-UI-001：取消可点击且**真的**生效）。
+    pub cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Default for SubtitleApp {
@@ -20,6 +28,8 @@ impl Default for SubtitleApp {
             profiles: ProfilesState::new(),
             task_drawer: TaskDrawerState::new(),
             show_doctor: false,
+            doctor: None,
+            cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 }
@@ -52,15 +62,17 @@ impl SubtitleApp {
                             .await
                         },
                         |res| match res {
-                            Ok((rgba, w, h)) => Message::FrameRendered {
-                                rgba,
-                                width: w,
-                                height: h,
+                            Ok(f) => Message::FrameRendered {
+                                rgba: f.rgba,
+                                width: f.width,
+                                height: f.height,
+                                source: f.source,
                             },
-                            Err(_) => Message::FrameRendered {
+                            Err(e) => Message::FrameRendered {
                                 rgba: vec![],
                                 width: 1920,
                                 height: 1080,
+                                source: crate::state::preview::FrameSource::Failed { code: e },
                             },
                         },
                     );
@@ -83,10 +95,13 @@ impl SubtitleApp {
                 }
             }
             Message::VideoAssistDropped(p) => {
-                self.inputs.banner_suggestion = Some(format!(
-                    "参考视频已载入 ({}): 建议帧率 23.976 | 分辨率 3840x2160",
-                    p.file_name().unwrap_or_default().to_string_lossy()
-                ));
+                // 用真的 ffprobe 读（16 §/AT-PROBE-001）：
+                // 这里曾经写死“建议帧率 23.976 | 分辨率 3840x2160”，
+                // 那个数字对任何视频都“对”，所以没人会发现它从来没被测过。
+                // 探不到就说探不到，并把 hint 给出来。
+                let probe = crate::worker::probe_worker::probe_video(&p);
+                self.inputs.video_assist = Some(probe.assist.clone());
+                self.inputs.banner_suggestion = Some(probe.banner);
             }
             Message::ApplyVideoAssist => {
                 if let Some(p) = self.profiles.active_profile_mut() {
@@ -114,15 +129,17 @@ impl SubtitleApp {
                             .await
                         },
                         |res| match res {
-                            Ok((rgba, w, h)) => Message::FrameRendered {
-                                rgba,
-                                width: w,
-                                height: h,
+                            Ok(f) => Message::FrameRendered {
+                                rgba: f.rgba,
+                                width: f.width,
+                                height: f.height,
+                                source: f.source,
                             },
-                            Err(_) => Message::FrameRendered {
+                            Err(e) => Message::FrameRendered {
                                 rgba: vec![],
                                 width: 1920,
                                 height: 1080,
+                                source: crate::state::preview::FrameSource::Failed { code: e },
                             },
                         },
                     );
@@ -138,11 +155,33 @@ impl SubtitleApp {
                 rgba,
                 width,
                 height,
+                source,
             } => {
-                if !rgba.is_empty() {
-                    self.preview.set_frame(rgba, width, height);
+                if rgba.is_empty() {
+                    // 渲染失败：清掉旧帧并如实标明。留着上一帧会让人以为
+                    // “这就是现在这一刻的样子”，而那是上一刻的像素。
+                    let code = match source {
+                        crate::state::preview::FrameSource::Failed { code } => code,
+                        _ => "未提供错误码".to_string(),
+                    };
+                    self.preview.clear_frame(code);
                 } else {
-                    self.preview.is_rendering = false;
+                    match source {
+                        crate::state::preview::FrameSource::Renderer { provider } => self
+                            .preview
+                            .set_rendered_frame(rgba, width, height, provider),
+                        crate::state::preview::FrameSource::Placeholder { reason } => self
+                            .preview
+                            .set_placeholder_frame(rgba, width, height, reason),
+                        // 空 rgba 已经在上面处理；这里只是把"来源说不清"这一情形
+                        // 如实归到占位，而不是冒充真实渲染。
+                        other => self.preview.set_placeholder_frame(
+                            rgba,
+                            width,
+                            height,
+                            format!("像素来源无法确认（{}）", other.label()),
+                        ),
+                    }
                 }
             }
 
@@ -179,11 +218,11 @@ impl SubtitleApp {
 
             // === 底栏任务抽屉事件 ===
             Message::StartQueue => {
-                let inputs: Vec<_> = self
+                let inputs: Vec<(String, String)> = self
                     .inputs
                     .selected_inputs()
                     .into_iter()
-                    .map(|i| i.path.clone())
+                    .map(|i| (i.path.display().to_string(), i.file_name.clone()))
                     .collect();
                 let profiles: Vec<_> = self
                     .profiles
@@ -192,33 +231,129 @@ impl SubtitleApp {
                     .cloned()
                     .collect();
                 if inputs.is_empty() || profiles.is_empty() {
+                    // 不给“看起来开始了”：什么都不摆，也不转圈
                     return Task::none();
                 }
+                let names: Vec<String> = profiles.iter().map(|p| p.name.clone()).collect();
+                self.task_drawer.plan(&inputs, &names);
                 self.task_drawer.is_running = true;
-                self.task_drawer.tasks.clear();
+                self.task_drawer.is_expanded = true;
 
-                for inp in &inputs {
-                    for prof in &profiles {
-                        let id = self.task_drawer.tasks.len() + 1;
-                        self.task_drawer.tasks.push(crate::state::task::TaskItem {
-                            id,
-                            input_name: inp
-                                .file_name()
-                                .unwrap_or_default()
-                                .to_string_lossy()
-                                .into(),
-                            profile_name: prof.name.clone(),
-                            output_path: self
-                                .task_drawer
-                                .output_dir
-                                .join(format!("{}.out", prof.name)),
-                            status: crate::state::task::TaskStatus::Queued,
+                // 编译成**真实的 batch spec**（15 §1），再交给 cli::batch::run_batch。
+                // 这一步保证“GUI 复制的命令能在 CLI 重放”（20 §Repro）：
+                // 两者用的是同一份 spec 类型、同一个执行入口。
+                let roots: Vec<std::path::PathBuf> = inputs
+                    .iter()
+                    .map(|(p, _)| std::path::PathBuf::from(p))
+                    .collect();
+                let libass = std::env::var("STK_LIBASS_DLL")
+                    .ok()
+                    .map(std::path::PathBuf::from)
+                    .filter(|p| p.is_file());
+                let (spec, notes) = crate::worker::spec::compile_spec(
+                    &crate::worker::task_worker::job_id(),
+                    &roots,
+                    &profiles.iter().collect::<Vec<_>>(),
+                    &self.task_drawer.output_dir,
+                    libass,
+                    "{stem}.{profile}.{ext}",
+                );
+                self.task_drawer.notes = notes.clone();
+                let out_dir = self.task_drawer.output_dir.clone();
+                // 把令牌换成全新的：上一任务可能已经把旧令牌置位，
+                // 复用它会让新任务一开始就自认为被取消。
+                self.cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let cancel = self.cancel.clone();
+
+                return Task::perform(
+                    async move {
+                        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+                        // 真执行放在阻塞线程里：它要做文件 IO 与 CPU 渲染。
+                        // 不能放在 async 任务里——那会把整个 UI 线程的运行时占住，
+                        // 界面就不动了（AT-UI-001 要的是重任务期间仍然可响应）。
+                        let handle = tokio::task::spawn_blocking(move || {
+                            crate::worker::task_worker::run(&spec, &out_dir, cancel, |p| {
+                                let _ = tx.send(p);
+                            })
                         });
+                        let mut updates = Vec::new();
+                        let mut rx = rx;
+                        while let Some(p) = rx.recv().await {
+                            updates.push(p);
+                        }
+                        let result = handle.await.ok().and_then(|r| r.err());
+                        (updates, result)
+                    },
+                    |(updates, err)| Message::BatchProduced {
+                        updates,
+                        error: err,
+                    },
+                );
+            }
+            Message::BatchProduced { updates, error } => {
+                for u in updates {
+                    match u {
+                        crate::worker::task_worker::Progress::Started { spec_path, notes } => {
+                            self.task_drawer.spec_path = Some(spec_path);
+                            for n in notes {
+                                if !self.task_drawer.notes.contains(&n) {
+                                    self.task_drawer.notes.push(n);
+                                }
+                            }
+                        }
+                        crate::worker::task_worker::Progress::Row {
+                            input,
+                            profile,
+                            status,
+                            detail,
+                        } => {
+                            self.task_drawer.apply(
+                                &input,
+                                &profile,
+                                crate::state::task::TaskStatus::from_report(&status, &detail),
+                            );
+                        }
+                        crate::worker::task_worker::Progress::Finished {
+                            outcome,
+                            report_path,
+                            error,
+                        } => {
+                            self.task_drawer.report_path = report_path;
+                            let reason = error
+                                .map(|(code, title, _)| format!("{code}: {title}"))
+                                .unwrap_or_else(|| format!("任务判定为 {outcome}"));
+                            // 自己算的判定放进抽屉：报告里的 outcome 与逐行状态
+                            // 如果对不上，derived_outcome() 会把它暴露出来
+                            self.task_drawer.finish(&outcome, &reason);
+                        }
+                    }
+                }
+                if let Some((code, title, action)) = error {
+                    self.task_drawer
+                        .finish("failed", &format!("{code}: {title}"));
+                    self.task_drawer.notes.push(if action.is_empty() {
+                        format!("任务失败：{code} {title}")
+                    } else {
+                        format!("任务失败：{code} {title}（{action}）")
+                    });
+                }
+            }
+            Message::TaskNotes(notes) => {
+                for n in notes {
+                    if !self.task_drawer.notes.contains(&n) {
+                        self.task_drawer.notes.push(n);
                     }
                 }
             }
             Message::CancelQueue => {
+                // 真的把令牌置位：worker 在每个 (输入, profile) 之前检查它。
+                // 只改 is_running 而不置位，就是“按钮能点但没用”。
+                self.cancel
+                    .store(true, std::sync::atomic::Ordering::Relaxed);
                 self.task_drawer.is_running = false;
+                self.task_drawer
+                    .notes
+                    .push("已请求取消：正在跑的这一步会先做完，后续不再开始".to_string());
             }
             Message::ToggleTaskDrawer => self.task_drawer.toggle_expand(),
             Message::SelectOutputDir => {
@@ -230,33 +365,25 @@ impl SubtitleApp {
                 let dir = self.task_drawer.output_dir.clone();
                 let _ = std::process::Command::new("explorer").arg(&dir).spawn();
             }
-            Message::TaskProgress {
-                id,
-                progress,
-                message,
-            } => {
-                if let Some(t) = self.task_drawer.tasks.iter_mut().find(|t| t.id == id) {
-                    t.status = crate::state::task::TaskStatus::Running { progress, message };
-                }
-            }
-            Message::TaskFinished { id, result } => {
-                if let Some(t) = self.task_drawer.tasks.iter_mut().find(|t| t.id == id) {
-                    match result {
-                        Ok(()) => t.status = crate::state::task::TaskStatus::Completed,
-                        Err((code, reason, action)) => {
-                            t.status = crate::state::task::TaskStatus::Failed {
-                                code,
-                                reason,
-                                action,
-                            }
-                        }
-                    }
-                }
-            }
-
             // === 顶部栏 ===
-            Message::OpenDoctorDialog => self.show_doctor = true,
+            Message::OpenDoctorDialog => {
+                self.show_doctor = true;
+                // 真的跑一次 doctor（与 `subtitletool-cli doctor --json` 同一份实现）；
+                // 放进阻塞线程因为要探 ffprobe/render-host/字体环境。
+                return Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(crate::worker::doctor_worker::run)
+                            .await
+                            .map_err(|e| e.to_string())
+                            .and_then(|r| r)
+                    },
+                    |r| Message::DoctorLoaded(Box::new(r)),
+                );
+            }
             Message::CloseDialog => self.show_doctor = false,
+            Message::DoctorLoaded(report) => {
+                self.doctor = Some(*report);
+            }
         }
         Task::none()
     }
@@ -277,9 +404,15 @@ impl SubtitleApp {
 
         let bottom_drawer = task_view::view(&self.task_drawer, total_plan);
 
-        let full_layout = column![top_header, main_workspace, bottom_drawer,]
+        let mut full_layout = column![top_header, main_workspace, bottom_drawer,]
             .width(Length::Fill)
             .height(Length::Fill);
+
+        // 自检弹窗：真有用内容才弹。以前 `show_doctor` 被设了却从不渲染，
+        // 点了按钮什么都不会发生——用户只会以为自己点错了。
+        if self.show_doctor {
+            full_layout = full_layout.push(doctor_view(self.doctor.as_ref()));
+        }
 
         container(full_layout)
             .width(Length::Fill)
@@ -290,4 +423,47 @@ impl SubtitleApp {
     pub fn theme(&self) -> Theme {
         Theme::Dark
     }
+}
+
+/// 环境自检面板。三态各有各的文案：没跑过 / 拿到了 / 拿不到。
+fn doctor_view(report: Option<&Result<serde_json::Value, String>>) -> iced::Element<'_, Message> {
+    use iced::widget::{button, column, container, row, text, Space};
+    use iced::{Alignment, Length};
+
+    let mut body = column![].spacing(4);
+    match report {
+        None => {
+            body = body.push(text("正在运行环境自检…").size(12));
+        }
+        Some(Err(msg)) => {
+            // 拿不到自检结果本身就是要报告的事，不是“弹窗内容为空”
+            body = body.push(text(format!("自检未能完成：{msg}")).size(12));
+        }
+        Some(Ok(data)) => {
+            for (k, v) in crate::worker::doctor_worker::rows(data) {
+                body = body.push(
+                    row![
+                        text(k).size(12).width(Length::Fixed(120.0)),
+                        text(v).size(12),
+                    ]
+                    .spacing(8),
+                );
+            }
+        }
+    }
+
+    let close = button(text("关闭").size(12)).on_press(Message::CloseDialog);
+    let panel = column![
+        text("环境自检（与 subtitletool-cli doctor 同一份实现）").size(14),
+        Space::with_height(Length::Fixed(6.0)),
+        body,
+        Space::with_height(Length::Fixed(8.0)),
+        row![close].align_y(Alignment::Center),
+    ]
+    .spacing(4);
+
+    container(panel)
+        .width(Length::Fill)
+        .padding([10, 16])
+        .into()
 }

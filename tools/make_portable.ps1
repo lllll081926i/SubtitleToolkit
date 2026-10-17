@@ -49,7 +49,8 @@ try {
     # 只收 CLI 与 renderer-host：GUI 尚未接通真实执行链，不进发行物（STATUS.md）。
     $wanted = @(
         'subtitletool-cli.exe',
-        'subtitletool-render-host.exe'
+        'subtitletool-render-host.exe',
+        'subtitletoolkit-gui.exe'
     )
     $payload = @()
     foreach ($exe in $wanted) {

@@ -26,6 +26,9 @@ render-libass = { workspace = true }
 media-probe = { workspace = true }
 font-service = { workspace = true }
 image-core = { workspace = true }
+# GUI 不另写一套执行逻辑：它把输入集与 profile 编译成 batch spec，
+# 再交给 cli::batch::run_batch 跑（20 §Repro：GUI 复制的命令能直接重放）。
+cli = { path = "../cli", version = "0.1.0" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time"] }
@@ -33,3 +36,8 @@ tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time"
 # 图标改用 Unicode 字形（见 src/icons.rs）。
 iced = { version = "0.13", default-features = false, features = ["wgpu", "tokio", "image", "canvas", "advanced"] }
 rfd = "0.15"
+
+[dev-dependencies]
+# GUI↔CLI 重放验收（20 §Repro）：要把 GUI 编译的 spec 交给真 CLI 进程跑。
+# 这一条是"GUI 与 CLI 不是两套东西"的可执行证据，所以它必须能用真二进制。
+sha2 = { workspace = true }

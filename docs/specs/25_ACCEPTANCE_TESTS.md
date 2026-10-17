@@ -39,12 +39,13 @@
 
 **AT-PGS-001–004 / WBS-P002/P003/P004**：授权外部 SUP 与自制边界流分别登记。偏移、Forced、palette 操作各执行一次，断言白名单以外段字段不变，ODS payload 摘要与分片顺序不变。Basic 编码覆盖空帧、透明条目、引用与大 ODS 分片；独立解码 RGBA 对照不能用本项目 writer/reader 往返代替。现有入口为 `codec-pgs/tests/differential.rs`、`security.rs` 与 `cli/tests/cli.rs`；外部样本和设备报告不足时保持未覆盖。
 
-> 2026-10-17 更新：已获得一份真实第三方商业 SUP（98.97 MB，SHA-256 `694f2e0d…9ad31`）并完成
-> **解析、校验与 Fast Path 平移**：`standard` 层 `error=0`；`pgs adjust --offset-ms 1000` 后
-> 11,286 个 ODS payload 逐字节一致、所有段 PTS/DTS 精确 +90,000 tick。期间修正了四个假阳性
+> 2026-10-17 更新：已获得一份真实第三方商业 SUP（98.97 MB，SHA-256 `694f2e0d…9ad31`）并执行
+> **解析、校验与 Fast Path（时间平移 / Forced / 调色板）**：`standard` 层 `error=0`；
+> `pgs adjust --offset-ms 1000` 后 11,286 个 ODS payload 逐字节一致、所有段 PTS/DTS 精确
+> +90,000 tick；Forced 只改 PCS、调色板只改 PDS，ODS 摘要均不变。期间修正了四个假阳性
 > （ODS `data_length` 语义、`PGS.TML.02` 时间戳假设、Fast Path 逐段单调、对象跨集合复用），
-> 见[真实 SUP 互操作裁决](../reviews/2026-10-17-pgs-real-corpus.md)。**AT-PGS-001 的 ODS
-> 不变断言已执行并通过**；AT-PGS-002/003 与设备语料仍待逐项执行。
+> 见[真实 SUP 互操作裁决](../reviews/2026-10-17-pgs-real-corpus.md)。**AT-PGS-001/002/003 均已执行
+> 并通过**；第 7 层设备语料仍待取得。
 
 **AT-BD-001 / WBS-V002**：输入 2160p 与 Strict 组合，校验器应拒绝；已实现 CLI 验收参数拒绝，GUI 禁用解释在 GUI 阶段验收。不得把该拒绝测试当成其他 Profile 合规证明。
 

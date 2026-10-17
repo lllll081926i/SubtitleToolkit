@@ -1,73 +1,104 @@
-# UI 状态机、交互与排错规范
+# UI 状态机、交互与线程架构规范（纯 Rust 原生 GUI）
 
-本文为未实现 GUI 的目标规格。须联合阅读[页面控件](05_UI_SCREEN_SPEC.md)、[配置模型](36_PRESET_CONFIG_SCHEMA.md)与[任务状态](15_BATCH_TASK_ENGINE.md)。有页面或按钮设计不等于对应核心 stage 已交付。
+本文档定义 SubtitleToolkit-RS 桌面客户端（纯 Rust 实现，基于 Iced 原生框架）的全局状态机、后台线程通信协议与交互细节规范。须联合阅读 [05 UI 页面规格](05_UI_SCREEN_SPEC.md) 与 [15 批处理任务引擎](15_BATCH_TASK_ENGINE.md)。
 
-## 1. 页面状态统一模型
-每个工具页统一五态：`Empty -> Probing -> Ready -> Running -> Result/Error`。
+---
 
-- Empty：只显示输入区和示例说明。
-- Probing：文件已加入，异步探测；参数控件可先显示 skeleton，不能冻结窗口。
-- Ready：输入合法，显示手动参数和建议。
-- Running：参数快照锁定；允许 Cancel，不允许悄悄改变正在运行的 Job。
-- Result/Error：显示产物、验证等级、日志入口。
+## 1. 纯 Rust 线程架构与异步通信
 
-页面五态描述当前输入草稿；后台任务独立保存 Queued、Running、Cancelling、Cancelled、PartialSuccess、Failed 等状态。切换页面不取消任务，部分成功不显示为全部成功。开始按钮由与 CLI 同源的参数和能力校验驱动，未实现的功能不能提交执行。
+为了保证客户端在 Windows 高负载渲染、批量转码以及大批量字体扫描时**主界面始终保持 60fps 响应、窗口绝不假死**，采用严格的前后台线程分离架构：
 
-## 2. 参数来源标记
-每个参数值保存 `ValueOrigin`：
-- UserExplicit；
-- Preset；
-- InputMetadata；
-- VideoProbe；
-- AutoRecommendation；
-- Default。
+```
++-------------------------------------------------------------------------------+
+|  UI 主线程 (Iced Event Loop / wgpu / 界面渲染)                                 |
+|                                                                               |
+|   AppState (管理 Draft 草稿、选中的输入文件、Profile 列表、当前预览帧)          |
++-----------------------+-------------------------------+-----------------------+
+                        | (1) 触发异步探测/渲染           ^ (2) 回传进度/帧数据/结果
+                        v                               |
++-------------------------------------------------------------------------------+
+|  异步工作通道 (tokio / std::sync::mpsc 线程池)                                 |
+|                                                                               |
+|   - Probe Worker: 调用 media-probe 异步探测视频元数据                          |
+|   - Preview Worker: 与 renderer-host 匿名管道通信，拉取单帧 RGBA8 贴图         |
+|   - Task Engine: 消费不可变 JobSnapshot，驱动多 Profile 并发批处理流水线       |
++-------------------------------------------------------------------------------+
+```
 
-优先级：UserExplicit > Preset > InputMetadata/VideoProbe > Recommendation > Default。
-UI 用小图标表示来源；视频 probe 不能覆盖 UserExplicit。
+### 线程隔离铁律
+1. **禁止在 UI 线程执行任何文件 I/O、进程创建或图像编码**：所有 `format-detect`, `media-probe`, `font-service` 及渲染管道调用全部派发给后台 worker；
+2. **单帧预览防抖 (Debounce)**：用户快速拖拽时间轴滑块时，UI 线程只发送最新停顿时间点的渲染请求，旧请求自动丢弃，防止渲染队列堆积导致界面卡顿；
+3. **安全取消机制**：主界面点击“取消任务”时，通过 `Arc<AtomicBool>` 取消令牌快速通知后台引擎，底层原子重命名机制保证绝不在输出目录残留半成品文件。
 
-## 3. Dirty 与 Snapshot
-用户编辑的是 Draft；点击“加入队列”生成 immutable JobSnapshot。运行中的任务永不读取 Draft。
+---
 
-## 4. 错误展示
-- 输入错误：控件 inline error；
-- 依赖错误：页面顶部 dependency card；
-- 运行错误：任务抽屉 error card；
-- 详细 stack/command 放“技术详情”，普通区域只给可执行解决办法。
+## 2. 状态机模型：Draft（草稿）与 JobSnapshot（快照）解耦
 
-## 5. 拖放路由
-Iced 0.14 `FileDropped(PathBuf)` 逐文件触发。
-- subtitle extension/magic -> 当前工具输入；
-- video -> 若当前页面允许，填 Target Video；
-- mkv -> 打开 Container Helper 或弹路由选择；
-- folder -> 批量页面扫描；
-- mixed drop -> 先分类，再一次性显示确认摘要。
+系统彻底将“界面编辑状态”与“后台运行状态”在数据结构层面解耦，杜绝并发脏读与脏写：
 
-## 6. 批量编辑
-在 Inputs/Profile table 支持：
-- multi-select；
-- apply-to-selected；
-- duplicate output profile；
-- enable/disable profile；
-- column filter；
-- 搜索文件名。
+### 2.1 界面草稿层 (DraftState)
+- **职责**：仅保存用户当前在界面上编辑的输入文件选择、当前选中的 Profile 参数、界面折叠状态；
+- **响应性**：用户无论如何频繁切换下拉框、手输数字、拖拽文件，均只修改内存中的 `DraftState`，不影响任何后台进行中的任务。
 
-## 7. 可解释性
-任何自动动作必须可以回答：
-“为什么建议这个？”、“会改什么？”、“是否有损？”、“如何撤销？”
+### 2.2 不可变任务快照 (Immutable JobSnapshot)
+- **生成时机**：当用户点击底部 `[▶ 开始执行]` 按钮时，系统执行深拷贝校验：
+  `DraftState -> 验证有效性 -> 生成 JobSnapshot`；
+- **不可变性**：一旦提交，`JobSnapshot` 被 `Arc` 封装并发送至后台调度器，任务执行全程只读该快照。用户随后继续在界面上修改任何参数，都不会暗中改变正在导出的任务。
 
-## 8. UI 调试能力
-开发构建提供 `Ctrl+Shift+F12` Dev Panel：
-- current page state；
-- last Messages；
-- Task list；
-- cache keys；
-- renderer sessions；
-- external process commands（敏感路径可脱敏）；
-- layout bounds / DPI。
-利用 Iced time-travel/debug tools，复现 UI 状态问题。
+---
 
-## 9. 交互验收条件
+## 3. 任务生命周期与分层状态流转
 
-纯键盘可到达输入、输出、开始、取消与错误详情；焦点可见并提供可访问性名称。IME 组合输入期间不提交半成品参数。1366×768 与 100%/150%/200% DPI 下，面板可折叠或滚动，开始与取消始终可到达。输入发现与递归扫描在后台执行并可取消。
+每个独立的导出任务（`输入文件 × 输出Profile`）在底层拥有严格的状态流转：
 
-每个控件登记配置字段、ValueOrigin、启用条件、验证错误、核心 stage 和验收项。导入包的[界面审查建议](../subtitletool_full_audit_20261008/07_UI_AND_INTERACTION_AUDIT.md)可作为细化依据，其中 VTT、MKV、x86 自动路由等控件必须按实际 capability 决定是否提供。
+```
+[Queued 排队中]
+       │
+       ▼
+ [Running 执行中] ──(点击取消)──> [Cancelling 取消中] ──> [Cancelled 已取消]
+       │
+       ├─(全部成功)──────────────> [Completed 成功] (提供"打开目录"按钮)
+       │
+       └─(部分失败/全失败)────────> [Failed 失败] (展示错误卡片与解决建议)
+```
+
+- **部分成功 (Partial Success)**：当批量任务中部分文件成功、个别文件失败时，主界面如实展示“成功 N 个，失败 M 个”，并高亮显示失败项，提供 `[一键重试失败项]`，严禁把部分失败模糊判定为全部成功。
+
+---
+
+## 4. 去过度防御的交互模式：智能建议横幅 (Action Banner)
+
+原规划中为每个控件打 6 种 `ValueOrigin` 图标的做法被彻底废弃，采用现代化、清爽的**“智能建议条”**模式：
+
+1. **拖入参考视频时**：
+   - 界面中央或左下方滑出一条轻量提示横幅：
+     > *“检测到参考视频 `movie.mkv`：帧率 23.976 fps，分辨率 3840×2160，HDR PQ。 [应用到选中的 Profile]  [✕ 忽略]”*
+2. **采纳动作**：
+   - 用户点击 `[应用]` 后，对应的帧率和分辨率输入框被填入该数值，横幅自动关闭；
+   - 输入框保持纯净的数值显示，控件旁不添加任何冗余的来源图标，杜绝界面视觉污染。
+
+---
+
+## 5. 纯 Rust 下的文本输入 (IME) 与校验规范
+
+针对 Iced 原生框架在 Windows 平台上的文本输入特性，确立以下稳健交互规则：
+
+1. **IME 组合输入保护**：
+   - 在用户输入中文（输入法拼音组合串处于 active 状态）期间，文本框控件不触发即时参数校验与报错，避免输入法候选词尚未选定就频繁弹红框；
+2. **失焦/回车提交校验**：
+   - 数值与时间戳输入框仅在 `Unfocused`（失去焦点）或按下 `Enter` 键时执行合法性检查；
+   - 若手输了非法数值（如输入负数分辨率），控件呈现微弱红框并显示轻量 tooltip，阻止点击“开始”按钮，但不打断用户的连续键盘输入。
+
+---
+
+## 6. 错误反馈与技术诊断呈现
+
+当任务执行失败或依赖缺失时，前端严格遵守“面向用户友好、面向技术精确”的分层展示：
+
+1. **用户直观卡片**：
+   - 红色的 `StableErrorCode`（如 `STK-RND-0021`）；
+   - 一句直白的中文根因解释（如：“指定的时间点超出字幕总时长”）；
+   - 明确的可执行解决建议（如：“请在时间轴滑块中选择 00:00:00 至 01:23:45 之间的有效时间”）。
+2. **技术详情抽屉（可折叠）**：
+   - 点击 `[查看技术诊断]` 可展开查看底层返回的脱敏系统日志、IPC 退出码或进程管道原始输出；
+   - 提供 `[复制完整诊断信息]` 按钮，方便用户在 GitHub Issue 中快速提交排查凭据。

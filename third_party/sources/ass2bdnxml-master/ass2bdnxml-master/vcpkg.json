@@ -1,0 +1,19 @@
+{
+  "dependencies": [
+    {
+      "name": "pkgconf",
+      "host": true
+    },
+    "libass",
+    {
+      "name": "fontconfig",
+      "platform": "!windows"
+    },
+    "libpng",
+    "zlib",
+    {
+      "name": "getopt",
+      "platform": "windows"
+    }
+  ]
+}

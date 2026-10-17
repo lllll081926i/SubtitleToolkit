@@ -1,112 +1,145 @@
-# UI 页面级详细规格
+# UI 页面与控件详细规格（纯 Rust 原生 GUI）
 
-本文定义未实现 GUI 的目标控件。每项启用条件须联合[35 状态与交互](35_UI_STATE_INTERACTION.md)、[36 配置模型](36_PRESET_CONFIG_SCHEMA.md)和实际 capability；[11](11_HDR_COLOR.md)定义颜色模式，不能把 nit 控件视为物理亮度保证。
+本文档定义 SubtitleToolkit-RS 桌面客户端（纯 Rust 实现，基于 Iced 原生框架）的页面布局与控件规格。  
+须联合阅读 [35 UI 状态机与交互规范](35_UI_STATE_INTERACTION.md) 与 [36 配置预设模型](36_PRESET_CONFIG_SCHEMA.md)。
 
-## 1. 通用控件规则
-- 所有数值输入同时支持下拉 preset + 手输。
-- 参数旁有 `?` tooltip，解释“会不会改时长/是否有损”。
-- 每个输出卡都显示：Format / Canvas / FPS / HDR / Renderer / Validation。
-- 有损动作统一黄色 `Lossy` chip；non-standard 输出橙色 `Custom` chip；严格验证通过绿色 `Verified` chip。
-- 任何自动建议都必须显示“建议来源”。
+---
 
-## 2. 转换页
-### 输入区
-- 文件列表：名称、探测格式、编码、事件数、时长、PlayRes。
-- 批量时支持选择/取消某行。
+## 1. 核心设计原则与交互哲学
 
-### 目标区
-- Format combobox。
-- Encoding（文本格式）。
-- Loss report 卡片。
-- Normalize 开关（默认仅安全项）。
+1. **三栏一体化工作台**：摒弃将功能物理切碎为 10 个平铺页面的旧设计。采用工业界成熟的“左侧输入源 + 中央实时预览 + 右侧多 Profile 管道 + 底部统一任务抽屉”三栏主布局，实现“一份输入，多格式多分辨率并发输出”。
+2. **Manual-first, Assist-second**：用户手动选择参数具有绝对优先权；外部视频探测（ffprobe）仅作为智能填充建议，严禁自动隐式篡改用户字幕时间轴。
+3. **真实接通底线**：严禁在界面上放置任何未实现功能的占位符控件（如 MKV Helper、ALASS 音频同步、VSFilterMod 外部渲染器）。所有出现在界面上的按钮、下拉框均必须由底层实际已交付的能力驱动。
+4. **所见即所得的视觉反馈**：中央工作区提供基于底层 `renderer-host` 渲染的单帧实时画面预览与 HDR A/B 对比模式，消除盲猜参数导出的痛点。
 
-### 输出区
-- 文件夹；命名模板；覆盖策略；保留目录结构。
+---
 
-## 3. ASS/HDR 页
-- HDR Mode：Off / Compatibility / Percentage / Reference White。
-- Percentage：当前核心为线性光百分比，0.01–100%；常用 preset 33.3/40/50/60。
-- Reference White：100/120/150/203/custom 的近似预调整参数；203 当前不改 RGB，不保证显示器实际 nit。
-- 作用范围：Style colors / inline colors / VSFilterMod gradient colors。
-- Alpha：锁定不改。
-- Resolution Adapt：保持 / 720 / 1080 / 2160 / custom 16:9。
-- “同时输出”按钮：添加另一个 profile。
+## 2. 根布局与主工作区（三栏架构）
 
-## 4. 时间/FPS 页
-- Source FPS：23.976(24000/1001)、24、25、29.97、30、50、59.94、60、custom rational。
-- Target FPS 同上。
-- Mode：Speed scale / Frame snap / Offset / Two-point。
-- Scale summary：`x 0.95904` 等。
-- Preview：首条、1h、末尾预计时间差。
-- 不把 25→50 自动当 speed change；用户必须显式选择。
+整个应用程序由单一主工作窗口构成，分为四大区域：
 
-## 5. ASS→BDN/SUP 页
-### Renderer
-- libass；
-- External Special Renderer（自动探测 CSRI provider/VSFilterMod）；
-- Legacy VapourSynth；
-- Legacy AviSynth+。
+```
++--------------------------------------------------------------------------------------------------+
+|  顶部工具栏: [SubtitleToolkit]   [预设 Presets ▾]   [自检与运行环境: libass ✓ / ffprobe ✓]   [设置 ⚙]  |
++---------------------+--------------------------------------------+-------------------------------+
+|  1. 输入源列表      |  2. 中央预览区 (Live Preview & Canvas)      |  3. 输出 Profile 矩阵         |
+|     (Inputs Panel)  |                                            |     (Output Profiles)         |
+|                     |  +--------------------------------------+  |                               |
+|  [+ 添加字幕/拖放]   |  |                                      |  |  [+ 添加输出 Profile]         |
+|  -----------------  |  |      [ 16:9 画布单帧实时渲染 ]       |  |  ---------------------------  |
+|  [✓] ep01.ass       |  |        “你好，世界！Subtitle”        |  |  [✓] 1080p SDR BDN (默认)     |
+|      1080p | 24fps  |  |                                      |  |      - 格式: BDN XML + PNG    |
+|  [ ] ep02.ass       |  +--------------------------------------+  |      - 画布: 1920x1080        |
+|      1080p | 24fps  |  [<] 00:01:23.456 [>] (滑块定位单帧)        |      - 渲染: libass           |
+|  [✓] movie.sup      |  [对比模式: 原版 vs HDR调光]                |                               |
+|      PGS | 23.976   |  ----------------------------------------  |  [✓] 2160p UHD HDR SUP        |
+|                     |  输入元数据与字体诊断:                     |      - 格式: PGS (.sup)       |
+|  -----------------  |  - 事件数: 1,420 | 脚本PlayRes: 1920x1080   |      - 画布: 3840x2160 (等比)  |
+|  [视频辅助识别区]   |  - 字体状态: 3 个全部命中 (无缺字)          |      - HDR: 参考白 203 nit    |
+|  已载入 movie.mkv   |  - 颜色/样式: Default (White), Title (Gold)|                               |
+|  [填入推荐参数 ▾]   |                                            |  [✓] 纯文本 SRT 导出          |
+|                     |                                            |      - 剥离样式 (带Loss报告)   |
++---------------------+--------------------------------------------+-------------------------------+
+|  4. 底部任务抽屉 (Task Drawer)                                                                   |
+|  [▶ 开始队列 (2个输入 x 3个Profile = 6个任务)]        [默认输出目录: D:/Output/  [打开文件夹]]     |
+|  [正在运行] ep01.ass -> 1080p BDN [=======>    ] 65% (渲染中)                                    |
++--------------------------------------------------------------------------------------------------+
+```
 
-### Canvas
-- 720p/1080p/2160p/custom 16:9。
-- Strict Blu-ray SUP 时 2160p 选项禁用并解释原因。
+---
 
-### Render precision
-- Event-adaptive；
-- Per-frame for animated tags；
-- HFR downsample policy。
+## 3. 区域 1：输入源列表 (Inputs Panel)
 
-### Outputs
-- BDN XML+PNG；SUP；两者同时。
-- 可一次定义多个 profile。
+位于界面左侧，宽度约 280px ~ 320px。
 
-## 6. SUP 工具页
-Tab 1 `Fast Adjust`：Offset、scale time、X/Y、Forced、palette brightness。  
-Tab 2 `Re-encode`：resolution scale、crop、palette/quantization。  
-Tab 3 `Validate`：segment structure、timeline、palette/object/window、buffer model。  
-Fast Adjust 顶部必须显示“此操作是否重编码 bitmap”。
+- **拖拽响应区**：支持将 `.ass`, `.ssa`, `.srt`, `.sup` 单文件、多文件或包含字幕的文件夹直接拖入。
+- **文件表格项**：
+  - 每行显示：复选框（批量启用/禁用）、文件名、格式标签（ASS/SRT/PGS Chip）、分辨率（PlayResX×PlayResY 或 PGS Canvas）、时长/事件数。
+  - 右键上下文菜单：`从队列移除`、`单独在此文件预览`、`打开所在目录`。
+- **参考视频槽位 (Target Video Assist Slot)**：
+  - 允许拖入参考视频（`.mkv`, `.mp4`）；
+  - 触发底层 `media-probe` 探测，并在槽位中展示视频实际帧率、分辨率、HDR 元数据；
+  - 提供 `[采纳视频参数]` 按钮，点击后将推荐参数同步至右侧选中的 Profile，绝不自动覆盖字幕原时间轴。
 
-## 7. 批量/多输出页
-左侧 Inputs；中间 Pipeline Steps；右侧 Output Profiles。
+---
 
-Profile 行：
-`[✓] Name | Format | Canvas | FPS | HDR | Renderer | Validation | Suffix`
+## 4. 区域 2：中央预览与诊断区 (Live Preview & Diagnostics)
 
-支持 duplicate profile，例如复制 1080p profile 后改 2160p。
+位于界面正中央，是用户的视觉核心。
 
-## 8. 字体/MKV 页
-### Font Health
-- Required family/style；
-- Found/Not found；
-- missing glyph count；
-- source path；
-- subset size estimate。
+### 4.1 单帧实时预览窗格 (Live Frame Canvas)
+- **底层驱动**：由 `renderer-host` 的匿名管道通信驱动，在毫秒级按指定 `pts_ms` 渲染一帧 RGBA8 并在纯 Rust Canvas 控件中绘制。
+- **时间定位滑块**：
+  - 顶部显示当前时间码 `HH:MM:SS.mmm`；
+  - 拖动滑块或点击 `[上一句]` / `[下一句]` 按钮，自动跳转到字幕存在对白或特效的真实事件点，杜绝盲目拖拽到黑屏空白处。
+- **A/B 画面分屏对比模式**：
+  - 提供 `[分屏对比]` 开关：左半屏显示原版（SDR / 原始尺寸），右半屏显示应用当前 Profile 变换后（HDR 调光 / 16:9 缩放）的渲染画面，调光调色效果一目了然。
 
-### MKV Helper
-- tracks table；
-- attachments table；
-- extract/reinsert；
-- language/default/forced；
-- 不提供视频/音频转码参数。
+### 4.2 输入元数据与字体诊断折叠卡 (Font & Metadata Card)
+- 展开后展示由底层 `font-service` 扫描得到的结果：
+  - 脚本实际使用的字体家族与字重；
+  - 本地字体命中状态：`完全匹配 (Green)` / `存在缺字 (Yellow)` / `字体缺失 (Red)`；
+  - 缺字字形计数与清单。
 
-## 9. 同步助手
-- Reference：video/audio 或正确字幕；
-- Engine；
-- Result：offset、ratio、segments、confidence；
-- `Apply to copy` 主按钮，禁止默认覆盖源文件。
+---
 
-## 10. 诊断页
-- App version / git hash；
-- Windows build；
-- CPU/RAM；
-- libass version；
-- external renderer provider name/version/arch；
-- ffprobe/mkvtoolnix available；
-- render self-test；
-- PGS self-test；
-- Export diagnostic zip。
+## 5. 区域 3：多输出 Profile 管道矩阵 (Output Profiles Matrix)
 
-## 11. 设置页
-- General；Paths；Renderer；Performance；Output defaults；Advanced；Updates；About/Licenses。
-- 设置搜索框。
-- 所有第三方 DLL 路径都显示 hash/arch/version 检测结果。
+位于界面右侧，宽度约 360px ~ 420px，支持纵向滚动。  
+用户可添加 1 至 N 个输出 Profile。每个 Profile 卡片包含以下模块：
+
+### 5.1 Profile 头部
+- 复选框（本轮是否输出该 Profile）；
+- Profile 名称（如 `1080p Blu-ray BDN`、`2160p 4K HDR SUP`、`Web SRT`）；
+- 快捷操作：`[复制此Profile]`、`[删除]`。
+
+### 5.2 核心目标格式与渲染器
+- **导出格式 (Format)**：`BDN XML + PNG` / `PGS (.sup)` / `ASS` / `SSA` / `SRT`；
+- **渲染器 (Renderer)**：
+  - 当格式为 BDN 或 PGS 时可见；
+  - 当前锁定为 `libass (官方隔离宿主)`。
+
+### 5.3 变换动作链 (Transform Actions，按需折叠勾选)
+- **☑ 画布与几何适配 (Canvas & Resolution)**：
+  - 模式：`保持原样` / `1280x720` / `1920x1080` / `3840x2160 (4K)` / `自定义 16:9`；
+  - 遵循 16:9 完整逻辑画布铁律，杜绝坐标偏移。
+- **☑ 时间与帧率变换 (Time & Frame Rate)**：
+  - 模式：`帧率变速 (Speed Scale)` / `贴帧 (Snap to Frame)` / `整体平移 (Offset ms)` / `两点拟合 (Two-Point)`；
+  - 源帧率与目标帧率（支持标准分数 24000/1001、25、24、30 等）；
+  - 变换摘要（如 `时长缩放 x0.95904`）。
+- **☑ HDR 色彩映射 (HDR Tone Mapping)**：
+  - 模式：`关闭 (SDR)` / `线性光百分比 (Percentage)` / `参考白映射 (Reference White)` / `兼容模式`；
+  - 数值手输与下拉常用预设（33.3%, 50%, 203 nit 等）；
+  - 保护 Alpha 通道不被篡改。
+- **☑ 蓝光合规指示器 (Compliance Indicator)**：
+  - 当导出 PGS 时展示：
+    - `Basic PGS 编码: 具备 (自适应 255 色彩空间量化)`；
+    - `Strict 蓝光物理盘验证: 未覆盖 (如实标明，不假装通过)`。
+
+---
+
+## 6. 区域 4：底部统一任务抽屉 (Task Drawer)
+
+常驻于界面底部，高度约 80px，可向上展开查看详细任务日志。
+
+- **全局操作区**：
+  - `[▶ 开始执行 (N 个任务)]`：根据当前选中的输入文件与勾选的 Profile 组合计算总任务数；
+  - 输出目录选择框与 `[打开文件夹]` 快捷按钮；
+  - 覆盖策略选择：`重命名避让 (Rename，默认安全策略)` / `校验后覆盖 (ReplaceAfterVerify)` / `跳过已存在 (Skip)`。
+- **进度与状态列表**：
+  - 展开后展示每一个独立子任务：
+    `[文件名] -> [Profile 名] | 状态: 排队中 / 渲染中 (带进度条) / 成功 / 失败`；
+  - 遇到错误时展示标准错误卡片（提供红色的可复制 `StableErrorCode`、中文根因解释与解决建议）。
+
+---
+
+## 7. 弹窗与设置抽屉 (Dialogs & Settings)
+
+- **预设管理器 (Preset Manager)**：
+  - 允许将右侧当前配置的一整套 Profile 矩阵保存为命名预设（如 `4K蓝光+外挂SRT双出方案`），支持导入/导出 JSON。
+- **运行环境自检 (Doctor Dialog)**：
+  - 对应 CLI 的 `doctor` 命令，图文展示：
+    - 本机系统架构与临时目录可写性；
+    - `libass` 运行库版本、DLL SHA-256 哈希、位数核对状态；
+    - `ffprobe` 工具检测状态；
+    - 字体缓存状态与自检通过标记。

@@ -143,6 +143,20 @@ CLI 自报 `ods_invariant.objects = 11286`，与独立统计精确相等。
 
 这满足 AT-PGS-001 的“ODS payload hash 完全一致”要求。
 
+### AT-PGS-002 / AT-PGS-003：Forced 与调色板变换
+
+同样在该文件上执行，均 exit 0，且独立对拍确认“只改目标字段、ODS 不变”：
+
+| 操作 | 命令 | 变化的段类型 | ODS 摘要 | 段数 | forced 对象数 |
+|---|---|---|---|---|---|
+| 基线 | — | — | `f46c26b1…` | 49,659 | 0 |
+| Forced-only | `--forced yes` | 仅 `PCS (0x16)` | 一致 | 不变 | 0 → 12,933 |
+| 调色板 | `--luma-basis-points 9000` | 仅 `PDS (0x14)` | 一致 | 不变 | 保持 0 |
+
+两份输出自校验均为 `error=0` / `no_blocking=True`。
+AT-PGS-002 要求“Forced-only Fast Path 不重编码”、AT-PGS-003 要求“palette dim 只改 PDS”——
+两条均满足：ODS 字节未动，改动只落在应当改的段类型上。
+
 ## 边界（不要把这次结果说过头）
 
 - 本次只跑到 **standard** 层。第 5 层（T-STD 缓冲模型）与第 7 层（设备语料）仍未实现，
@@ -153,8 +167,11 @@ CLI 自报 `ods_invariant.objects = 11286`，与独立统计精确相等。
 - `unresolved_objects` 现在只按集合顺序累积定义，**不重置 epoch 边界**。真实文件里
   Epoch Start 之后会重新定义；若某个 epoch 依赖上一 epoch 的残留对象，当前实现会放过。
   这是一个偏宽的选择（不误杀），但严格的 epoch 语义仍需真机/规格语料裁决。
-- 本次验证了**解析、校验与 Fast Path 平移**。AT-PGS-002（Forced-only 不重编码）与
-  AT-PGS-003（palette dim 只改 PDS）尚未在真实语料上逐项执行。
+- 本次验证了**解析、校验与 Fast Path（时间平移 / Forced / 调色板）**。
+  AT-PGS-001/002/003 均已在真实语料上执行并通过。
+- 第 7 层**设备**语料仍未取得：AT-PGS-001–003 证明的是本工具的结构与字节级正确性，
+  不能推出“主流播放器/蓝光机一定接受该输出”。
+- MKVToolNix v102.0 已登记可用性与哈希（21 §9），但 AT-MKV-001 仍未实现。
 - 该素材许可范围是「本机测试」，不得复制进公共 fixture。
 
 ## 复现命令

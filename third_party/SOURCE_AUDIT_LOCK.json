@@ -96,7 +96,7 @@
   ],
   "not_yet_locked": [
     "pinterf/xy-VSFilter、sorayuki/VSFilterMod 对应的上游源码提交（本机 DLL 尚无可核实的源码映射）、SupMover、Aegisub csri.h",
-    "真实 .sup 设备语料（E3 仍未答复）：没有它，第 7 层设备兼容与 Strict 徽章都只能保持「未覆盖」"
+    "真实 .sup 的**设备**语料（播放器/蓝光机实测）仍未取得：AT-PGS-001/002/003 的解析、校验与 Fast Path 已用真实商业 SUP 执行，但第 7 层设备兼容与 Strict 徽章仍只能保持「未覆盖」"
   ],
   "binary_artifacts": [
     {
@@ -427,7 +427,32 @@
     "font_library_cache": "STK_FONTCACHE 指定文件位置（默认 %LOCALAPPDATA%\\\\subtitletool\\\\fontdb-v1.json）；门阶用自己的路径并在跑之前删除，因此\"冷扫 45709ms → 命中 42ms（196 face 整座库；四梯分别 45024→62、44722→42、44963→42、45709→42）。另一对 311/301ms 是 4 face 的窄作用域，不与 42ms 同比（ISSUES AK13）、render_identity 摘要相同 f5a6dc3e1ca7df45…\"是这一次梯子的实测",
     "libass_header": "ass.h（vcpkg 0.17.5，随 ass-9.dll 一起锁版本）：L813 `void ass_add_font(ASS_Library*, const char *name, const char *data, int data_size)` —— 返回 void、长度是 int；L815-822 `ass_clear_fonts` 要求先释放全部 track/renderer，因此不作为能力提供；字体注入的可用性由导出符号判定（本机 ass-9.dll 导出 ass_add_font @0x1cc30）",
     "embedded_fonts": "17 §7 的 [Fonts] 走我们自己的解析器：主语法照 libass 的 `fontname: X` + 逐行 base64（AK10 之前只认自造的 `P:` 形状，那份形状在真实文件里不存在），`P:` 作为在野写法保留兼容；单份上限 64 MiB / 合计 256 MiB（23 §健壮性）；不引 base64 依赖（与 15 §2 的 glob 同一判断，E6）；每一份内嵌字体都进 render_identity 摘要，同一批字节跨来源只交一次。门阶用 tools/make_embedded_fixture.py 现场把 marlett base64 成真语法样本（字体二进制不入库），并要求去掉 [Fonts] 的同一份脚本算出不同摘要。",
-    "injection_report_checker": "tools/check_injection_report.py：门阶用它按语义核对 render --json 的 font_injection 段，取代原先 grep JSON 文本的做法（serde_json 按字母序排键，加字段会挤掉 enabled 的位置造成假红，AK7）。反证过三种伪造报告（说没开但台账有字节 / sha 写成 ZZZ / 台账清空）都 rc=1"
+    "injection_report_checker": "tools/check_injection_report.py：门阶用它按语义核对 render --json 的 font_injection 段，取代原先 grep JSON 文本的做法（serde_json 按字母序排键，加字段会挤掉 enabled 的位置造成假红，AK7）。反证过三种伪造报告（说没开但台账有字节 / sha 写成 ZZZ / 台账清空）都 rc=1",
+    "mkvtoolnix_external": {
+      "path": "D:\\xia\\mkvtoolnix\\（本机工具，不随包分发）",
+      "version": "mkvmerge v102.0 (\"Little Houses\") 64-bit",
+      "license": "GPL-2.0-or-later（仅作为本机交叉验证工具，通过固定 argv 的子进程调用；不链接、不 redistribution）",
+      "sha256": {
+        "mkvmerge.exe": "b56ffd0ed62224cf24c640f418e21538026ed444e143ddd5175e3aa7d7539196",
+        "mkvextract.exe": "bd79d648762787226e8aee23f003c0825b4ff17bc515adaa9d61facceda52346",
+        "mkvpropedit.exe": "7cfad6fe2f370a02305b2956a0818e3f44a8277495193e7602a083cf32a3402b"
+      },
+      "used_by": "AT-MKV-001（容器 helper，尚未实现）；当前仅登记可用性与哈希，未接入产品",
+      "status": "available-not-integrated"
+    }
   },
-  "libass_runtime_lock": "third_party/LIBASS_RUNTIME_LOCK.json"
+  "libass_runtime_lock": "third_party/LIBASS_RUNTIME_LOCK.json",
+  "real_corpus": [
+    {
+      "name": "挽救计划 Project Hail Mary 2026 1080p SDR 简英双语特效@KKYY",
+      "kind": "third-party commercial .sup",
+      "path_on_this_machine": "D:\\lllll\\Videos\\挽救计划.Project.Hail.Mary.2026.1080p.SDR.简英双语特效@KKYY.sup",
+      "size_bytes": 103778137,
+      "sha256": "694f2e0d5d7c3e5368b85f5b42330e0c8eccbd44de2a89984e0383481ba9ad31",
+      "structure": "1920x1080；49659 段；9951 display set；11286 ODS；1641 个对象跨集合复用",
+      "license_scope": "本机测试；不得复制进公共 fixture 或随包分发",
+      "verdict": "standard 层 error=0；Fast Path +1000ms 后 11286 个 ODS payload 逐字节一致；forced-only 与 luma 变换后 ODS 摘要均不变",
+      "review": "docs/reviews/2026-10-17-pgs-real-corpus.md"
+    }
+  ]
 }

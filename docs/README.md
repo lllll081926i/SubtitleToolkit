@@ -11,7 +11,7 @@
 | `planning/` | 接下来做什么，哪些任务互相依赖？ | 使用本仓库阶段与任务编号 |
 | [架构决策](decisions/32_ADR_DECISIONS.md) | 冲突条款如何裁决，为什么这样选？ | 决策被接受不等于功能完成 |
 | `development/` | 如何维护、构建与发布？ | 发行候选产物不等于已有发行物 |
-| `reviews/` | 某次审查实际检查、修改和验证了什么？ | [代码审查](reviews/2026-10-08.md)与[文档优化](reviews/2026-10-08-docs.md)分别记录 |
+| `reviews/` | 某次审查实际检查、修改和验证了什么？ | [代码审查](reviews/2026-10-08.md)、[文档优化](reviews/2026-10-08-docs.md)与[过度防御审查](reviews/2026-10-09-code-audit-defense.md)分别记录 |
 | `research/`、`history/` | 外部研究与旧结论从哪里来？ | 研究结论、历史测试不作为当前通过证据 |
 | [V3.1 导入基线](subtitle_tool_rust_planning_v3_1/00_README.md) | 新审查引用的原文是什么？ | 保留原始字节与行号；不在此目录继续维护规格 |
 | [2026-10-08 文档审查包](subtitletool_full_audit_20261008/README_START_HERE.md) | 原规划有哪些问题和整改建议？ | 38 项问题针对导入基线；59 项 WBS 是建议，未整体替换当前计划 |

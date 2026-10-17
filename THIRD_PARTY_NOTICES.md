@@ -493,8 +493,8 @@
 
 | 组件 | 版本/提交 | License | 许可附加说明 | 来源 | 归档 | 锁定 SHA-256 | 本机实测 | 状态 |
 |---|---|---|---|---|---|---|---|---|
-| libass | 0.17.5 | ISC | 仓库主代码 COPYING 为 ISC；libass/wyhash.h 声明 Unlicense，libass/dwrite_c.h 声明 Public Domain，checkasm/ 文件声明 BSD-2-Clause，libass/x86/x86inc.asm 有独立 ISC 声明；compare/test/font1.ttf 与 font2.otf 的 name 表都标注 CC0-1.0。 | https://github.com/libass/libass | third_party/sources/libass-master.tar.gz | d2b2561cc8fb655451e8… | — | absent |
-| ass2bdnxml (Masaiki) | 6faa51e12e32baaeae1aa53e7951b6a0fea83ec2 | GPL-3.0-or-later | 源文件头声明 GPL-3.0-or-later，COPYING 提供 GPL-3.0 正文；x86inc.asm 自带独立 ISC 许可声明。 | https://github.com/Masaiki/ass2bdnxml | third_party/sources/ass2bdnxml-master.tgz | e1faeb2b57e50551d43b… | — | absent |
+| libass | 0.17.5 | ISC | 仓库主代码 COPYING 为 ISC；libass/wyhash.h 声明 Unlicense，libass/dwrite_c.h 声明 Public Domain，checkasm/ 文件声明 BSD-2-Clause，libass/x86/x86inc.asm 有独立 ISC 声明；compare/test/font1.ttf 与 font2.otf 的 name 表都标注 CC0-1.0。 | https://github.com/libass/libass | third_party/sources/libass-master.tar.gz | d2b2561cc8fb655451e8… | d2b2561cc8fb655451e8… | match |
+| ass2bdnxml (Masaiki) | 6faa51e12e32baaeae1aa53e7951b6a0fea83ec2 | GPL-3.0-or-later | 源文件头声明 GPL-3.0-or-later，COPYING 提供 GPL-3.0 正文；x86inc.asm 自带独立 ISC 许可声明。 | https://github.com/Masaiki/ass2bdnxml | third_party/sources/ass2bdnxml-master.tgz | e1faeb2b57e50551d43b… | e1faeb2b57e50551d43b… | match |
 
 ## native 与外部二进制的哈希锁（21 §8/§9，W3）
 

@@ -9,7 +9,8 @@
 - 2026-10-16 核验了 Phase 0–2 的退出条件（均满足），并补齐 AT-BATCH-001 的 100×3 容量用例；仍未覆盖项与证据见[实施检查表](planning/39_IMPLEMENTATION_CHECKLIST.md)。
 - 2026-10-17 推进 Phase 6 发布起步：补齐根目录双许可正文，新增 `tools/make_portable.ps1` 并实测（解包后 CLI 与 renderer-host 可运行、`SHA256SUMS.txt` 校验通过）。安装器、签名、便携数据目录与第三方 DLL 分发审计仍未完成，见 [28 节](development/28_WINDOWS_BUILD_RELEASE.md)。
 - 2026-10-17 修正依赖许可门禁：`tools/notices.py` 原先只读已解压源码（平台专属依赖从不下载，误报 37 项"读不到 license"），且把 SPDX 的 `A OR B` 拆开逐个要求白名单（把 `Apache-2.0 OR GPL-2.0-only` 误报成 GPL 污染）。已改为回退读 `.crate` 归档、按 SPDX 语义判定，并新增 `--fetch`。真实结论：无 GPL/LGPL 强制义务；`gui` 关闭 iced 的 `svg` 特性后去掉了强制 MPL-2.0 的 `resvg`/`usvg`（依赖 487→470 包）。`THIRD_PARTY_NOTICES.md` 已重新生成。
-- 2026-10-17 **用真实第三方商业 SUP（98.97 MB）驱动 PGS 校验与 Fast Path，修正四个真实现缺陷**：ODS `data_length` 语义算错（应含宽高 4 字节，编码器与校验器都错）、`PGS.TML.02` 基于发明出来的不变量（段间时钟本可不同）、Fast Path 要求逐段 PTS 单调、对象定义被判为不跨 display set 持续（真实文件有 1641 个复用集合）。修复后该文件 `standard` 校验 `error=0`；`pgs adjust --offset-ms 1000` 成功且 11286 个 ODS payload 逐字节一致、PTS/DTS 精确 +90000 tick，**AT-PGS-001 已执行**。详见[真实 SUP 互操作裁决](reviews/2026-10-17-pgs-real-corpus.md)。
+- 2026-10-17 **用真实第三方商业 SUP（98.97 MB）驱动 PGS 校验与 Fast Path，修正四个真实现缺陷**：ODS `data_length` 语义算错（应含宽高 4 字节，编码器与校验器都错）、`PGS.TML.02` 基于发明出来的不变量（段间时钟本可不同）、Fast Path 要求逐段 PTS 单调、对象定义被判为不跨 display set 持续（真实文件有 1641 个复用集合）。修复后 `standard` 校验 `error=0`；**AT-PGS-001/002/003 均已执行并通过**（时间平移后 11286 个 ODS payload 逐字节一致、PTS/DTS 精确 +90000 tick；Forced 只改 PCS、调色板只改 PDS，ODS 摘要均不变）。详见[真实 SUP 互操作裁决](reviews/2026-10-17-pgs-real-corpus.md)。
+- 2026-10-17 依赖许可门禁已全绿（`NOTICES OK … 0 个问题`）：补齐了 `notices.py` 的 SPDX OR 语义与 `.crate` 归档回退，`gui` 关闭 iced 的 `svg` 特性去掉强制 MPL-2.0 依赖，并恢复了两份被工作区删除的第三方源码归档。MKVToolNix v102.0 已按 21 §9 登记可用性与哈希。
 
 ## 项目边界
 

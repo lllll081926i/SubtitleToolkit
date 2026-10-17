@@ -2,7 +2,7 @@
 
 本文件是发布阶段的目标清单，不是当前发行物清单。当前 workspace 只定义 CLI 与 x64 `subtitletool-render-host.exe`；GUI、x86 host、安装包、签名和更新器均未实现。只有经过实际构建与验收的产物才能加入支持矩阵。
 
-**已落地（2026-10-17）**：根目录许可证正文 `LICENSE-MIT` / `LICENSE-APACHE`（此前为缺失状态）；`tools/make_portable.ps1` 产出自包含 portable zip（含 `SHA256SUMS.txt` 与许可/第三方声明副本）。已实测：解包后两个可执行文件可运，哈希校验通过。
+**已落地（2026-10-17）**：根目录许可证正文 `LICENSE-MIT` / `LICENSE-APACHE`（此前为缺失状态）；`tools/make_portable.ps1` 产出自包含 portable zip（含 `SHA256SUMS.txt`、许可/第三方声明副本与 `portable.flag`）。已实测：解包后两个可执行文件可运、`data_dir.kind=portable`、缓存落在包内 `data/`、哈希校验通过。安装器、签名与 SBOM 仍未完成。
 
 以下文件名是发行包候选命名；只有 `tools/make_portable.ps1` 实际生成的名字才算数。Cargo 产物名以各 crate 的 `[[bin]]` 配置为准。
 
@@ -37,9 +37,24 @@
 
 **已实现**：`tools/make_portable.ps1`（用法见 [tools/README](../tools/README.md)）。所有程序文件放同目录，并带 `SHA256SUMS.txt` 与许可正文。
 
-未实现：settings 默认仍进 `%APPDATA%`；`portable.flag` 触发 `./data` 的逻辑尚未做。
+**已实现（2026-10-17）**：`portable.flag` → `./data` 的便携数据目录。
 
-已实测：解包目录内 `subtitletool-cli.exe doctor --json` 返回 `ok=true`，两个 exe 的 SHA-256 与 `SHA256SUMS.txt` 一致。
+- 可执行文件旁边存在 `portable.flag` 时，运行期状态（字体库缓存 `fontdb-v1.json` 等）写在同级 `data/`；
+  没有这个文件就退回 `%LOCALAPPDATA%\subtitletool`（安装版行为）。
+- 用"标记文件"而不是嗅探可移动盘：便携是**用户的选择**，不是我们猜出来的属性；
+  自动嗅探会让同一份 exe 在不同机器上落到不同数据目录，而用户以为两边看的是同一份设置。
+- 优先级：`STK_DATA_DIR` > `portable.flag` > `%LOCALAPPDATA%\subtitletool`。
+- 取的是 **exe 所在目录**而不是当前工作目录：从任意目录启动便携包，数据都落在 exe 旁边。
+- `doctor --json` 的 `data_dir` 报出路径、来源 kind（`explicit`/`portable`/`user-profile`/`unavailable`）
+  与判定理由，`font_cache` 报出缓存路径；"便携没生效"这类反馈能一眼定位。
+- `make_portable.ps1` **默认在包里生成 `portable.flag`**，解包即用；
+  删掉它就会退回安装版行为。校验和现在覆盖包内**所有文件**（含许可正文与 flag），不只是 exe。
+
+已实测：解包目录内 `subtitletool-cli.exe doctor --json` 返回 `ok=true` 且
+`data_dir.kind=portable`；`font scan` 后缓存确实落在 `<解包目录>/data/fontdb-v1.json`；
+包内每个文件的 SHA-256 与 `SHA256SUMS.txt` 一致。回归用例：`crates/cli/tests/portable.rs`。
+
+仍未实现：settings/presets/logs 的落盘（目前只有字体库缓存走数据目录）。
 
 ## 5. Signing
 正式 release：所有 EXE/DLL/installer 用同一 publisher identity Authenticode；timestamp server；CI 验证签名后再上传。

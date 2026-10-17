@@ -2,6 +2,7 @@
 
 pub mod canvas;
 pub mod color;
+pub mod datadir;
 pub mod error;
 pub mod geometry;
 pub mod loss;
@@ -10,6 +11,7 @@ pub mod time;
 
 pub use canvas::Canvas;
 pub use color::AssColor;
+pub use datadir::{DataDir, DataDirKind};
 pub use error::{Domain, Result, StkError};
 pub use geometry::{
     Geometry, LayoutRes, LayoutResPolicy, PixelAspect, ScriptResolutionPolicy, ScriptSize,

@@ -28,6 +28,25 @@ pub(crate) fn default_sources() -> Vec<PathBuf> {
     crate::font::default_font_dirs()
 }
 
+/// 字体缓存落在哪：`doctor` 要能回答"东西写到哪去了"。
+/// 返回 `(路径, 来源说明)`；拿不到路径时第一个元素是 `None`。
+pub(crate) fn cache_path_report() -> serde_json::Value {
+    let explicit = std::env::var("STK_FONTCACHE")
+        .ok()
+        .filter(|v| !v.trim().is_empty());
+    let path = font_service::cache::cache_path();
+    serde_json::json!({
+        "path": path.as_ref().map(|p| p.display().to_string()),
+        "source": if explicit.is_some() {
+            "STK_FONTCACHE"
+        } else {
+            "data-dir"
+        },
+        "env_override": "STK_FONTCACHE",
+        "disable_switch": "--no-font-cache",
+    })
+}
+
 /// 一次调用要用的字体来源：目录 + 注册表指到的文件。
 /// 建库与"缓存撒谎后重来"都要同一份来源，所以它们必须成对存下来。
 struct Sources {

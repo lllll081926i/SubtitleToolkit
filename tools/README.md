@@ -9,7 +9,7 @@ Cargo 配置将编译子进程的临时目录固定为仓库 `target/tmp/`。初
 | 工具 | 用途 |
 |---|---|
 | `set_build_cache.ps1` | 初始化开发会话的非 C 盘缓存与临时目录 |
-| `make_portable.ps1` | 把已验收的 release 产物打成 portable zip（含 SHA256SUMS 与许可正文）；不含第三方 DLL、不签名 |
+| `make_portable.ps1` | 把已验收的 release 产物打成 portable zip（含 `SHA256SUMS.txt`、许可正文与 `portable.flag`）；不含第三方 DLL、不签名 |
 | `check_all.ps1` / `check_all.sh` | Windows 入口与完整验证；严格模式不允许缺依赖跳过 |
 | `doc_claims_check.py` | 历史可追溯矩阵中的符号是否仍存在；只作归档材料核对，不证明行为正确 |
 | `audit_evidence.py` | 历史门阶日志与历史声明对照；不替代行为测试 |

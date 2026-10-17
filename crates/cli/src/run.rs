@@ -956,6 +956,7 @@ fn pgs_validate(
 fn doctor(cmd: &str) -> Result<Envelope> {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let writable = test_writable(&cwd);
+    let data_dir = core_model::DataDir::resolve_current_exe();
     let ffprobe = find_ffprobe();
     let identity = ffprobe
         .as_ref()
@@ -974,6 +975,15 @@ fn doctor(cmd: &str) -> Result<Envelope> {
         "pid": std::process::id(),
         "cwd": cwd.display().to_string(),
         "cwd_writable": writable,
+        // 28 §4：数据目录落在哪、为什么落在那里。“便携没生效”这类反馈必须能一眼定位，
+        // 所以 kind 与理由都要报出来，而不是只给一个路径。
+        "data_dir": {
+            "path": data_dir.path.as_ref().map(|p| p.display().to_string()),
+            "kind": data_dir.kind.label(),
+            "why": data_dir.why,
+            "portable_flag": core_model::DataDir::PORTABLE_FLAG,
+        },
+        "font_cache": crate::fontenv::cache_path_report(),
         "ffprobe": identity,
         "ffprobe_search_paths": ffprobe_search_paths(),
         "render_host": render_host_report(),

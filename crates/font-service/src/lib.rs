@@ -23,6 +23,7 @@ pub use attachments::{
     decode_base64, parse as parse_font_attachments, Attachment, MAX_ATTACHMENT_BYTES,
     MAX_TOTAL_BYTES,
 };
+pub use core_model::{DataDir, DataDirKind};
 pub use db::{
     family_of_bytes, AxisInfo, CacheMode, CacheState, FaceRecord, FontDb, NameMatch, ScanNote,
     FONT_CHANGED_AFTER_SCAN, FONT_EXTS,

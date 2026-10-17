@@ -90,12 +90,31 @@ try {
         Copy-Item -LiteralPath $src -Destination (Join-Path $stage $d.Name) -Force
     }
 
+    # 28 §4：便携包默认就带上 portable.flag，让解包即用、不往用户机器上的
+    # %LOCALAPPDATA% 写任何东西。数据落在同目录的 data/（core-model::DataDir 负责解析）。
+    # 删掉这个文件就会退回安装版行为——这是用户的显式选择，不是我们替他决定的事。
+    $flagPath = Join-Path $stage 'portable.flag'
+    $flagText = @"
+# SubtitleToolkit 便携模式标记（28 §4）
+#
+# 这个文件存在时，程序把数据写成同级目录下的 data/：
+# 字体库缓存（fontdb-v1.json）等运行状态都落在包里，不碰用户机器上的 %%LOCALAPPDATA%%。
+#
+# 想改用安装版行为，删掉本文件即可。
+# 想指定一个完全自定义的位置，设环境变量 STK_DATA_DIR（优先级高于本文件）。
+"@
+    [System.IO.File]::WriteAllText($flagPath, $flagText, [System.Text.UTF8Encoding]::new($false))
+
     # --- 5. 校验和 ---------------------------------------------------------------
+    # 覆盖**包内所有文件**，不只是 exe：许可正文、第三方声明与 portable.flag
+    # 都属于"这东西是不是我要的那一份"的一部分，漏了它们就等于校验和无法证明整包完整。
     $sumsPath = Join-Path $stage 'SHA256SUMS.txt'
-    $sumLines = foreach ($item in $payload) {
-        $h = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $stage $item.Name)).Hash.ToLowerInvariant()
-        "$h  $($item.Name)"
-    }
+    $sumLines = Get-ChildItem -LiteralPath $stage -File |
+        Where-Object { $_.Name -ne 'SHA256SUMS.txt' } |
+        ForEach-Object {
+            $h = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
+            "$h  $($_.Name)"
+        }
     # 用 LF 与 ASCII，让校验和文件在跨平台工具里也能直接用
     [System.IO.File]::WriteAllText($sumsPath, (($sumLines -join "`n") + "`n"), [System.Text.UTF8Encoding]::new($false))
 
@@ -115,7 +134,8 @@ try {
     Get-ChildItem -LiteralPath $stage -File | ForEach-Object { Write-Host "    $($_.Name)" }
     Write-Host ""
     Write-Host "  说明：本包不含第三方运行库 DLL。需要渲染时在目标机上设置 STK_LIBASS_DLL。" -ForegroundColor Yellow
-    Write-Host "  未完成项：Authenticode 签名、安装器、便携数据目录（portable.flag）见 28 节。" -ForegroundColor Yellow
+    Write-Host "  便携：包内自带 portable.flag，数据（字体库缓存等）落在同级 data/，不写 %LOCALAPPDATA%。" -ForegroundColor Yellow
+    Write-Host "  未完成项：Authenticode 签名与安装器见 28 节。" -ForegroundColor Yellow
 }
 finally {
     Pop-Location

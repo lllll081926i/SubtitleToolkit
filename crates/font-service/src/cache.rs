@@ -43,17 +43,17 @@ pub struct CachedDb {
 
 /// 缓存文件的位置。测试与门阶用 `STK_FONTCACHE` 指到临时目录，
 /// 免得用户的机器上留下跨运行状态、也免得两条梯子互相看到对方的缓存。
+///
+/// 没有 `STK_FONTCACHE` 时走 [`DataDir`]（28 §4）：
+/// 默认 `%LOCALAPPDATA%\subtitletool`，便携包里（exe 旁有 `portable.flag`）
+/// 改成 exe 同级的 `data/`。
 pub fn cache_path() -> Option<PathBuf> {
     if let Ok(p) = std::env::var("STK_FONTCACHE") {
         if !p.trim().is_empty() {
             return Some(PathBuf::from(p));
         }
     }
-    let base = std::env::var("LOCALAPPDATA")
-        .or_else(|_| std::env::var("APPDATA"))
-        .map(PathBuf::from)
-        .ok()?;
-    Some(base.join("subtitletool").join("fontdb-v1.json"))
+    crate::DataDir::resolve_current_exe().file("fontdb-v1.json")
 }
 
 /// 由"这次要扫哪些文件"算指纹。这里只 stat，不读内容 —— 便宜就是全部目的。

@@ -21,6 +21,18 @@
 - 2026-10-17 **补齐 28 §2 的 SBOM，并把便携包补成 checksums + SBOM + notices 三件套**：`tools/notices.py` 现同时产出 `sbom.cdx.json`（CycloneDX 1.5，529 个组件，数据全取自它本来就在读的 `Cargo.lock`/registry/`SOURCE_AUDIT_LOCK.json`）。选 CycloneDX 而不是 SPDX：它原生表达“组件 + 哈希 + 许可证”这三件本仓库真正持有的事实（21 §11 要求的三样），字段少到能用一份自己的代码写对，不引第三方依赖。`scope` 把 `required` 与 `excluded` 分开（开发期工具与研究用源码归档不进安装包，列成 runtime 会让下游误判分发义务）；native/二进制产物带 `stk:hash-status`，`match`（本机实测相等）与 `absent-here`（这台机器没那个文件）**分开写**。门禁会查它过期：把 SBOM 改成 5 个组件后，`notices.py --check` 报 `SBOM 过期：有 5 个组件，当前依赖树应该是 529 个` 并退 1。便携包已实测：解包后 9 个文件的 SHA-256 全与 `SHA256SUMS.txt` 一致。
 - 2026-10-17 **实现 37 §2 的磁盘渲染缓存**（`crates/cli/src/rendercache.rs`）：内存那级（批量内同 key 共享）此前已有，磁盘这级（配额、清理、跨运行复用）一直缺。入口挂在 `front::resolve_cached`——SUP 的 `pgs_encode` 与 BDN 的 `render::build` 唯一都经过的地方。CLI 新增 `cache stat|clear` 与 `--no-render-cache`；环境变量 `STK_RENDERCACHE`/`_DIR`/`_MAX_BYTES`（默认 512 MiB）。缓存 key 与内存共享**同一口径**（后半链参数不进 key，这正是跨运行复用成立的原因）。**读回时逐字段校验**（魔数、key、长度、patch 的 RGBA 与宽高自洽），不符就当作未命中并删掉。实测（真 libass）：第 1 次 `hit=false`、第 2 次 `hit=true`，两次 XML 与**每个 PNG 逐字节相同**；`--no-render-cache` 给出同一份产物；改文案必重渲染、改回重新命中；截断/改魔数/换 key 三种篡改都计 `corrupt` 并重渲染而产物不变；上限 20 KiB 时 5 份 17,786 字节记录只留 1 份。开发中抳出自己编码器的两个真缺陷（digest 误用带长度前缀的读法、`Patch` 字段序与声明序不一致）。详见[渲染缓存裁决](reviews/2026-10-17-render-cache.md)。
 - 2026-10-17 **实现 36 §1 AppSettings 落盘**（28 §4 的 “settings 未实现”项）：`core_model::SettingsStore` + CLI `settings show|init|set`，文件在 `DataDir` 里的 `settings.json`。**未知字段保留**（36 §3）——这与 batch spec 的 `deny_unknown_fields` 是**相反**策略且理由也相反：spec 拼错字段会跑错任务（必须拒），设置里有陌生字段只说明它来自别的版本（必须留）。**单个字段坏不废整份**（设置是偏好不是数据）；**坏文件不退不硬删**（改名成 `.bad-<ts>` 留证据）；`schema` 高于本程序只读不写；写入原子；非法值在**写入前**就被拒（`STK-INP-0322`）。已实测：`set` 后**新进程**读得到、未知字段往返不丢、`init` 拒绝覆盖（`STK-INP-0320`）、5 种非法取值全拒且不落文件。详见[设置裁决](reviews/2026-10-17-app-settings.md)。
+- 2026-10-17 **实现 23 §DLL 的 PE arch 检测，并修正 `JobSnapshot` 里写死的 `arch`**：
+  把 `renderer-host` 里的 PE 头读取 `git mv` 到 `core_model::pe`（不是复制）——
+  主程序与 host 都要这个判断，而**两份实现对同一个 DLL 会给出不同答案**，
+  那就是一边放行一边拒绝。CLI 的 `libass_dll()` 现在在加载之前就校验位数，
+  并把失败分成三个可分的码：不存在 `STK-INP-0141` / 不是有效 PE `STK-INP-0142` /
+  位数不符 `STK-INP-0143`（详情写明“本程序是 x64，该库是 x86”+ 可照做的 action）。
+  另修正一个真缺陷：`batch.rs` 里的 `arch` 写死为 `"x86_64"`，换 32 位库时会照样写
+  `x86_64` —— 而 `JobSnapshot` 的全部用途就是回答“当时用了哪个二进制”（20 §Repro）。
+  已改为读 PE 头，读不到就如实写 `unknown`。证据：`cli/tests/dll_arch.rs` 5 用例
+  （含真 libass 通过检查并真的渲染出 BDN XML，以及“同位 PE 不被误判”的负基线）；
+  `core-model/src/pe.rs` 的 4 用例把 Itanium（0x0200）正确归为 `Other` 而不是 x64。
+  详见[PE 架构检测裁决](reviews/2026-10-17-pe-arch-check.md)。
 - 2026-10-17 **实现 22 §5 诊断包**（CLI `diagnose`）：把故障现场打成 zip（环境/版本/脱敏设置/依赖身份/缓存账目）。规格最要紧的一句是“**默认不包含原字幕/视频**”，所以默认是**白名单**而不是黑名单——诊断包天生要被贴到 issue、发邮件，“先收进来、发之前再删”会在没读说明的用户身上失效。脱敏判据是**键名**而不是值，且保留“这个键存在”这个事实。包内自带 `README.txt` 说明自己的边界。ZIP 写入器是手写的（`flate2` 已在依赖树里，不引 zip crate），因此**必须自己验**：独立读取器逐条解压 + 验 CRC，并用 Python `zipfile` 做第三方复核（`testzip() -> None`）。开发中抳出三个真缺陷，其中一个会被“写读自洽”的测试整批放过（中央目录项漏写名字：包开头签名全对而 EOCD 的 `cd_size` 偏小，Python 报 `Truncated central directory`）。详见[诊断包裁决](reviews/2026-10-17-diagnostic-bundle.md)。
 
 ## 项目边界
@@ -40,6 +52,8 @@
 - 36 §1 AppSettings 落盘（未知字段保留、坏文件不阻塞、原子写）。
 - 22 §5 诊断包（默认白名单，附样本需显式点名；脱敏保留键的存在；含本程序自己的日志）。
 - 22 §1 结构化日志（`tracing`），按日轮转 7 天 + 10 MiB 总量上限，随 `DataDir` 落盘。
+- 23 §DLL 的 PE arch 检测（单份实现在 `core_model::pe`，主程序与 host 共用）；
+  CLI 把“不存在/不是 PE/位数不符”分成三个可分的错误码；`JobSnapshot` 的 `arch` 读 PE 头而非写死。
 - libass 渲染、renderer-host 进程隔离、BDN XML/PNG 输出和 Basic PGS 编码链。
 - PGS 段解析、Fast Path 变换、分层校验及 ODS 内容摘要。
 - 字体扫描、缺字报告、整字体复制与 manifest、渲染字体身份和字体注入。

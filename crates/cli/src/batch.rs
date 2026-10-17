@@ -542,7 +542,14 @@ pub fn run_batch_with_cancel(
             provider: "libass".to_string(),
             version,
             binary_sha256: sha256_hex(&bytes),
-            arch: "x86_64".to_string(),
+            // 23 §DLL：架构从**二进制的 PE 头**读，不写死。
+            // 写死一个 "x86_64" 会让 JobSnapshot 里那句“当时用了哪个二进制”变成谎话
+            // ——而 JobSnapshot 的全部用途就是回答这个问题（20 §Repro）。
+            // 走到这里时 `libass_dll` 已校验过位数，所以读失败只可能是文件在
+            // 两次读之间被替掉；如实记未知而不编一个值。
+            arch: core_model::pe::arch_of_file(&dll)
+                .map(|a| a.label().to_string())
+                .unwrap_or_else(|_| "unknown".to_string()),
         })
     } else {
         None

@@ -740,6 +740,25 @@ pub(crate) fn libass_dll(explicit: Option<&Path>) -> Result<PathBuf> {
             ))
             .with_action("检查 DLL 路径后重试"));
     }
+    // 23 §DLL：**PE arch 检测**。不先查位数，`LoadLibrary` 只会返回一句含糊的
+    // “不是有效的 Win32 应用程序”，用户看到的信息就只剩这一句。
+    // 已有实现（12 §3）在 core-model::pe —— 复用它而不是另写一份：
+    // 两份实现对同一个 DLL 会给出不同答案。
+    let arch = core_model::pe::arch_of_file(&path).map_err(|e| {
+        cli_err(142, "指定的渲染库不是有效的 PE 文件")
+            .with_detail(format!("{}：{e}", path.display()))
+            .with_action("确认这是一个真的 Windows DLL，而不是改名或截断的文件")
+    })?;
+    // 主程序是 x64（12 §3）。位数不符时现在就报，而不是交给 LoadLibrary 报一个更远的原因。
+    if !arch.is_x64() {
+        return Err(cli_err(143, "渲染库的位数与本程序不匹配，加载必然失败")
+            .with_detail(format!(
+                "{}：本程序是 x64，该库是 {}",
+                path.display(),
+                arch.label()
+            ))
+            .with_action("换成 x64 的那一份；x86 host 与 x64 host 各自的库不能互换"));
+    }
     Ok(path)
 }
 

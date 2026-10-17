@@ -17,6 +17,23 @@ segment length、RLE decode、palette/object id、dimensions 全 checked；避�
 ## DLL
 第三方 provider 进 renderer-host；PE arch 检测；可选 hash allowlist；不在当前目录任意 DLL 搜索，防 DLL hijacking。
 
+**实现状态（2026-10-17）**：
+
+- **PE arch 检测：已实现**（`core_model::pe`）。单份实现在 core-model 而不是两份：
+  主程序（加载前自检）与 renderer-host（真的加载前再查）都要这个判断，
+  两份实现对**同一个 DLL 会给出不同答案**，那就是一边放行一边拒绝。
+  只读 PE 头（不加载、不执行），先取 4 KiB，头靠后时只补读 `e_lfanew` 处的 6 字节。
+- CLI 侧三种失败**保持可分**（这是本条要求的可判定形式）：
+  不存在 `STK-INP-0141` / 不是有效 PE `STK-INP-0142` / 位数不符 `STK-INP-0143`。
+  位数那条的详情里写明"本程序是 x64，该库是 x86"，并给出能照做的补法。
+  **为什么必须在这里判而不是交给 `LoadLibrary`**：后者只会返回一句含糊的
+  “不是有效的 Win32 应用程序”，用户看到的信息就只剩这一句。
+- `JobSnapshot` 里的 `arch` 从**二进制 PE 头**读，不再写死：写死会让
+  “当时用了哪个二进制”那句变成谎话，而那是 JobSnapshot 的全部用途（20 §Repro）。
+- **未实现**：可选 hash allowlist（当前靠绝对路径 + SHA-256 进报告，没做白名单强制）；
+  DLL 搜索路径加固已有（只接受 `--libass-dll` / `STK_LIBASS_DLL` 给的绝对路径，
+  不做当前目录搜索），但没有写成一条专门的测试。
+
 renderer-host 与 Job Object 提供崩溃隔离、超时收尾与资源管理，不构成权限沙箱。插件仍可能访问当前用户可访问的文件与网络。当前未实现受限令牌或完整性级别隔离，产品不得宣称恶意 DLL 安全执行。
 
 当前 libass 采用绝对路径、受控 DLL 搜索与 provider 身份核对。ABI 导出匹配只证明存在候选接口；真实加载与画面测试分别报告。新增 provider 必须定义依赖 DLL 搜索策略，不能靠放宽到任意 PATH 目录掩盖缺失依赖。

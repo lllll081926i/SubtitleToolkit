@@ -1,7 +1,13 @@
-//! PE 头里的 Machine 字段（12 §3）：**不看文件名，也不看目录名**。
+//! PE 头里的 Machine 字段（12 §3 / 23 §DLL）：**不看文件名，也不看目录名**。
 //!
 //! 12 §3 的禁令是"不得跨位数 `LoadLibrary`"。要在调用 `LoadLibrary` 之前就知道位数，
 //! 唯一的依据就是文件本身，所以这里只读 PE 头，不加载、不执行。
+//!
+//! ## 为什么在 core-model 而不是 renderer-host
+//!
+//! 主程序（在加载 DLL 之前先自检）与 host（真的加载之前再查一次）都要这个判断。
+//! 两份实现对**同一个 DLL 会给出不同答案** —— 那意味着一边放行一边拒绝，
+//! 而用户看到的是一条自相矛盾的报错。所以只有一份，放在两边都依赖的那一层。
 
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
@@ -39,6 +45,19 @@ pub enum PeError {
     Unreadable(String),
     /// 不是 PE（没有 MZ、没有 PE\0\0、头太小）
     NotPe(String),
+}
+
+impl PeError {
+    /// 稳定的错误码片段，供上层包成 `StkError`。
+    ///
+    /// 分开"读不了"与"不是 PE"两件事：前者是环境问题（文件不在、被占用），
+    /// 后者是拿错了东西（改名、截断、根本不是 DLL）。用户要做的事完全不同。
+    pub fn kind_label(&self) -> &'static str {
+        match self {
+            PeError::Unreadable(_) => "unreadable",
+            PeError::NotPe(_) => "not-pe",
+        }
+    }
 }
 
 impl std::fmt::Display for PeError {

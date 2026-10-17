@@ -1,11 +1,12 @@
 # 当前项目状态
 
-核对日期：2026-10-09。本文描述当前工作区源码和实际执行的验证，不引用历史门阶结果充当本轮通过证据。
+核对日期：2026-10-17。本文描述当前工作区源码和实际执行的验证，不引用历史门阶结果充当本轮通过证据。
 
 同日后续更新：
 - 维护文档已按[38 项建议采纳记录](planning/AUDIT_ADOPTION_20261008.md)优化。新增用户提供的 libass 运行库与真实验证见[追加记录](reviews/2026-10-08-docs.md)。
 - 2026-10-09 完成了全项目深度审查、测试过度防御修复与纯 Rust 前端规格重构，详见[2026-10-09 审查报告](reviews/2026-10-09-code-audit-defense.md)。
-- 2026-10-16 落地了该审查的四项代码建议（IPC 自残后门、字体缓存坏就用坏即弃、Strict 不再被未实现层阻断、XML 加固幅述校正），证据与未做项见[审查报告第五节](reviews/2026-10-09-code-audit-defense.md)。新增 GUI crate（`crates/gui`，Iced 工作台骨架）可编译，但任务执行链未接通真实引擎、无测试，不计为已交付。
+- 2026-10-16 落地了该审查的四项代码建议（IPC 自残后门、字体缓存坏就用坏即弃、Strict 不再被未实现层阻断、XML 加固幅述校正），证据与未做项见[审查报告第五节](reviews/2026-10-09-code-audit-defense.md)。新增 GUI crate（`crates/gui`，Iced 工作台）。
+  **（2026-10-17 更新）**：这一条当时的结论“任务执行链未接通真实引擎、无测试”已**失效**——GUI 现已编译真实 batch spec 并交给 `cli::batch::run_batch` 执行，有 `gui_cli_replay.rs`（4 条）与 `task_e2e.rs`（4 条）两类端到端用例，且已进 portable 包。当前 GUI 的未完成项是 AT-UI-001 的 60 秒响应实测、A/B 对比渲染与设置持久化，见[GUI 接通裁决](reviews/2026-10-17-gui-backend-wiring.md)。
 - 2026-10-16 核验了 Phase 0–2 的退出条件（均满足），并补齐 AT-BATCH-001 的 100×3 容量用例；仍未覆盖项与证据见[实施检查表](planning/39_IMPLEMENTATION_CHECKLIST.md)。
 - 2026-10-17 推进 Phase 6 发布起步：补齐根目录双许可正文，新增 `tools/make_portable.ps1` 并实测（解包后 CLI 与 renderer-host 可运行、`SHA256SUMS.txt` 校验通过）。安装器、签名、便携数据目录与第三方 DLL 分发审计仍未完成，见 [28 节](development/28_WINDOWS_BUILD_RELEASE.md)。
 - 2026-10-17 修正依赖许可门禁：`tools/notices.py` 原先只读已解压源码（平台专属依赖从不下载，误报 37 项"读不到 license"），且把 SPDX 的 `A OR B` 拆开逐个要求白名单（把 `Apache-2.0 OR GPL-2.0-only` 误报成 GPL 污染）。已改为回退读 `.crate` 归档、按 SPDX 语义判定，并新增 `--fetch`。真实结论：无 GPL/LGPL 强制义务；`gui` 关闭 iced 的 `svg` 特性后去掉了强制 MPL-2.0 的 `resvg`/`usvg`（依赖 487→470 包）。`THIRD_PARTY_NOTICES.md` 已重新生成。
@@ -16,13 +17,13 @@
 - 2026-10-17 **补齐 17 §6 的输出侧后两档（ISSUES AG8）**：新增 `font subset --embed-fonts --out X.ass`（把字体写进产物 ASS 的 `[Fonts]` 段）与 `font subset --mkv-attachments`（生成可直接嗂给 `mkv remux --attach-font` 的附件目录）。为此在 `font_service::attachments` 补了 base64 / `[Fonts]` 段的**编码器**，与既有解码器严格互逆（整份真字体字节往返用例守护）。过程中修正两个真实缺陷：**BOM 在文件头时 `\u{feff}[Fonts]` 不是一个段头，会导致整段隐形**；以及不去重会写出两份 `[Fonts]`（解析器只认第一份，第二份字节静默留下）。至此 17 §6 六档全部交付。见[子集裁决第七节](reviews/2026-10-17-font-subset.md)。
 - 2026-10-17 **全部已规划命令落地**：`doctor` 的 `not_built` 已为空（`font subset` 与 `mkv *` 是最后两条）。占位机制（`Command::NotBuilt` + `not_built_commands`）保留，供后续新增命令使用。
 - 2026-10-17 **GUI 与后端接通（20 §Repro）**：删掉 `task_worker` 里 `sleep+Ok(())` 的模拟执行，改把输入集与 Profile 矩阵编译成**真实 batch spec**（`cli::batch::Spec`）再交给 `cli::batch::run_batch` 跑——于是“GUI 复制的命令能直接重放”是结构上成立的，而不是靠事后对齐。同时修掉四个“看起来能用”的洞：`StartQueue` 从不调执行器、取消令牌跟引擎不是同一份（取消按钮无效）、`show_doctor` 设了但从不渲染、视频建议是写死字符串。预览占位色块新增 `FrameSource` 标记（不再冒充真实渲染），失败时清掉旧帧。仍**未**交付：AT-UI-001 的 60 秒持续响应实测、A/B 对比渲染、设置持久化。详见[GUI 接通裁决](reviews/2026-10-17-gui-backend-wiring.md)。
-- 2026-10-17 **实现便携数据目录（28 §4）**：新增 `core_model::DataDir`；`portable.flag` 存在时运行期状态落在 exe 同级 `data/`，否则退回 `%LOCALAPPDATA%\subtitletool`。优先级 `STK_DATA_DIR` > `portable.flag` > 用户目录；`doctor --json` 新增 `data_dir` 与 `font_cache` 两项，报出路径、来源与理由。`make_portable.ps1` 默认在包里生成 `portable.flag`，且校验和改为覆盖包内**所有文件**。实测：解包后 `data_dir.kind=portable`，`font scan` 的缓存确实落在 `<包>/data/fontdb-v1.json`；回归用例 `crates/cli/tests/portable.rs`。仍未实现：安装器、Authenticode 签名、SBOM、settings/presets 的落盘。
+- 2026-10-17 **实现 PGS 校验第 5 层（解码器模型，13 §6）**：新增 `crates/validator/src/decoder_model.rs`。关键决定是**先用真实语料反推，而不是照抄理论公式**：理论模型（US7620297B2 / FFmpeg `supenc.c`）是编码器的前向模型，拿它量真实商业流命中率 0%（`PDS`/`END` 实际恒为 DTS==PTS，`ODS` 的 `PTS-DTS` 与 `w*h*FREQ/Rd` 无相关）。改为实现**真实流满足的 5 条不变式**，在本机 98.97 MB 真实 SUP 上全部 100% 成立（9951 个显示集 / 49659 段）。该层立刻抳出**我们自己编码器的两个缺陷**：`PDS` 与 `END` 都被写成了"有解码耗时"（真实流两者均恒为 DTS==PTS）。另更正覆盖缺口账目：`PGS.DEC.01` 已回收为真不变式，不再列为缺口，CLI 新增 `coverage_gap` 字段说明徽章为何被拒。详见[第 5 层裁决](reviews/2026-10-17-decoder-model-layer5.md)。：新增 `core_model::DataDir`；`portable.flag` 存在时运行期状态落在 exe 同级 `data/`，否则退回 `%LOCALAPPDATA%\subtitletool`。优先级 `STK_DATA_DIR` > `portable.flag` > 用户目录；`doctor --json` 新增 `data_dir` 与 `font_cache` 两项，报出路径、来源与理由。`make_portable.ps1` 默认在包里生成 `portable.flag`，且校验和改为覆盖包内**所有文件**。实测：解包后 `data_dir.kind=portable`，`font scan` 的缓存确实落在 `<包>/data/fontdb-v1.json`；回归用例 `crates/cli/tests/portable.rs`。仍未实现：安装器、Authenticode 签名、SBOM、settings/presets 的落盘。
 
 ## 项目边界
 
 - 项目面向 Windows x64，正式 Rust target 为 `x86_64-pc-windows-msvc`。
-- 当前交付形态是 Rust CLI；GUI、安装包、portable 包、签名和更新器未实现。
-- Cargo 工作区包含 `subtitletool-cli.exe` 与 `subtitletool-render-host.exe`。renderer host 用于隔离 libass DLL。
+- 当前交付形态是 CLI + Iced GUI + renderer host；安装包、Authenticode 签名与更新器未实现。
+- Cargo 工作区包含 `subtitletool-cli.exe`、`subtitletoolkit-gui.exe` 与 `subtitletool-render-host.exe`。renderer host 用于隔离 libass DLL。
 - `P0` 等级表示产品目标优先级，不表示该功能已交付。
 
 ## 已有实现
@@ -30,6 +31,7 @@
 - ASS/SSA、SRT 解析与转换，时间、颜色和分辨率变换。
 - CLI 批处理、输出事务、失败恢复、JSON 报告和 `doctor`。
 - ffprobe adapter；视频探测只给建议，不自动改变字幕时间轴。
+- `font scan`、`font subset`（含 `--embed-fonts` / `--mkv-attachments`）、`mkv identify|extract|remux`、`batch`、`render`、`doctor`。
 - libass 渲染、renderer-host 进程隔离、BDN XML/PNG 输出和 Basic PGS 编码链。
 - PGS 段解析、Fast Path 变换、分层校验及 ODS 内容摘要。
 - 字体扫描、缺字报告、整字体复制与 manifest、渲染字体身份和字体注入。
@@ -43,9 +45,9 @@
 
 - CSRI/VSFilterMod provider、x86 renderer host 和发行安装链未实现。
 - 字体服务未使用 DirectWrite 作为权威 resolver；字体子集正确性尚无复杂文字渲染语料。
-- PGS Basic 编码不等于 Strict Blu-ray 合规。PCS 帧率字段、palette range/matrix、ODS 图末标记尚无真盘/设备结论；当前 ffprobe 证据只覆盖 `.sup` 容器段布局与时钟。
-- Strict validator 需要尚未实现的缓冲模型和设备语料，因此不会给出 Strict 通过结论。
-- 仓库已补根目录 MIT/Apache-2.0 license 正文（`LICENSE-MIT`、`LICENSE-APACHE`，2026-10-17）；portable 包可由 [tools/make_portable.ps1](../tools/README.md) 生成。安装器、Authenticode 签名、GUI 与第三方 DLL 分发审计仍未完成。
+- PGS Basic 编码不等于 Strict Blu-ray 合规。PCS 帧率字段、palette range/matrix、ODS 图末标记尚无真盘/设备结论；当前 ffprobe 证据只覆盖 `.sup` 容器段布局与时钟。第 5 层的不变式取的是**必要条件**（不满足一定有问题），不是充分条件。
+- Strict validator 已实现第 1–6 层（含第 5 层解码器模型）；**第 7 层设备语料**仍未取得，因此 `strict_badge_allowed` 仍恒为 false（报告给出 `coverage_gap`）。第 5 层本身未含缓冲区占用曲线与 acquisition/seamless 分支。
+- 仓库已补根目录 MIT/Apache-2.0 license 正文（`LICENSE-MIT`、`LICENSE-APACHE`，2026-10-17）；portable 包可由 [tools/make_portable.ps1](../tools/README.md) 生成（含三个 exe 与 `portable.flag`）。安装器、Authenticode 签名、SBOM 与第三方 DLL 分发审计仍未完成。
 
 ## 2026-10-08 早前代码审查验证
 

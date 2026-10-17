@@ -943,8 +943,16 @@ fn pgs_validate(
         "no_blocking_findings": report.no_blocking_findings(),
         // 只有按 Strict 跑过才可能给徽章；Basic/Standard 的报告不能倒推（13 §6）
         "strict_badge_allowed": report.strict_badge_allowed(level),
+        // 被拒的原因必须能看见：只说"不给徽章"等于把用户困在里面。
+        // `coverage_gap` 列出真的**没跑**的层（当前只剩第 7 层设备语料）。
+        "coverage_gap": report
+            .findings
+            .iter()
+            .filter(|f| validator::report::ValidationReport::COVERAGE_GAP_CHECKS.contains(&f.check))
+            .map(|f| f.check)
+            .collect::<Vec<_>>(),
         "peak_bitrate": measurement,
-        "layers": "1 结构 / 2 时间线 / 3 生命周期 / 4 profile / 6 码率测量；5 缓冲模型与 7 设备语料未覆盖时会显式报告",
+        "layers": "1 结构 / 2 时间线 / 3 生命周期 / 4 profile / 5 解码器模型 / 6 码率测量；第 7 层设备语料未覆盖时会显式报告",
     });
     // 有 error/fatal：完整报告照旧交出去，用 ok=false 与非零退出码阻断流水线
     match validator::to_error(&report, "SUP") {

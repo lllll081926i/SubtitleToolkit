@@ -719,16 +719,13 @@ pub fn profile(segments: &[Segment], want: &ProfileWant) -> ValidationReport {
             "把本报告的 error/warning 清零只是必要条件，不是充分条件",
         );
     }
-    // 第 5 层与设备语料不在这里假通过：按 Strict 跑时它们是 warning。
+    // 第 7 层（设备语料）不在这里假通过：按 Strict 跑时它是 warning。
     // 不能做成 error：否则 strict 模式对已实现规则的检查权也被一并剥夺。
     // "未覆盖"这件事由 strict_badge_allowed 单独把关（13 §6 末段）。
+    //
+    // 第 5 层已经落地：它的不变式由 crate::decoder_model 跑，
+    // 与已实现层合并。只保留设备语料这一条缺口。
     if want.level == ValidationLevel::Strict {
-        r.add(
-            "PGS.DEC.01",
-            Severity::Warning,
-            "未执行解码器缓冲模型（coded object buffer / acquisition point / window decode time）",
-            "需要 pgs-author 的 Advanced Author 缓冲计算（13 §5）；没有它就不能自称 Strict",
-        );
         r.add(
             "PGS.DEV.01",
             Severity::Warning,
@@ -839,6 +836,15 @@ pub fn pgs_all(segments: &[Segment], want: &ProfileWant, grid: Option<Fps>) -> V
     r.merge(timeline(segments, grid));
     r.merge(lifecycle(segments));
     r.merge(profile(segments, want));
+    // 第 5 层：解码器模型。以前它是一条"未执行"的 warning（PGS.DEC.01 那个编号），
+    // 现在跑真的不变式；该编号回收给"段 PTS 晚于本集 PCS"用。
+    let (dec, checked) = crate::decoder_model::decoder_model(segments);
+    if checked {
+        r.merge(dec);
+    } else {
+        // 空流：把 decoder_model 自己的说明并进来，而不是假装跑过了
+        r.merge(dec);
+    }
     r
 }
 
@@ -1125,8 +1131,14 @@ mod tests {
         );
         assert!(r.has_check("PGS.PRO.01"), "{:?}", r.text_lines());
         assert!(!r.no_blocking_findings());
-        // Strict 等级还必须显式承认"缓冲模型/设备语料未覆盖"
-        assert!(r.has_check("PGS.DEC.01") && r.has_check("PGS.DEV.01"));
+        // Strict 等级还必须显式承认"设备语料未覆盖"（第 7 层）。
+        // 第 5 层（解码器模型）已于 2026-10-17 实现，**不再**属于覆盖缺口：
+        // 把已实现的层继续列在缺口里，会让一条真实的时序警告被读成"层没做"。
+        assert!(r.has_check("PGS.DEV.01"), "{:?}", r.text_lines());
+        assert!(
+            !r.has_coverage_gap() || r.has_check("PGS.DEV.01"),
+            "覆盖缺口只能由真的没跑的层引起"
+        );
         assert!(r.has_check("PGS.PRO.05"), "compliant 声明必须附带语料要求");
     }
 
@@ -1214,13 +1226,19 @@ mod tests {
     fn pgs_tml_02_accepts_per_segment_timestamps() {
         let mut segs = stream();
         // 把第二个显示集里非 PCS 的段改成"各自不同的合法时钟"：
-        // DTS 仍在各自 PTS 之前、也都不晚于该集合的 PCS。
+        // PTS 下降的同时 DTS 也跟着降，保证仍然 DTS <= PTS。
+        //
+        // 只减 PTS 不减 DTS 会造出 DTS > PTS——那是**不合法的流**，
+        // 被报出来是对的（层 5 的 PGS.DEC.02）。这个用例要验证的是"段间时钟
+        // 可以各不相同"，不是"可以颠倒解码与呈现的先后"。
         let second = segs
             .iter()
             .position(|s| s.seg_type == SEG_PCS && s.pts == 180_000)
             .expect("夹具应有第二个显示集");
         segs[second + 1].pts -= 45;
+        segs[second + 1].dts -= 45;
         segs[second + 2].pts -= 90;
+        segs[second + 2].dts -= 90;
         let r = timeline(&segs, None);
         assert!(
             !r.has_check("PGS.TML.02"),

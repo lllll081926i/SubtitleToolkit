@@ -466,15 +466,26 @@ fn pgs_validate_reports_structure_for_streams_we_encoded() {
     assert_eq!(sv["data"]["no_blocking_findings"], true);
     assert_eq!(sv["data"]["strict_badge_allowed"], false);
     let findings = sv["data"]["findings"].as_array().unwrap();
+    // 第 5 层已实现：不再报"未覆盖"，而是报出真的不变量结论。
     assert!(
         findings
             .iter()
-            .any(|s| s.as_str().unwrap_or("").contains("PGS.DEC.01")),
-        "未覆盖第 5 层必须被报出来：{findings:?}"
+            .any(|s| s.as_str().unwrap_or("").contains("PGS.DEC.10")
+                || s.as_str().unwrap_or("").contains("PGS.DEC.20")),
+        "层 5 跑过就必须留下结论：{findings:?}"
     );
+    // 真的没覆盖的是第 7 层，它必须在报告里
     assert!(findings
         .iter()
         .any(|s| s.as_str().unwrap_or("").contains("PGS.DEV.01")));
+    // 我们自己写出来的流不该有层 5 违例
+    assert!(
+        !findings.iter().any(|s| {
+            let t = s.as_str().unwrap_or("");
+            (t.starts_with("[warning]") || t.starts_with("[error]")) && t.contains("PGS.DEC.")
+        }),
+        "自己编码的合法流不该被报出层 5 问题：{findings:?}"
+    );
     assert!(
         findings
             .iter()

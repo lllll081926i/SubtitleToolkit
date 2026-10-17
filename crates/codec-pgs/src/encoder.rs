@@ -319,7 +319,25 @@ pub fn encode(frames: &[Frame], opts: &EncodeOptions) -> Result<(Vec<Segment>, E
 
         if !(frame.erase && frame.objects.is_empty()) {
             let pds = write_pds(&palette_of(&table, opts.palette_id))?;
-            push(&mut segments, SEG_PDS, &pds, frame.pts, dts)?;
+            // PDS 的 **PTS == DTS == 本集的解码时刻**（不是呈现时刻）。
+            //
+            // 本机实测（98.97 MB 真实商业 SUP，8558 个 PDS）：100% 满足 DTS == PTS，
+            // 且这个值等于本集各段的共同 DTS（如 297870），而 PCS 的 PTS 是 303750。
+            // 真实流的实际形状：
+            //
+            //   PCS PTS=303750 DTS=297870   （呈现时刻）
+            //   WDS PTS=303702 DTS=297870
+            //   PDS PTS=297870 DTS=297870   <= 解码时刻，无耗时
+            //   ODS PTS=297961 DTS=297870
+            //   END PTS=297961 DTS=297961
+            //
+            // 旧写法给的是 `frame.pts`（呈现时刻）+ 提前量，两个都错：
+            // 调色板不需要解码，HDMV 不给它时间，它的时刻就是本集的解码时刻。
+            // 这个偏差由第 5 层的解码器模型不变式（PGS.DEC.04）抳出来。
+            //
+            // 用 `dts` 同时当 PTS：一来保住 DTS 单调（它与前一段同值，不递减），
+            // 二来与真实流逐字段一致。
+            push(&mut segments, SEG_PDS, &pds, dts, dts)?;
             report.palette_segments += 1;
 
             for (id, w, h, rle) in object_defs.iter() {
@@ -358,7 +376,16 @@ pub fn encode(frames: &[Frame], opts: &EncodeOptions) -> Result<(Vec<Segment>, E
                 }
             }
         }
-        push(&mut segments, SEG_END, &[], frame.pts, dts)?;
+        // END 的 DTS == PTS，且 PTS 与本集最后一个 ODS 对齐。
+        //
+        // 本机实测（真实商业 SUP，9951 个 END）：
+        //   DTS == PTS            **100%**
+        //   PTS == 最后 ODS 的 PTS **100%**
+        // END 只收尾，不引入新时刻，也没有解码耗时。
+        //
+        // 注意这里用的是 `frame.pts` 而不是 `dts`：ODS 的 PTS 也是从 `frame.pts` 派生的
+        // （见上面 ODS 的写法），所以两边自然对齐。
+        push(&mut segments, SEG_END, &[], frame.pts, frame.pts)?;
         report.display_sets += 1;
     }
     Ok((segments, report))

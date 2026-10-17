@@ -101,7 +101,16 @@ impl ValidationReport {
 
     /// 本次校验有没有落在"未实现层"上。这些层不报 error（否则 strict 就没法用了），
     /// 但它们的存在足以让 Strict 徽章作废：没跑过的层不能被当成"通过"。
-    pub const COVERAGE_GAP_CHECKS: [&'static str; 2] = ["PGS.DEC.01", "PGS.DEV.01"];
+    ///
+    /// **2026-10-17 变更**：第 5 层（解码器模型）已实现，所以 `PGS.DEC.01`
+    /// **不再**是覆盖缺口——它现在是一个真不变式（"段 PTS 晚于本集 PCS"）。
+    /// 把已实现的层继续列在这里会让一条真实的时序警告被读成"层没做"，
+    /// 而徽章却被扣在别的原因上。缺口清单只能列真的没跑的层。
+    ///
+    /// 层 5 里确实没做的部分（缓冲区占用曲线、acquisition 分支）用 `PGS.DEC.20`
+    /// 在报告里说明，但它**不是**徽章门禁：13 §6 要求的是"每层附未覆盖范围"，
+    /// 而那一条的缺失已由 `PGS.DEV.01`（整个第 7 层未做）代表。
+    pub const COVERAGE_GAP_CHECKS: [&'static str; 1] = ["PGS.DEV.01"];
 
     /// 本次报告是否声明了某个未覆盖的校验层。
     pub fn has_coverage_gap(&self) -> bool {
@@ -116,8 +125,9 @@ impl ValidationReport {
     /// 2. 没有 error/fatal；
     /// 3. 没有落在未实现层上的覆盖缺口。
     ///
-    /// 本实现覆盖不到第 5/7 层，按 Strict 跑时一定会拿到 `PGS.DEC.01`/`PGS.DEV.01`，
-    /// 因此当前**仍总是返回 false**——但它们是 warning，不会阻断 strict 对其余规则的检查。
+    /// 当前仍覆盖不到第 7 层（设备语料），按 Strict 跑时一定会拿到 `PGS.DEV.01`，
+    /// 因此**仍总是返回 false**——但它是 warning，不会阻断 strict 对其余规则的检查。
+    /// 第 5 层已实现，不再计入缺口。
     pub fn strict_badge_allowed(&self, validated_at: ValidationLevel) -> bool {
         validated_at == ValidationLevel::Strict
             && self.no_blocking_findings()

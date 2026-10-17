@@ -8,6 +8,7 @@
 //! - 解码器缓冲模型与设备语料不在本 crate 假通过，缺失时以 warning 显式声明。
 
 pub mod ass;
+pub mod decoder_model;
 pub mod pgs;
 pub mod report;
 

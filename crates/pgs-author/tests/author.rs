@@ -8,6 +8,7 @@ use core_model::profile::ValidationLevel;
 use core_model::time::{Fps, Time};
 use image_core::Frame;
 use pgs_author::{plan, AuthorOptions, EventKind, PlanBuilder, Sample};
+use validator::report::Severity;
 use validator::ProfileWant;
 
 const C: Canvas = Canvas::HD720;
@@ -222,9 +223,24 @@ fn authored_stream_is_valid_and_keeps_canvas_positions() {
     );
     assert!(
         !strict.strict_badge_allowed(ValidationLevel::Strict),
-        "第 5/7 层未覆盖，按 Strict 跑也必须被拦下"
+        "第 7 层设备语料未覆盖，按 Strict 跑仍必须被拦下"
     );
-    assert!(strict.has_check("PGS.DEC.01") && strict.has_check("PGS.DEV.01"));
+    // 第 5 层（解码器模型）已于 2026-10-17 实现，**不再**是覆盖缺口；
+    // 它现在跑真不变式，所以这里要求的是"它真的跑过"（有不变量结论），
+    // 而不是"报未实现"。仍然拦住徽章的是第 7 层。
+    assert!(
+        strict.has_check("PGS.DEC.10") || strict.has_check("PGS.DEC.20"),
+        "层 5 跑过就必须留下结论（全部成立或列出未含范围）：{:?}",
+        strict.text_lines()
+    );
+    assert!(strict.has_check("PGS.DEV.01"));
+    assert!(
+        !strict.findings.iter().any(|f| f.display_set.is_some()
+            && f.check.starts_with("PGS.DEC.")
+            && f.severity >= Severity::Warning),
+        "自己写出来的流不该有层 5 违例：{:?}",
+        strict.text_lines()
+    );
 
     // 采样消除确实发生在流里：3 个采样 → 2 个显示集（1 图 + 1 erase）
     assert_eq!(a.plan.stats.events, 2);

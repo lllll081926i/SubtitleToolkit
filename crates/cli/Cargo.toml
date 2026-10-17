@@ -33,6 +33,9 @@ font-service = { workspace = true }
 container-adapter = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+# 22 §5 的诊断包要写 deflate；与 image-core 的 PNG 同样的理由：
+# 压缩不自己实现（UTF-8/zlib 已有成熟实现且许可宽松）。
+flate2 = { workspace = true }
 
 [dev-dependencies]
 # 只为模糊冒烟：BDN XML 也必须做到"任何字节都不 panic"

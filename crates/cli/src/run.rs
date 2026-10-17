@@ -119,6 +119,10 @@ pub(crate) fn execute_ctx(
         Command::Settings { action, key, value } => {
             settings_cmd(*action, key.as_deref(), value.as_deref(), cmd)
         }
+        Command::Diagnose {
+            include_input,
+            job_state,
+        } => diagnose_cmd(inv, include_input, job_state.as_deref(), cmd),
         Command::Render {
             input,
             fps,
@@ -1297,6 +1301,153 @@ fn settings_json(s: &core_model::AppSettings) -> serde_json::Value {
         "experimental": s.experimental,
         "preserved_unknown_fields": s.extra.keys().collect::<Vec<_>>(),
     })
+}
+
+/// 22 §5 的诊断包。
+///
+/// 规格里最要紧的一句是「**默认不包含原字幕/视频**；用户显式选择才附样本」。
+/// 所以这里的分工是：
+///
+/// * 环境、版本、依赖身份、设置（脱敏）、缓存账目 —— 总是收，都不来自用户内容；
+/// * 输入文件 —— 只有 `--include-input` 给了才收，且在报告里单独列出来。
+///
+/// 报告必须回答两个问题，否则这个功能不可用：**包写在哪**、以及**里面有没有用户内容**。
+fn diagnose_cmd(
+    inv: &Invocation,
+    include_input: &[std::path::PathBuf],
+    job_state: Option<&Path>,
+    cmd: &str,
+) -> Result<Envelope> {
+    let mut b = crate::diagnostic::Bundle::new();
+    b.text(
+        "environment.json",
+        serde_json::to_string_pretty(&crate::diagnostic::environment(env!("CARGO_PKG_VERSION")))
+            .unwrap_or_else(|_| "{}".to_string()),
+    );
+
+    // 设置：脱敏后收（22 §5 的 settings-redacted）。
+    // 脱敏后仍然保留“这个键存在”这个事实，而不是整行删掉。
+    let store = core_model::SettingsStore::current();
+    let got = store.load();
+    b.text(
+        "settings.json",
+        serde_json::to_string_pretty(&crate::diagnostic::redact_settings(&serde_json::json!({
+            "settings": {
+                "schema": got.settings.schema,
+                "log_level": got.settings.log_level,
+                "default_fps": got.settings.default_fps,
+                "default_canvas": got.settings.default_canvas,
+                "ui_language": got.settings.ui_language,
+            },
+            "source": got.source.label(),
+            // 路径本身就是敏感信息（含用户名），所以它经脱敏逻辑之后才写进去
+            "path": store.path().map(|p| p.display().to_string()),
+            "problems": got.problems,
+        })))
+        .unwrap_or_else(|_| "{}".to_string()),
+    );
+
+    // 依赖身份：22 §5 明确要求。ffprobe/renderer host 的身份决定能不能复现。
+    let mut deps = serde_json::Map::new();
+    deps.insert(
+        "ffprobe".into(),
+        find_ffprobe()
+            .map(|p| serde_json::json!(p.display().to_string()))
+            .unwrap_or(serde_json::Value::Null),
+    );
+    deps.insert(
+        "render_host".into(),
+        serde_json::to_value(render_host_report()).unwrap_or(serde_json::Value::Null),
+    );
+    deps.insert(
+        "libass_dll".into(),
+        libass_dll(None)
+            .map(|p| serde_json::json!(p.display().to_string()))
+            .unwrap_or(serde_json::Value::Null),
+    );
+    b.text(
+        "dependencies.json",
+        serde_json::to_string_pretty(&serde_json::Value::Object(deps))
+            .unwrap_or_else(|_| "{}".to_string()),
+    );
+
+    // 缓存账目：它影响“同一命令两次跑为什么不一样”。
+    let cache = crate::rendercache::DiskCache::from_env();
+    let (bytes, count) = cache.as_ref().map(|c| c.usage()).unwrap_or((0, 0));
+    b.text(
+        "render_cache.json",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "enabled": cache.is_some(),
+            "dir": cache.as_ref().map(|c| c.dir().display().to_string()),
+            "entries": count,
+            "bytes": bytes,
+            "budget_bytes": cache.as_ref().map(|c| c.max_bytes()),
+        }))
+        .unwrap_or_else(|_| "{}".to_string()),
+    );
+
+    // 诊断包自己也把自己的红线写进包里：收包的人不必去猜。
+    b.text(
+        "README.txt",
+        "SubtitleToolkit 诊断包（22 §5）\n\n\
+         默认只包含环境、版本、依赖身份与脱敏后的设置，**不含用户的字幕或视频内容**。\n\
+         `input/` 下的条目是用户用 --include-input 显式附上的，请在对外发送前自行确认。\n\
+         settings.json 里与路径/凭据相关的键已替换为 ⟨已脱敏⟩。\n",
+    );
+
+    if let Some(js) = job_state {
+        b.file(Some("job-state.json"), js, false);
+    }
+    for f in include_input {
+        // 放进 input/ 子目录：一眼能看出"这些是用户内容"
+        let name = f
+            .file_name()
+            .map(|n| format!("input/{}", n.to_string_lossy()))
+            .unwrap_or_else(|| "input/unnamed".to_string());
+        b.file(Some(&name), f, true);
+    }
+
+    let user_content: Vec<String> = b
+        .user_content_names()
+        .into_iter()
+        .map(|s| s.to_string())
+        .collect();
+    let names: Vec<String> = b.names().into_iter().map(|s| s.to_string()).collect();
+
+    // 输出路径：默认 <数据目录>/diagnostics/stk-diag-<pid>.zip。
+    // 用 pid 而不是时间戳：它让同一次故障里跑几次也能并存，且不需要时区处理。
+    let out = match &inv.out {
+        Some(p) => p.clone(),
+        None => {
+            let dir = core_model::DataDir::resolve_current_exe();
+            let base = dir
+                .file("diagnostics")
+                .unwrap_or_else(|| std::env::temp_dir().join("subtitletool-diagnostics"));
+            base.join(format!("stk-diag-{}.zip", std::process::id()))
+        }
+    };
+    let zip = b.to_zip()?;
+    // 回读校验：把写出的字节能读回一个合法 zip（EOCD 存在、条目数与声明一致）。
+    // 与其它产物同一条纪律：能写不能读的产物不算写成功（15 §6、23）。
+    crate::pipeline::emit(
+        inv.out.as_deref(),
+        &out,
+        &zip,
+        crate::diagnostic::verify_zip,
+        inv.dry_run,
+        inv.overwrite,
+    )?;
+
+    Ok(Envelope::ok(
+        cmd,
+        serde_json::json!({
+            "path": out.display().to_string(),
+            "entries": names,
+            "contains_user_content": !user_content.is_empty(),
+            "user_content_entries": user_content,
+            "note": "默认不含原字幕/视频；user_content_entries 里的条目是显式附上的（22 §5）",
+        }),
+    ))
 }
 
 /// host 可执行文件在哪：`STK_RENDERER_HOST` → 与 CLI 同目录的 `subtitletool-render-host.exe`。

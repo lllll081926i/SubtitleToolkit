@@ -237,6 +237,13 @@ pub enum Command {
         /// `set` 的新值；其余动作是空。
         value: Option<String>,
     },
+    /// 22 §5 的诊断包：把故障现场打成一个 zip。
+    Diagnose {
+        /// 要附进去的输入文件（**显式**选择才会包含用户内容）。
+        include_input: Vec<PathBuf>,
+        /// 把上一次执行的 job state（如果命令给了它）一并收进去。
+        job_state: Option<PathBuf>,
+    },
     /// 15 §1 的批量任务：输入集合 × 多个输出 profile，spec 是 JSON。
     Batch {
         spec: PathBuf,
@@ -374,6 +381,7 @@ impl Command {
             Command::Doctor => "doctor",
             Command::Cache { .. } => "cache",
             Command::Settings { .. } => "settings",
+            Command::Diagnose { .. } => "diagnose",
             Command::Render { .. } => "render",
             Command::Batch { .. } => "batch",
             Command::FontScan { .. } => "font scan",
@@ -870,6 +878,34 @@ pub fn parse(argv: &[String]) -> Result<Invocation, ArgError> {
                 }
             };
             Command::Settings { action, key, value }
+        }
+        "diagnose" => {
+            let mut include_input = Vec::new();
+            let mut job_state = None;
+            let mut it = rest.iter();
+            while let Some(a) = it.next() {
+                match a.as_str() {
+                    "--include-input" => match it.next() {
+                        Some(v) => include_input.push(PathBuf::from(v)),
+                        None => {
+                            return Err(ArgError::usage("--include-input 后面要跟一个文件路径"))
+                        }
+                    },
+                    "--job-state" => match it.next() {
+                        Some(v) => job_state = Some(PathBuf::from(v)),
+                        None => return Err(ArgError::usage("--job-state 后面要跟一个文件路径")),
+                    },
+                    other => {
+                        return Err(ArgError::usage(format!(
+                            "diagnose 不认识参数 {other:?}（可用：--include-input FILE、--job-state FILE）"
+                        )))
+                    }
+                }
+            }
+            Command::Diagnose {
+                include_input,
+                job_state,
+            }
         }
         "render" => {
             let mut fps = Fps::NTSC_23976;

@@ -6,6 +6,7 @@
 pub mod args;
 pub mod batch;
 pub mod deliver;
+pub mod diagnostic;
 pub mod font;
 pub(crate) mod fontenv;
 pub(crate) mod front;

@@ -29,6 +29,7 @@ image-core = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time"] }
-iced = { version = "0.13", default-features = false, features = ["wgpu", "tokio", "image", "canvas", "advanced", "svg"] }
+# 不要开 "svg" 特性：它会引入 resvg/usvg（强制 MPL-2.0），与 21 §1 的核心许可政策冲突。
+# 图标改用 Unicode 字形（见 src/icons.rs）。
+iced = { version = "0.13", default-features = false, features = ["wgpu", "tokio", "image", "canvas", "advanced"] }
 rfd = "0.15"
-icondata = { version = "0.7", default-features = false, features = ["lucide"] }

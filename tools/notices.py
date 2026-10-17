@@ -9,7 +9,9 @@
 2. 任何不在 `deny.toml` 的 `[licenses].allow` 里的 SPDX 表达式都让脚本退出 1
    —— 也就是说这条门阶会在有人偷偷引入 GPL 依赖时变红，而不是等发布前才发现。
 
-用法：python tools/notices.py [--check]   # --check 只校验不写文件
+用法：python tools/notices.py [--check] [--fetch]
+  --check  只校验不写文件
+  --fetch  把本机缺的 .crate 归档下载下来再校验（平台专属依赖在 Windows 上从不下）
 """
 from __future__ import annotations
 
@@ -186,12 +188,21 @@ def parse_lock(path: Path) -> list[dict]:
 
 
 def crate_license(name: str, version: str) -> tuple[str | None, str | None]:
-    """从解压出来的 crate 源码里读 license / repository（这才是发布出去的那份文本）。"""
-    manifests = sorted((CARGO_HOME / "registry" / "src").glob(f"*/{name}-{version}/Cargo.toml"))
-    if not manifests:
+    """读 license / repository（发布出去的就是这份声明）。
+
+    优先读已解压的源码；找不到时回退到 `.crate` 归档内的 `Cargo.toml`。
+    为什么要回退：Windows x64 只编译一部分 crate，**平台专属的传递依赖**
+    （Android/iOS/Linux/wasm）会被下载但从不解压。只看 `registry/src`
+    会把它们误报成"读不到 license"，而许可其实就在归档里。
+    """
+    manifest = _manifest_from_src(name, version)
+    text = None
+    if manifest is not None:
+        text = manifest.read_text(encoding="utf-8", errors="replace")
+    else:
+        text = _manifest_from_archive(name, version)
+    if text is None:
         return (None, None)
-    manifest = manifests[0]
-    text = manifest.read_text(encoding="utf-8", errors="replace")
     m = re.search(r'(?m)^license\s*=\s*"([^"]+)"', text)
     repo = re.search(r'(?m)^repository\s*=\s*"([^"]+)"', text)
     lic = m.group(1) if m else None
@@ -202,8 +213,95 @@ def crate_license(name: str, version: str) -> tuple[str | None, str | None]:
     return (lic, repo.group(1) if repo else None)
 
 
+def _manifest_from_src(name: str, version: str) -> Path | None:
+    manifests = sorted((CARGO_HOME / "registry" / "src").glob(f"*/{name}-{version}/Cargo.toml"))
+    return manifests[0] if manifests else None
+
+
+def _manifest_from_archive(name: str, version: str) -> str | None:
+    """从 `.crate`（gzip 包住的 tar）里读取 `Cargo.toml` 文本。
+
+    用标准库的 gzip+tarfile，不引入第三方依赖。读取失败返回 None，
+    调用方照旧报"读不到 license"，不会静默当成已授权。
+    """
+    archives = _crate_archives(name, version)
+    if not archives:
+        return None
+    import gzip
+    import tarfile
+
+    try:
+        with gzip.open(archives[0], "rb") as gz, tarfile.open(fileobj=gz, mode="r:") as tar:
+            member = tar.getmember(f"{name}-{version}/Cargo.toml")
+            fh = tar.extractfile(member)
+            if fh is None:
+                return None
+            return fh.read().decode("utf-8", errors="replace")
+    except (OSError, KeyError, tarfile.TarError):
+        return None
+
+
+def _crate_archives(name: str, version: str) -> list[Path]:
+    """cargo 把归档放在 `cache/<registry>-<hash>/name-version.crate` 下。
+
+    两个位置都查：以 registry 子目录为主，兼容直接放在 `cache/` 根下的情况
+    （`fetch_missing()` 就写在那里）。
+    """
+    root = CARGO_HOME / "registry" / "cache"
+    found = sorted(root.glob(f"*/{name}-{version}.crate"))
+    direct = root / f"{name}-{version}.crate"
+    if direct.is_file():
+        found.append(direct)
+    return found
+
+
+# sparse index 的下载模板：{crate}/{version}/download
+REGISTRY_DL_BASES = (
+    "https://rsproxy.cn/api/v1/crates",
+    "https://static.crates.io/crates",
+)
+
+
+def fetch_missing(names: list[tuple[str, str]]) -> int:
+    """把本机缺的 `.crate` 归档下来，让许可门阶能真的检查它们。
+
+    为什么要这一步：Windows x64 只编译一部分 crate，**平台专属的传递依赖**
+    （Android/iOS/Linux/wasm）会被写进 `Cargo.lock` 但从不下载。它们的许可
+    就只存在于归档里，不取下来就只能报"读不到"——而"读不到"跟"没许可证"
+    是两回事，不能混。
+
+    返回下载失败条数；失败不静默跳过。
+    """
+    import urllib.error
+    import urllib.request
+
+    cache_root = CARGO_HOME / "registry" / "cache"
+    cache_root.mkdir(parents=True, exist_ok=True)
+    failed = 0
+    for name, version in names:
+        if _crate_archives(name, version):
+            continue
+        dest = cache_root / f"{name}-{version}.crate"
+        got = False
+        for base in REGISTRY_DL_BASES:
+            url = f"{base}/{name}/{version}/download"
+            try:
+                with urllib.request.urlopen(url, timeout=60) as resp:
+                    data = resp.read()
+            except (urllib.error.URLError, OSError, TimeoutError):
+                continue
+            if data[:2] == b"\x1f\x8b":  # gzip 魔数：确认拿到的是归档而不是错误页
+                dest.write_bytes(data)
+                got = True
+                break
+        if not got:
+            print(f"  下载失败：{name} {version}")
+            failed += 1
+    return failed
+
+
 def crate_sha256(name: str, version: str) -> str | None:
-    archives = sorted((CARGO_HOME / "registry" / "cache").glob(f"*/{name}-{version}.crate"))
+    archives = _crate_archives(name, version)
     if not archives:
         return None
     f = archives[0]
@@ -220,11 +318,13 @@ def allowed_licenses() -> set[str]:
 
 
 def split_expr(expr: str) -> list[str]:
-    """把 SPDX 表达式拆成单个许可标识。
+    """把 SPDX 表达式拆成单个许可标识（用于清单展示）。
 
     现实里三种写法都出现过：`MIT OR Apache-2.0`、`MIT/Apache-2.0`（老式斜杠=OR）、
     `(MIT OR Apache-2.0) AND Unicode-3.0`。括号与空白都是噪声，剥掉再比。
-    AND 的两侧都必须各自在白名单里，这才是"必须同时满足"的正确读法。
+
+    注意：本函数只是展开，**不做合规判定**。合规判定要用 `expr_allowed()`，
+    因为 `A OR B` 只需一侧在白名单里就算过，“逐个 token 都必须白名单”是错的读法。
     """
     parts = re.split(r"(?i)\s+(?:OR|AND)\s+|\s*\|\|\s*|\s*/\s*", expr.strip())
     out = []
@@ -235,8 +335,101 @@ def split_expr(expr: str) -> list[str]:
     return out
 
 
+def expr_allowed(expr: str, allow: set[str]) -> tuple[bool, str]:
+    """按 SPDX 语义判定表达式是否被白名单接纳。返回（是否通过，拒绝原因）。
+
+    规则（SPDX 2.x）：
+    * `A OR B`：任一侧在白名单内即可（我们可自由选那一侧）；
+    * `A AND B`：两侧都必须白名单，否则义务叠加后不满足；
+    * 单个 token：必须在白名单内。
+
+    为什么要专门做这件事：把 `Apache-2.0 OR GPL-2.0-only` 拆开后逐个 token 要求
+    白名单，会把它误报成 GPL 污染 —— 而它实际上可以按 Apache-2.0 使用。
+    反过来，`MPL-2.0` 这种没有宽松选项的必须照实报。
+    """
+
+    def _parse(s: str) -> tuple[bool, str]:
+        s = s.strip()
+        # 去一层最外层平衡括号
+        if s.startswith("(") and s.endswith(")"):
+            inner = s[1:-1]
+            depth = 0
+            balanced = True
+            for i, ch in enumerate(inner):
+                if ch == "(":
+                    depth += 1
+                elif ch == ")":
+                    depth -= 1
+                    if depth < 0:
+                        balanced = False
+                        break
+            if balanced and depth == 0:
+                return _parse(inner)
+        # OR 优先级低于 AND：先拆 OR
+        or_parts = _top_split(s, "OR")
+        if len(or_parts) > 1:
+            reasons = []
+            for p in or_parts:
+                ok, why = _parse(p)
+                if ok:
+                    return (True, "")
+                reasons.append(why)
+            return (False, " 与 ".join(reasons))
+        and_parts = _top_split(s, "AND")
+        if len(and_parts) > 1:
+            for p in and_parts:
+                ok, why = _parse(p)
+                if not ok:
+                    return (False, why)
+            return (True, "")
+        token = s.strip(" ()[]{},").strip()
+        if token in allow:
+            return (True, "")
+        return (False, f"许可 {token!r} 不在 21 §1 白名单内")
+
+    return _parse(expr)
+
+
+def _top_split(expr: str, op: str) -> list[str]:
+    """在括号深度 0 处按操作符拆分。
+
+    除了关键字，还要处理老式斜杠写法：`MIT/Apache-2.0` 与 `Apache-2.0/MIT` 在
+    整条生态系统里常见，SPDX 官方已弃用但包元数据里仍大量存在，斜杠等价于 OR。
+    """
+    out: list[str] = []
+    depth = 0
+    buf = []
+    i = 0
+    n = len(expr)
+    while i < n:
+        ch = expr[i]
+        if ch == "(":
+            depth += 1
+        elif ch == ")":
+            depth -= 1
+        if depth == 0:
+            rest = expr[i:]
+            m = re.match(rf"(?i)^\s+{op}\s+", rest)
+            if m:
+                out.append("".join(buf))
+                buf = []
+                i += m.end()
+                continue
+            # 老式斜杠只当 OR：仅当拆的是 OR 且在深度 0 时生效
+            if op == "OR" and ch == "/":
+                out.append("".join(buf))
+                buf = []
+                i += 1
+                continue
+        buf.append(ch)
+        i += 1
+    out.append("".join(buf))
+    return [p for p in out if p.strip()]
+
+
 def main(argv: list[str]) -> int:
     check = "--check" in argv
+    fetch = "--fetch" in argv
     lock = ROOT / "Cargo.lock"
     if not lock.is_file():
         print("FAIL: 没有 Cargo.lock（复现能力要求它入库）")
@@ -245,22 +438,38 @@ def main(argv: list[str]) -> int:
     if not allow:
         print("FAIL: deny.toml 的 [licenses].allow 是空的")
         return 1
+
+    # 先把本机缺的归档补齐（只补下载，不改任何声明）：平台专属传递依赖在 Windows
+    # 上从不被下载，不补就只能报"读不到"，而那是环境事实不是许可事实。
+    registry_pkgs = [
+        (p["name"], p.get("version", ""))
+        for p in parse_lock(lock)
+        if "registry+" in p.get("source", "")
+    ]
+    absent = [(n, v) for (n, v) in registry_pkgs if not _crate_archives(n, v) and _manifest_from_src(n, v) is None]
+    if absent:
+        if fetch:
+            print("本机缺 %d 个包，按 --fetch 下载归档…" % len(absent))
+            fetch_missing(absent)
+        else:
+            print("提示：本机缺 %d 个包（平台专属依赖），未下载。加 --fetch 可下载后校验。" % len(absent))
+
     rows = []
     problems = []
-    for pkg in sorted(parse_lock(lock), key=lambda p: (p["name"], p.get("version", ""))):
-        name, version = pkg["name"], pkg.get("version", "")
-        source = pkg.get("source", "")
-        if "registry+" not in source:
-            continue  # 本地 workspace 成员，不属于第三方
+    for name, version in sorted(registry_pkgs, key=lambda t: (t[0], t[1])):
         lic, repo = crate_license(name, version)
         sha = crate_sha256(name, version)
         if lic is None:
-            problems.append("%s %s: 读不到 license 字段" % (name, version))
+            problems.append(
+                "%s %s: 读不到 license 字段（本机既无解压源码也无 .crate 归档；用 --fetch 下载后重试）"
+                % (name, version)
+            )
             lic = "UNKNOWN"
         else:
-            for token in split_expr(lic):
-                if token not in allow:
-                    problems.append("%s %s: 许可 %r 不在 21 §1 白名单内" % (name, version, token))
+            ok, why = expr_allowed(lic, allow)
+            if not ok:
+                problems.append("%s %s: %s" % (name, version, why))
+        pkg = next(p for p in parse_lock(lock) if p["name"] == name and p.get("version", "") == version)
         rows.append((name, version, lic, repo or "", sha or "", (pkg.get("checksum") or "")[:16]))
 
     lines = [

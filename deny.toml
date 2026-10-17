@@ -45,6 +45,15 @@ allow = [
     "Unlicense",
     # 0BSD 是 BSD-2 的进一步简化
     "0BSD",
+    # 以下两项经决策记录加入（ISSUES E 节），不是"当前依赖恰好用到什么"：
+    # BSL-1.0（Boost Software License）与 CC0-1.0（公有领域奉献）均为**宽松**许可，
+    # 无 copyleft 义务，与 21 §1 的"核心只收宽松许可"一致。
+    # 实测来源：BSL-1.0 经 gui→iced→iced_winit→window_clipboard→clipboard-win/error-code；
+    # CC0-1.0 经 gui→iced→iced_wgpu→wgpu→naga→hexf-parse。两者均只在 GUI 依赖树内。
+    "BSL-1.0",
+    "CC0-1.0",
+    # 注意：MPL-2.0 **不在**白名单。gui 的 iced 因不开 "svg" 特性而不引入 resvg/usvg；
+    # 若将来要启用，需先做决策记录（MPL 是文件级弱 copyleft，不是纯宽松许可）。
 ]
 confidence-threshold = 0.8
 # 只有确实需要例外时才写；每一条都要能指回文档章节

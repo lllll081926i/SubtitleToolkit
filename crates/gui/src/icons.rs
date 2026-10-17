@@ -1,83 +1,74 @@
-use iced::widget::svg::{Handle, Svg};
-use iced::Length;
-use icondata::{
-    LuActivity, LuArrowRight, LuCheck, LuChevronDown, LuChevronUp, LuCopy, LuFolder, LuPlay,
-    LuPlus, LuSettings, LuSkipBack, LuSkipForward, LuSquare, LuX,
-};
+//! 界面图标：返回 `Text` 控件，不依赖 iced 的 `svg` 特性。
+//!
+//! 为什么不用 `iced::widget::svg`：该特性会引入 `resvg`/`usvg`（强制 MPL-2.0），
+//! 与 21 §1「核心只收宽松许可」冲突，也让依赖树多出上百个包。图标在这里只作
+//! 小尺寸装饰，用 Unicode 符号即可，不需要完整的 SVG 渲染栈。
 
-/// 将成熟图标库 icondata 的矢量数据转换为 Iced 原生 SVG 控件
-pub fn render(data: icondata::Icon, size: f32) -> Svg<'static, iced::Theme> {
-    let view_box = data.view_box.unwrap_or("0 0 24 24");
-    let stroke = data.stroke.unwrap_or("currentColor");
-    let stroke_width = data.stroke_width.unwrap_or("2");
-    let fill = data.fill.unwrap_or("none");
-    let stroke_linecap = data.stroke_linecap.unwrap_or("round");
-    let stroke_linejoin = data.stroke_linejoin.unwrap_or("round");
+use iced::widget::text;
+use iced::{Element, Font, Length};
 
-    let svg_str = format!(
-        r#"<svg xmlns="http://www.w3.org/2000/svg" viewBox="{view_box}" fill="{fill}" stroke="{stroke}" stroke-width="{stroke_width}" stroke-linecap="{stroke_linecap}" stroke-linejoin="{stroke_linejoin}">{}</svg>"#,
-        data.data
-    );
-
-    iced::widget::svg(Handle::from_memory(svg_str.into_bytes()))
-        .width(Length::Fixed(size))
-        .height(Length::Fixed(size))
+/// 图标以固定尺寸的居中字形呈现，保证与相邻文字基线对齐。
+fn glyph(sym: &'static str, size: f32) -> Element<'static, crate::message::Message> {
+    text(sym)
+        .size(size)
+        .width(Length::Fixed(size * 1.3))
+        .height(Length::Fixed(size * 1.3))
+        .font(Font::DEFAULT)
+        .into()
 }
 
-// === 成熟的 Lucide 矢量图标语义导出，杜绝任何 Emoji ===
-
-pub fn play(size: f32) -> Svg<'static, iced::Theme> {
-    render(LuPlay, size)
+pub fn play(size: f32) -> Element<'static, crate::message::Message> {
+    glyph("▶", size)
 }
 
-pub fn stop(size: f32) -> Svg<'static, iced::Theme> {
-    render(LuSquare, size)
+pub fn stop(size: f32) -> Element<'static, crate::message::Message> {
+    glyph("■", size)
 }
 
-pub fn skip_back(size: f32) -> Svg<'static, iced::Theme> {
-    render(LuSkipBack, size)
+pub fn skip_back(size: f32) -> Element<'static, crate::message::Message> {
+    glyph("⏮", size)
 }
 
-pub fn skip_forward(size: f32) -> Svg<'static, iced::Theme> {
-    render(LuSkipForward, size)
+pub fn skip_forward(size: f32) -> Element<'static, crate::message::Message> {
+    glyph("⏭", size)
 }
 
-pub fn plus(size: f32) -> Svg<'static, iced::Theme> {
-    render(LuPlus, size)
+pub fn plus(size: f32) -> Element<'static, crate::message::Message> {
+    glyph("＋", size)
 }
 
-pub fn close(size: f32) -> Svg<'static, iced::Theme> {
-    render(LuX, size)
+pub fn close(size: f32) -> Element<'static, crate::message::Message> {
+    glyph("✕", size)
 }
 
-pub fn copy(size: f32) -> Svg<'static, iced::Theme> {
-    render(LuCopy, size)
+pub fn copy(size: f32) -> Element<'static, crate::message::Message> {
+    glyph("⧉", size)
 }
 
-pub fn check(size: f32) -> Svg<'static, iced::Theme> {
-    render(LuCheck, size)
+pub fn check(size: f32) -> Element<'static, crate::message::Message> {
+    glyph("✓", size)
 }
 
-pub fn folder(size: f32) -> Svg<'static, iced::Theme> {
-    render(LuFolder, size)
+pub fn folder(size: f32) -> Element<'static, crate::message::Message> {
+    glyph("🗀", size)
 }
 
-pub fn settings(size: f32) -> Svg<'static, iced::Theme> {
-    render(LuSettings, size)
+pub fn settings(size: f32) -> Element<'static, crate::message::Message> {
+    glyph("⚙", size)
 }
 
-pub fn chevron_up(size: f32) -> Svg<'static, iced::Theme> {
-    render(LuChevronUp, size)
+pub fn chevron_up(size: f32) -> Element<'static, crate::message::Message> {
+    glyph("▲", size)
 }
 
-pub fn chevron_down(size: f32) -> Svg<'static, iced::Theme> {
-    render(LuChevronDown, size)
+pub fn chevron_down(size: f32) -> Element<'static, crate::message::Message> {
+    glyph("▼", size)
 }
 
-pub fn activity(size: f32) -> Svg<'static, iced::Theme> {
-    render(LuActivity, size)
+pub fn activity(size: f32) -> Element<'static, crate::message::Message> {
+    glyph("◉", size)
 }
 
-pub fn arrow_right(size: f32) -> Svg<'static, iced::Theme> {
-    render(LuArrowRight, size)
+pub fn arrow_right(size: f32) -> Element<'static, crate::message::Message> {
+    glyph("→", size)
 }

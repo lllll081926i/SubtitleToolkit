@@ -8,6 +8,7 @@
 - 2026-10-16 落地了该审查的四项代码建议（IPC 自残后门、字体缓存坏就用坏即弃、Strict 不再被未实现层阻断、XML 加固幅述校正），证据与未做项见[审查报告第五节](reviews/2026-10-09-code-audit-defense.md)。新增 GUI crate（`crates/gui`，Iced 工作台骨架）可编译，但任务执行链未接通真实引擎、无测试，不计为已交付。
 - 2026-10-16 核验了 Phase 0–2 的退出条件（均满足），并补齐 AT-BATCH-001 的 100×3 容量用例；仍未覆盖项与证据见[实施检查表](planning/39_IMPLEMENTATION_CHECKLIST.md)。
 - 2026-10-17 推进 Phase 6 发布起步：补齐根目录双许可正文，新增 `tools/make_portable.ps1` 并实测（解包后 CLI 与 renderer-host 可运行、`SHA256SUMS.txt` 校验通过）。安装器、签名、便携数据目录与第三方 DLL 分发审计仍未完成，见 [28 节](development/28_WINDOWS_BUILD_RELEASE.md)。
+- 2026-10-17 修正依赖许可门禁：`tools/notices.py` 原先只读已解压源码（平台专属依赖从不下载，误报 37 项"读不到 license"），且把 SPDX 的 `A OR B` 拆开逐个要求白名单（把 `Apache-2.0 OR GPL-2.0-only` 误报成 GPL 污染）。已改为回退读 `.crate` 归档、按 SPDX 语义判定，并新增 `--fetch`。真实结论：无 GPL/LGPL 强制义务；`gui` 关闭 iced 的 `svg` 特性后去掉了强制 MPL-2.0 的 `resvg`/`usvg`（依赖 487→470 包）。`THIRD_PARTY_NOTICES.md` 已重新生成。
 
 ## 项目边界
 

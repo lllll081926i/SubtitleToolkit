@@ -170,4 +170,16 @@ impl ProfilesState {
     pub fn enabled_profiles(&self) -> Vec<&OutputProfile> {
         self.profiles.iter().filter(|p| p.enabled).collect()
     }
+
+    /// 当前选中的（正在编辑的）profile。
+    ///
+    /// 回退顺序：`active_edit_id` → 第一个启用的 → 第一个。
+    /// 这个回退是有意的：A/B 对比要展示“当前 Profile 的变换”，
+    /// 而“当前”在用户没点过任何 profile 时应当是那个**会真的拿去做导出**的。
+    pub fn active_profile(&self) -> Option<&OutputProfile> {
+        self.active_edit_id
+            .and_then(|id| self.profiles.iter().find(|p| p.id == id))
+            .or_else(|| self.profiles.iter().find(|p| p.enabled))
+            .or_else(|| self.profiles.first())
+    }
 }

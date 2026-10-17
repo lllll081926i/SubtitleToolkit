@@ -43,40 +43,127 @@ impl SubtitleApp {
         "SubtitleToolkit-RS 字幕工程工作台".into()
     }
 
+    /// 请求渲染当前预览帧。
+    ///
+    /// 三个入口（选中输入 / 改时间 / 切 A/B）共用它：
+    /// “什么时候重渲”只能有一处判断，否则“改了时间但忘了重渲”这类洞
+    /// 会在某一个入口上单独出现（那就意味着换一条路进来看到的还是旧帧）。
+    ///
+    /// A/B 开关打开时请求**两张**帧（05 §4.1）：左半是原版，右半是应用了
+    /// 当前 Profile 变换的版本。变换用的是 `transform_hdr` / `transform_resolution`
+    /// ——与 `hdr` 命令和导出链同一份实现，所以对比结果就是导出的预演。
+    fn request_preview(&mut self) -> Task<Message> {
+        let Some(item) = self.inputs.active_input() else {
+            return Task::none();
+        };
+        let path = item.path.clone();
+        let time = self.preview.current_time_ms;
+        self.preview.is_rendering = true;
+
+        // 画布：用当前选中 Profile 的目标尺寸作为 B 侧；A 侧用同一存储画布。
+        //
+        // A 侧刻意**不**跟着 Profile 的尺寸走：规格写的是“左半屏显示原版
+        // （SDR / 原始尺寸）”。若让 A 也跟着目标画布，两个画面就只剩色调差异，
+        // “缩放导致的版面变化”就看不到了 —— 而那是用户开对比的一半理由。
+        let (canvas_a, canvas_b, hdr, has_hdr) = self.ab_plan();
+        // 闭包要 `'static`：在它**外面**把两个画布拷成局部值，
+        // 而不是靠在闭包里再取（那样会借到 `canvas_a` 本身）。
+        let (ca_w, ca_h) = canvas_a;
+        let (cb_w, cb_h) = canvas_b;
+
+        if self.preview.is_split_ab {
+            return Task::perform(
+                async move {
+                    crate::worker::preview_worker::render_ab(
+                        crate::worker::preview_worker::AbRequest {
+                            ass_path: path,
+                            time_ms: time,
+                            canvas_a: (ca_w, ca_h),
+                            canvas_b: (cb_w, cb_h),
+                            hdr,
+                            scale_to_canvas: (ca_w, ca_h) != (cb_w, cb_h),
+                        },
+                    )
+                    .await
+                },
+                move |res| match res {
+                    Ok(f) => Message::AbRendered {
+                        a_rgba: f.a.rgba,
+                        a_dims: (f.a.width, f.a.height),
+                        b_rgba: f.b.rgba,
+                        b_dims: (f.b.width, f.b.height),
+                        note: f.note,
+                        source: f.b.source,
+                    },
+                    Err(e) => Message::AbRendered {
+                        a_rgba: vec![],
+                        a_dims: (ca_w, ca_h),
+                        b_rgba: vec![],
+                        b_dims: (cb_w, cb_h),
+                        note: String::new(),
+                        source: crate::state::preview::FrameSource::Failed { code: e },
+                    },
+                },
+            );
+        }
+
+        // 非 A/B：单帧，尺寸用 A 侧（原版）。
+        // 这里保留 `hdr`/`has_hdr` 的读取，它们只在 A/B 里用。
+        let _ = (hdr, has_hdr);
+        Task::perform(
+            async move {
+                crate::worker::preview_worker::render_single_frame(path, time, (ca_w, ca_h)).await
+            },
+            |res| match res {
+                Ok(f) => Message::FrameRendered {
+                    rgba: f.rgba,
+                    width: f.width,
+                    height: f.height,
+                    source: f.source,
+                },
+                Err(e) => Message::FrameRendered {
+                    rgba: vec![],
+                    width: 1920,
+                    height: 1080,
+                    source: crate::state::preview::FrameSource::Failed { code: e },
+                },
+            },
+        )
+    }
+
+    /// 从当前选中的 Profile 推出 A/B 两侧的画布与 HDR 设置。
+    ///
+    /// 没有选中 Profile 时退回“两侧相同、不做变换”——
+    /// 那是一个**惰性但正确**的结果（两张一样的图 + 注记说明没做变换），
+    /// 比编一个变换出来好。
+    fn ab_plan(&self) -> ((u32, u32), (u32, u32), crate::state::profile::HdrMode, bool) {
+        use crate::state::profile::CanvasMode;
+        let original = (1920u32, 1080u32);
+        let Some(p) = self.profiles.active_profile() else {
+            return (
+                original,
+                original,
+                crate::state::profile::HdrMode::Sdr,
+                false,
+            );
+        };
+        let target = match p.canvas {
+            CanvasMode::KeepOriginal => original,
+            CanvasMode::Hd720 => (1280, 720),
+            CanvasMode::Fhd1080 => (1920, 1080),
+            CanvasMode::Uhd2160 => (3840, 2160),
+            CanvasMode::Custom(w, h) => (w, h),
+        };
+        let has_hdr = !matches!(p.hdr, crate::state::profile::HdrMode::Sdr);
+        (original, target, p.hdr, has_hdr)
+    }
+
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
             // === 左栏输入事件 ===
             Message::InputSelected(id) => {
                 self.inputs.active_preview_id = Some(id);
-                if let Some(item) = self.inputs.active_input() {
-                    let path = item.path.clone();
-                    let time = self.preview.current_time_ms;
-                    self.preview.is_rendering = true;
-                    return Task::perform(
-                        async move {
-                            crate::worker::preview_worker::render_single_frame(
-                                path,
-                                time,
-                                (1920, 1080),
-                            )
-                            .await
-                        },
-                        |res| match res {
-                            Ok(f) => Message::FrameRendered {
-                                rgba: f.rgba,
-                                width: f.width,
-                                height: f.height,
-                                source: f.source,
-                            },
-                            Err(e) => Message::FrameRendered {
-                                rgba: vec![],
-                                width: 1920,
-                                height: 1080,
-                                source: crate::state::preview::FrameSource::Failed { code: e },
-                            },
-                        },
-                    );
-                }
+                return self.request_preview();
             }
             Message::InputToggled(id) => self.inputs.toggle_select(id),
             Message::SelectAllInputs(s) => self.inputs.select_all(s),
@@ -116,41 +203,46 @@ impl SubtitleApp {
             // === 中栏预览事件 ===
             Message::PreviewTimeChanged(time) => {
                 self.preview.set_time(time);
-                if let Some(item) = self.inputs.active_input() {
-                    let path = item.path.clone();
-                    self.preview.is_rendering = true;
-                    return Task::perform(
-                        async move {
-                            crate::worker::preview_worker::render_single_frame(
-                                path,
-                                time,
-                                (1920, 1080),
-                            )
-                            .await
-                        },
-                        |res| match res {
-                            Ok(f) => Message::FrameRendered {
-                                rgba: f.rgba,
-                                width: f.width,
-                                height: f.height,
-                                source: f.source,
-                            },
-                            Err(e) => Message::FrameRendered {
-                                rgba: vec![],
-                                width: 1920,
-                                height: 1080,
-                                source: crate::state::preview::FrameSource::Failed { code: e },
-                            },
-                        },
-                    );
-                }
+                return self.request_preview();
             }
             Message::PreviewJumpEvent(next) => {
                 let step = if next { 2000 } else { -2000 };
                 let t = (self.preview.current_time_ms + step).max(0);
                 return self.update(Message::PreviewTimeChanged(t));
             }
-            Message::ToggleSplitAb => self.preview.toggle_split_ab(),
+            Message::ToggleSplitAb => {
+                self.preview.toggle_split_ab();
+                // 05 §4.1：开关不是只换个标签 —— 打开时**真去渲对照帧**，
+                // 关掉时把对照帧丢掉（留着它下次开时可能拿旧帧当新帧）。
+                return self.request_preview();
+            }
+            Message::AbRendered {
+                a_rgba,
+                a_dims,
+                b_rgba,
+                b_dims,
+                note,
+                source,
+            } => {
+                self.preview.is_rendering = false;
+                self.preview.ab_note = Some(note);
+                if a_rgba.is_empty() || b_rgba.is_empty() {
+                    let code = match source {
+                        crate::state::preview::FrameSource::Failed { code } => code,
+                        _ => "未提供错误码".to_string(),
+                    };
+                    self.preview.clear_frame(code);
+                } else {
+                    let provider = match &source {
+                        crate::state::preview::FrameSource::Renderer { provider } => {
+                            provider.clone()
+                        }
+                        other => other.label().to_string(),
+                    };
+                    self.preview
+                        .set_ab_frames(a_rgba, a_dims, b_rgba, b_dims, provider);
+                }
+            }
             Message::FrameRendered {
                 rgba,
                 width,

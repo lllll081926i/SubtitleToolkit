@@ -42,6 +42,22 @@
   （含真 libass 通过检查并真的渲染出 BDN XML，以及“同位 PE 不被误判”的负基线）；
   `core-model/src/pe.rs` 的 4 用例把 Itanium（0x0200）正确归为 `Other` 而不是 x64。
   详见[PE 架构检测裁决](reviews/2026-10-17-pe-arch-check.md)。
+- 2026-10-17 **把 A/B 分屏对比从占位控件改成真实现**（05 §4.1）：交付前
+  `ToggleSplitAb` **只翻转一个布尔值并改按钮文字**，画面毫无变化 ——
+  而那正是 05 §1 第 3 条明令禁止的“占位控件”。现在 B 侧对**脚本文本**
+  应用 Profile 的变换（HDR 调光 + 等比缩放）后再渲染，用的是与 `hdr` 命令、
+  导出链**同一份** `transform_hdr` / `transform_resolution`（因为用户开对比的
+  目的就是预判导出成什么样）。画面拼接在视图层做（左右分屏 + 中缝分隔线），
+  状态里存两张独立帧，于是切布局不需重渲。
+  开发中抳出三个真缺陷：① `HdrSettings` 的 `touch_styles`/`touch_inline`
+  默认为 `false`，拿 `..Default::default()` 拼出来的设置**一个颜色都不改却报成功**
+  （必须用 `reference_white()`/`percentage()` 构造函数；若无“像素真的变了”
+  这条断言它会一路绿过去）；② `ReferenceWhite(203)` 是**恒等映射**
+  （203 就是 SDR 基准）且恰是默认 profile 的取值，于是新用户会看到两张一样的图
+  —— 现在注记会说清楚是恒等而不是功能坏了；③ `clear_frame` 只清 A 侧，
+  于是下一次渲好时会拿**新的 A** 配**旧的 B**，而那两张图看起来都正常。
+  证据：`gui/tests/ab_compare.rs` 9 用例（含真 libass 的像素差异断言与负基线）。
+  详见[A/B 对比裁决](reviews/2026-10-17-ab-split-compare.md)。
 - 2026-10-17 **实现 22 §6 的崩溃现场记录**（真 minidump 仍未做，且说明了为何不做）：
   新增 `renderer-host::crash`。host 在阶段边界（启动 / 载脚本 / 出第 N 帧 / 收尾）
   把现场写成一个 json；主进程崩后读回来，把「阶段、序号、provider 身份、
@@ -104,6 +120,9 @@
   **真 minidump 未做**（需异常处理器 + 含内存镜像，与 22 §5 默认可外发相抵）。
 - AT-UI-001 的**实测**：真重任务在后台跑时反复计时 `SubtitleApp::update`，
   最慢 18.5µs / 均值 9.5µs（预算 8ms，37 §1）；取消点击不阻塞且令牌与 worker 同源。
+- 05 §4.1 的 A/B 分屏对比：B 侧对**脚本**应用 Profile 变换（HDR + 等比缩放）后重渲，
+  用与导出同一份 `transform_hdr`/`transform_resolution`；恒等映射会说明原因；
+  任一侧为空则两侧都清（防新的 A 配旧的 B）。
 - 23 §DLL 的 PE arch 检测（单份实现在 `core_model::pe`，主程序与 host 共用）；
   CLI 把“不存在/不是 PE/位数不符”分成三个可分的错误码；`JobSnapshot` 的 `arch` 读 PE 头而非写死。
 - 23 §文件 的大文件拒绝（`pipeline::read_bounded`）：**先 stat 再读**，

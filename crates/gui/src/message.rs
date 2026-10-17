@@ -26,6 +26,19 @@ pub enum Message {
         /// 不能丢：丢了之后界面会把占位色块当成真实预览。
         source: crate::state::preview::FrameSource,
     },
+    /// A/B 两侧都渲染好了（05 §4.1）。
+    ///
+    /// 两条分开传，而不是各发一条 `FrameRendered`：
+    /// 那种写法会在两条消息之间出现“新旧混搭”的中间状态（左半是这一刻的、
+    /// 右半是上一刻的），而那种不一致看起来和真实的颜色差异一模一样。
+    AbRendered {
+        a_rgba: Vec<u8>,
+        a_dims: (u32, u32),
+        b_rgba: Vec<u8>,
+        b_dims: (u32, u32),
+        note: String,
+        source: crate::state::preview::FrameSource,
+    },
 
     // === 右栏：Profile 矩阵 ===
     ProfileSelected(usize),

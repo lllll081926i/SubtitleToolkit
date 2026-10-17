@@ -23,10 +23,11 @@
 | Smart sync | 可选 | 已实现确定性执行（`time --piecewise`） | `PiecewiseMap` 多段线性映射，控制点由调用方显式给出；**不做**剪辑点自动检测（需要内容比对，另一条研究线）。RL01 的自动对齐仍未做 |
 | Advanced PGS author / Strict validator | 后续 | 第 1–6 层已实现（含第 5 层解码器模型） | 第 7 层设备语料未取得，`strict_badge_allowed` 仍恒为 false；第 5 层未含缓冲区占用曲线与 acquisition 分支 |
 | OCR SUP→SRT | 可选 | 未实现 | 独立研究线，不进入 CLI MVP 前置条件 |
-| Windows GUI | P0 产品目标 | 已接通（Iced 工作台 + 真 batch 通路）；AT-UI-001 已**实测**（最慢 18.5µs / 预算 8ms） | A/B 对比渲染、真人交互/IME/DPI 实测未做 |
+| Windows GUI | P0 产品目标 | 已接通（Iced 工作台 + 真 batch 通路）；AT-UI-001 已**实测**（最慢 18.5µs / 预算 8ms）；A/B 分屏对比已接真变换 | 真人交互/IME/DPI 实测未做；A/B 不演示时间轴变换 |
 | Installer、portable、签名与更新 | 发布阶段 | portable 包已实现（checksums + SBOM + notices 三件套） | 安装器、Authenticode 签名、更新器未做 |
 | 36 §1 AppSettings | 已交付 | `settings show\|init\|set`；未知字段保留、坏文件不阻塞、原子写 | ToolDefaults 与 Preset（需 TOML 依赖获批）未做 |
 | 37 §2 渲染缓存 | 已交付 | 内存共享 + 磁盘（配额、清理、损坏自愈、跨运行复用） | 内存那级不是容量受限 LRU；benchmark 阈值（37 §6）未做 |
+| 05 §4.1 A/B 分屏对比 | 已交付 | 左原版/右变换（HDR 调光 + 等比缩放），用 `transform_hdr`/`transform_resolution` 同一份实现；恒等映射会说明原因 | 分隔线不可拖；时间轴变换不参与 |
 | 22 §5 诊断包 | 已交付 | `diagnose`；默认白名单不含用户内容，附样本需显式点名 | 真 minidump（需异常处理器 + 含内存镜像）未做 |
 | 22 §1 日志 + §2 关联 ID + §6 崩溃现场 | 已交付 | tracing 按日轮转；`J/O/R` 三层 id（日志与报告同一个值）；host 崩溃现场进错误卡 | 真 minidump 未做（见裁决）；日志无 json 输出模式 |
 

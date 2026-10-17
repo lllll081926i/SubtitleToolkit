@@ -1,8 +1,10 @@
 # Windows 构建、安装、签名与发布
 
-本文件是发布阶段的目标清单，不是当前发行物清单。当前 workspace 只定义 CLI 与 x64 `subtitletool-render-host.exe`；GUI、x86 host、安装包、portable 包、签名和更新器均未实现。只有经过实际构建与验收的产物才能加入支持矩阵。
+本文件是发布阶段的目标清单，不是当前发行物清单。当前 workspace 只定义 CLI 与 x64 `subtitletool-render-host.exe`；GUI、x86 host、安装包、签名和更新器均未实现。只有经过实际构建与验收的产物才能加入支持矩阵。
 
-以下文件名是发行包候选命名；目前没有打包流程。Cargo 产物名以各 crate 的 `[[bin]]` 配置为准，不能把下方候选名当作已经生成的文件。
+**已落地（2026-10-17）**：根目录许可证正文 `LICENSE-MIT` / `LICENSE-APACHE`（此前为缺失状态）；`tools/make_portable.ps1` 产出自包含 portable zip（含 `SHA256SUMS.txt` 与许可/第三方声明副本）。已实测：解包后两个可执行文件可运，哈希校验通过。
+
+以下文件名是发行包候选命名；只有 `tools/make_portable.ps1` 实际生成的名字才算数。Cargo 产物名以各 crate 的 `[[bin]]` 配置为准。
 
 当前构建命令见[开发说明](../../CONTRIBUTING.md)。PowerShell 先点源 `tools/set_build_cache.ps1`，所有构建、下载与临时缓存使用非 C 盘。原生 libass 开发期运行库已登记并实测，来源与产品分发边界见[第三方说明](../../third_party/README.md)。
 
@@ -32,7 +34,12 @@
 - 卸载保留用户 presets/logs 由用户选择。
 
 ## 4. Portable
-所有程序文件放同目录；settings 默认仍进 `%APPDATA%`，若发现 `portable.flag` 则使用 `./data`。
+
+**已实现**：`tools/make_portable.ps1`（用法见 [tools/README](../tools/README.md)）。所有程序文件放同目录，并带 `SHA256SUMS.txt` 与许可正文。
+
+未实现：settings 默认仍进 `%APPDATA%`；`portable.flag` 触发 `./data` 的逻辑尚未做。
+
+已实测：解包目录内 `subtitletool-cli.exe doctor --json` 返回 `ok=true`，两个 exe 的 SHA-256 与 `SHA256SUMS.txt` 一致。
 
 ## 5. Signing
 正式 release：所有 EXE/DLL/installer 用同一 publisher identity Authenticode；timestamp server；CI 验证签名后再上传。

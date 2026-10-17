@@ -9,6 +9,7 @@ Cargo 配置将编译子进程的临时目录固定为仓库 `target/tmp/`。初
 | 工具 | 用途 |
 |---|---|
 | `set_build_cache.ps1` | 初始化开发会话的非 C 盘缓存与临时目录 |
+| `make_portable.ps1` | 把已验收的 release 产物打成 portable zip（含 SHA256SUMS 与许可正文）；不含第三方 DLL、不签名 |
 | `check_all.ps1` / `check_all.sh` | Windows 入口与完整验证；严格模式不允许缺依赖跳过 |
 | `doc_claims_check.py` | 历史可追溯矩阵中的符号是否仍存在；只作归档材料核对，不证明行为正确 |
 | `audit_evidence.py` | 历史门阶日志与历史声明对照；不替代行为测试 |
@@ -32,3 +33,20 @@ $env:STK_FFPROBE = 'D:/dependencies/ffmpeg/ffprobe.exe'
 上面的依赖目录是示例，替换为实际安装路径。Git for Windows 的 Bash、可用的 Python、Pillow、pysubs2、cargo-deny 和 cargo-nextest 也必须可用。一次只运行一套完整验证。
 
 日常核验优先直接使用 Cargo：`cargo test --workspace --lib --tests --no-fail-fast` 运行 Rust 行为测试，`cargo test --workspace --doc --no-fail-fast -j 1` 串行检查 doctest。并行 workspace doctest 在本机曾报 `E0463`。历史门阶声明保留在 `docs/history/`，不代表当前通过；运行脚本本身也不能证明格式互操作。
+
+## portable 打包
+
+```powershell
+. .\tools\set_build_cache.ps1
+.\tools\make_portable.ps1            # 构建后打包
+.\tools\make_portable.ps1 -NoBuild   # 只打包现有产物
+```
+
+产出 zip 位于 Cargo 目标目录的 `portable/`。包内只有 CLI 与 renderer-host 两个可执行文件，加上 `LICENSE-MIT`/`LICENSE-APACHE`/`THIRD_PARTY_NOTICES.md`/`README.md` 与 `SHA256SUMS.txt`。
+
+边界（不要把它们当成已完成）：
+
+- **不包含第三方运行库 DLL**。libass 那组 MSYS2 DLL 的分发义务仍在审计中（21 §3、`third_party/README.md`），未完成前不进发行物；渲染依赖由用户在目标机上设 `STK_LIBASS_DLL`。
+- **未签名、无安装器**。Authenticode（28 §5）与 Inno Setup（28 §3）尚未实现。
+- **不含 GUI**：`crates/gui` 尚未接通真实任务执行链，不进发行物（`docs/STATUS.md`）。
+- 打包前不做验收声明，只重新计算内容哈希；是否可发布以 `docs/STATUS.md` 为准。

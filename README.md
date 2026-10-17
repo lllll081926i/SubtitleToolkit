@@ -52,4 +52,4 @@ cargo build --workspace --release
 - [验证脚本说明](tools/README.md)
 - [第三方声明](THIRD_PARTY_NOTICES.md)
 
-Cargo 包元数据声明 `MIT OR Apache-2.0`。当前尚缺根目录许可证正文，公开发布前需补齐；第三方源码按各自许可证使用，见 [third_party/README.md](third_party/README.md)。
+本项目采用 `MIT OR Apache-2.0` 双许可，随你选择其一。正文见 [LICENSE-MIT](LICENSE-MIT) 与 [LICENSE-APACHE](LICENSE-APACHE)。第三方源码与运行库按各自许可证使用，见 [third_party/README.md](third_party/README.md)。

@@ -1,0 +1,122 @@
+# SubtitleToolkit portable 打包（28 §2 Artifacts、28 §4 Portable）
+#
+# 立场（写清楚，避免把"能打 zip"当成"已发布"）：
+# * 本脚本只把**已经构建好并通过验收**的产物收进一个自包含目录，再打成 zip；
+#   它不做签名、不做安装器、不动注册表（那些是 28 §3/§5，尚未实现）。
+# * 默认**不打包任何第三方运行库 DLL**。libass 那组 MSYS2 DLL 的来源/许可/分发义务
+#   仍在审计中（third_party/README.md），未完成前不许混进发行物。要用本机 DLL 做渲染，
+#   由用户在目标机上自行设置 STK_LIBASS_DLL。
+# * 打包前重新验证内容哈希，并生成 SHA256SUMS.txt；第三方声明原样复制进包。
+#
+# 用法：
+#   . .\tools\set_build_cache.ps1
+#   .\tools\make_portable.ps1                 # 构建（release）后打包到 target/portable/
+#   .\tools\make_portable.ps1 -NoBuild        # 只打包已存在的 release 产物
+#   .\tools\make_portable.ps1 -OutDir D:\dist # 指定输出目录
+
+[CmdletBinding()]
+param(
+    # 跳过 cargo build，直接用现有 release 产物（产物不存在时仍然报错，不静默产出空包）
+    [switch]$NoBuild,
+    # 输出目录；默认落在 Cargo 目标目录下的 portable/
+    [string]$OutDir,
+    # 不含版本号的包名前缀
+    [string]$Name = "subtitletool"
+)
+
+$ErrorActionPreference = 'Stop'
+
+$root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+Push-Location $root
+try {
+    # --- 1. 定位 Cargo 目标目录（不猜路径：以 cargo metadata 为准）-----------------
+    $metaJson = & cargo metadata --no-deps --format-version 1 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "cargo metadata 失败，无法确定目标目录：$metaJson"
+    }
+    $meta = $metaJson | ConvertFrom-Json
+    $targetDir = $meta.target_directory
+    $releaseDir = Join-Path $targetDir 'release'
+
+    # --- 2. 可选构建 ---------------------------------------------------------------
+    if (-not $NoBuild) {
+        Write-Host "[portable] cargo build --workspace --release" -ForegroundColor Cyan
+        & cargo build --workspace --release
+        if ($LASTEXITCODE -ne 0) { throw "release 构建失败" }
+    }
+
+    # --- 3. 收集产物（缺一个就失败，不产出"看起来像发布包"的残缺 zip）----------------
+    # 只收 CLI 与 renderer-host：GUI 尚未接通真实执行链，不进发行物（STATUS.md）。
+    $wanted = @(
+        'subtitletool-cli.exe',
+        'subtitletool-render-host.exe'
+    )
+    $payload = @()
+    foreach ($exe in $wanted) {
+        $p = Join-Path $releaseDir $exe
+        if (-not (Test-Path -LiteralPath $p -PathType Leaf)) {
+            throw "缺少产物：$p（先不带 -NoBuild 运行一次）"
+        }
+        $payload += , @{ Src = $p; Name = $exe }
+    }
+
+    # --- 4. 组装目录 ---------------------------------------------------------------
+    $stamp = Get-Date -Format 'yyyyMMdd'
+    $pkgName = "$Name-portable-$stamp"
+    if (-not $OutDir) { $OutDir = Join-Path $targetDir 'portable' }
+    $stage = Join-Path $OutDir $pkgName
+    if (Test-Path -LiteralPath $stage) {
+        # 只清理本脚本自己上次生成的暂存目录（同一个 $stage 路径），不动别的资产
+        Remove-Item -LiteralPath $stage -Recurse -Force
+    }
+    New-Item -ItemType Directory -Force -Path $stage | Out-Null
+
+    foreach ($item in $payload) {
+        Copy-Item -LiteralPath $item.Src -Destination (Join-Path $stage $item.Name) -Force
+    }
+
+    # 随包文档：许可正文与第三方声明（21 §11、28 §2）
+    $docs = @(
+        @{ Rel = 'LICENSE-MIT';      Name = 'LICENSE-MIT' },
+        @{ Rel = 'LICENSE-APACHE';   Name = 'LICENSE-APACHE' },
+        @{ Rel = 'THIRD_PARTY_NOTICES.md'; Name = 'THIRD_PARTY_NOTICES.md' },
+        @{ Rel = 'README.md';        Name = 'README.md' }
+    )
+    foreach ($d in $docs) {
+        $src = Join-Path $root $d.Rel
+        if (-not (Test-Path -LiteralPath $src -PathType Leaf)) {
+            throw "缺少随包文档：$($d.Rel)"
+        }
+        Copy-Item -LiteralPath $src -Destination (Join-Path $stage $d.Name) -Force
+    }
+
+    # --- 5. 校验和 ---------------------------------------------------------------
+    $sumsPath = Join-Path $stage 'SHA256SUMS.txt'
+    $sumLines = foreach ($item in $payload) {
+        $h = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $stage $item.Name)).Hash.ToLowerInvariant()
+        "$h  $($item.Name)"
+    }
+    # 用 LF 与 ASCII，让校验和文件在跨平台工具里也能直接用
+    [System.IO.File]::WriteAllText($sumsPath, (($sumLines -join "`n") + "`n"), [System.Text.UTF8Encoding]::new($false))
+
+    # --- 6. 打 zip ---------------------------------------------------------------
+    $zipPath = Join-Path $OutDir "$pkgName.zip"
+    if (Test-Path -LiteralPath $zipPath) { Remove-Item -LiteralPath $zipPath -Force }
+    Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zipPath -CompressionLevel Optimal
+
+    $zipHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zipPath).Hash.ToLowerInvariant()
+    Write-Host ""
+    Write-Host "[portable] 完成" -ForegroundColor Green
+    Write-Host "  目录: $stage"
+    Write-Host "  zip : $zipPath"
+    Write-Host "  zip SHA-256: $zipHash"
+    Write-Host ""
+    Write-Host "  包内文件：" -ForegroundColor Cyan
+    Get-ChildItem -LiteralPath $stage -File | ForEach-Object { Write-Host "    $($_.Name)" }
+    Write-Host ""
+    Write-Host "  说明：本包不含第三方运行库 DLL。需要渲染时在目标机上设置 STK_LIBASS_DLL。" -ForegroundColor Yellow
+    Write-Host "  未完成项：Authenticode 签名、安装器、便携数据目录（portable.flag）见 28 节。" -ForegroundColor Yellow
+}
+finally {
+    Pop-Location
+}

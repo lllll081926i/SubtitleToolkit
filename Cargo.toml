@@ -21,6 +21,7 @@ members = [
   "crates/win-job",
   "crates/renderer-host",
   "crates/font-service",
+  "crates/gui",
 ]
 
 [workspace.package]
@@ -28,6 +29,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
+license-file = "LICENSE-MIT"
 # 平台策略：Windows-only（ADR-001）。唯一正式 target：x86_64-pc-windows-msvc。
 
 [workspace.dependencies]
@@ -62,6 +64,9 @@ flate2 = { version = "1", default-features = false, features = ["rust_backend"] 
 # deny.toml 的 [advisories] ignore 是故意留空的，所以走迁移而不是豁免（ISSUES AG15）。
 read-fonts = "0.45"
 skrifa = "0.48"
+
+[profile.dev.package."*"]
+opt-level = 3
 
 [profile.release]
 lto = "thin"

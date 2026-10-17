@@ -58,6 +58,8 @@ struct Built {
     samples: usize,
     /// `codec-bdn` 构造文档时的记账（含 min_axis 丢弃）；必须并进信封的 loss。
     loss: LossReport,
+    /// 37 §2：前半链是不是从磁盘缓存里读回来的。
+    cache_hit: bool,
 }
 
 /// 帧列表 →（XML 字节、按文档顺序连续编号的 PNG）。
@@ -123,6 +125,7 @@ fn build(
     args: &RenderArgs,
     shared: Option<&crate::front::SharedRender<'_>>,
     inject: Option<&[crate::front::InjectFace]>,
+    cache: &Option<crate::rendercache::DiskCache>,
 ) -> Result<Built> {
     let RenderArgs {
         input,
@@ -142,7 +145,7 @@ fn build(
         default_font,
         inject,
     };
-    let rendered = crate::front::resolve(shared, &job)?;
+    let (rendered, cache_hit) = crate::front::resolve_cached(shared, cache.as_ref(), &job)?;
     let plan = &rendered.plan;
     let injected = rendered.injected.clone();
 
@@ -195,6 +198,7 @@ fn build(
         samples: rendered.samples,
         pngs,
         loss,
+        cache_hit,
     })
 }
 
@@ -203,6 +207,7 @@ pub(crate) fn run_render(
     args: &RenderArgs,
     cmd: &str,
     shared: Option<&crate::front::SharedRender<'_>>,
+    cache: &Option<crate::rendercache::DiskCache>,
 ) -> Result<Envelope> {
     let RenderArgs {
         input,
@@ -232,7 +237,7 @@ pub(crate) fn run_render(
         default_font: args.default_font,
         min_axis,
     };
-    let built = build(&ready_args, shared, plan.as_deref())?;
+    let built = build(&ready_args, shared, plan.as_deref(), cache)?;
     let stem = input
         .file_stem()
         .and_then(|s| s.to_str())
@@ -338,6 +343,20 @@ pub(crate) fn run_render(
         "rendered_frames": built.rendered,
         "pngs": png_count,
         "samples": built.samples,
+        // 37 §2：缓存命不命中是可核对的事实，不是内部细节。
+        "render_cache": {
+            "enabled": cache.is_some(),
+            "hit": built.cache_hit,
+            "counters": cache.as_ref().map(|c| {
+                let s = c.stats();
+                serde_json::json!({
+                    "hits": s.hits,
+                    "misses": s.misses,
+                    "corrupt": s.corrupt,
+                    "write_failures": s.write_failures,
+                })
+            }),
+        },
         "min_axis": min_axis,
         "xml": xml_path.display().to_string(),
     });

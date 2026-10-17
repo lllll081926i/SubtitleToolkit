@@ -39,6 +39,16 @@ pub(crate) fn execute_ctx(
     shared: Option<&crate::front::SharedRender<'_>>,
 ) -> Result<Envelope> {
     let cmd = inv.command.name();
+    // 37 §2 的磁盘缓存只在**渲染型命令**上有意义。这里统一构造一次，
+    // 不放到渲染函数里：那个函数在批量路径下会被调很多次，每次
+    // `DataDir::resolve_current_exe` 都会去 stat 一遍 exe 旁的 portable.flag。
+    // 关掉它时显式给 None，而不是给一个「会返回 None 的对象」——后者在
+    // 报告里说不清楚「没缓存」到底是被关了还是拿不到目录。
+    let cache = if inv.render_cache {
+        crate::rendercache::DiskCache::from_env()
+    } else {
+        None
+    };
     let outcome = match &inv.command {
         Command::Probe { input } => probe(input, cmd),
         Command::Convert {
@@ -102,8 +112,10 @@ pub(crate) fn execute_ctx(
             *snap_pts,
             cmd,
             shared,
+            &cache,
         ),
         Command::Doctor => doctor(cmd),
+        Command::Cache { action } => cache_cmd(*action, cmd),
         Command::Render {
             input,
             fps,
@@ -123,6 +135,7 @@ pub(crate) fn execute_ctx(
             },
             cmd,
             shared,
+            &cache,
         ),
         Command::Batch { spec } => crate::batch::run_batch(inv, spec, cmd),
         Command::FontScan { .. } => crate::font::run_font(inv),
@@ -792,7 +805,10 @@ fn pgs_encode(
     snap_pts: bool,
     cmd: &str,
     shared: Option<&crate::front::SharedRender<'_>>,
+    cache: &Option<crate::rendercache::DiskCache>,
 ) -> Result<Envelope> {
+    let no_render_cache = !inv.render_cache;
+    let mut loss_disk_hit = false;
     // 前半链（采样 → 变化检测）与 ASS→BDN 共用同一份实现；批量里同一输入的
     // 两种渲染输出通过 `shared` 只跑一次（14 §Multi-output）。
     // 先读输入并确认渲染器可用。缺 DLL 时无需扫描整套系统字体库。
@@ -814,9 +830,31 @@ fn pgs_encode(
         default_font,
         inject: plan.as_deref(),
     };
-    let rendered = crate::front::resolve(shared, &job)?;
+    let rendered = match crate::front::resolve_cached(
+        shared,
+        if no_render_cache {
+            None
+        } else {
+            cache.as_ref()
+        },
+        &job,
+    ) {
+        Ok((r, from_disk)) => {
+            if from_disk {
+                // 命中磁盘缓存是**报告要写出来的事实**：它意味着这次没跑 native
+                // 渲染，凡是从渲染结果反推的结论（时间、像素）都是上次那份。
+                // 不写出来，同一命令两次运行的耗时差异就没有解释。
+                loss_disk_hit = true;
+            }
+            r
+        }
+        Err(e) => return Err(e),
+    };
     let grid = rendered.grid.clone();
     let mut loss = rendered.loss.clone();
+    if loss_disk_hit {
+        loss.preserved("37 §2：前半链命中了磁盘渲染缓存，未重跑 native 渲染");
+    }
 
     let eopt = codec_pgs::encoder::EncodeOptions {
         canvas_width: canvas.width as u16,
@@ -863,6 +901,22 @@ fn pgs_encode(
         "fps": fps.to_label(),
         "samples": rendered.samples,
         "stream_end_ms": grid.stream_end_ms,
+        // 37 §2：缓存命不命中是**可核对的事实**，不是内部细节。
+        // 同一命令两次运行耗时不同、或与 --no-render-cache 结果不同，
+        // 读报告的人必须能一眼看出是那一层在起作用。
+        "render_cache": {
+            "enabled": cache.is_some(),
+            "hit": loss_disk_hit,
+            "counters": cache.as_ref().map(|c| {
+                let s = c.stats();
+                serde_json::json!({
+                    "hits": s.hits,
+                    "misses": s.misses,
+                    "corrupt": s.corrupt,
+                    "write_failures": s.write_failures,
+                })
+            }),
+        },
         "events": a.plan.stats.events,
         "erase_events": a.plan.stats.erase_events,
         "eliminated": a.plan.stats.eliminated,
@@ -1003,6 +1057,60 @@ fn doctor(cmd: &str) -> Result<Envelope> {
     Ok(Envelope::ok(cmd, data))
 }
 
+/// 37 §2：磁盘渲染缓存的账目与清理。
+///
+/// 两件事必须说清楚，否则这条命令就没什么用：
+/// **配额上限是多少**（用户要知道它会不会把盘吃满）、
+/// **缓存目录在哪**（用户要知道删的是哪里、怎么手动清）。
+/// `cache` 环境变量关掉时也要明说，而不是报一个看起来正常但其实是"没开"的空目录。
+fn cache_cmd(action: crate::args::CacheAction, cmd: &str) -> Result<Envelope> {
+    use crate::args::CacheAction;
+    let Some(c) = crate::rendercache::DiskCache::from_env() else {
+        return Ok(Envelope::ok(
+            cmd,
+            serde_json::json!({
+                "enabled": false,
+                "reason": "磁盘渲染缓存已关闭（37 §2）",
+                "how_to_disable": "环境变量 STK_RENDERCACHE=0 或命令行 --no-render-cache",
+            }),
+        ));
+    };
+    let (bytes, count) = c.usage();
+    match action {
+        CacheAction::Stat => Ok(Envelope::ok(
+            cmd,
+            serde_json::json!({
+                "enabled": true,
+                "dir": c.dir().display().to_string(),
+                "entries": count,
+                "bytes": bytes,
+                "budget_bytes": c.max_bytes(),
+                // 环境变量与命令行都能改这两个值，把生效来源一并报出来
+                "dir_env": "STK_RENDERCACHE_DIR",
+                "budget_env": "STK_RENDERCACHE_MAX_BYTES",
+            }),
+        )),
+        CacheAction::Clear => {
+            let removed = c.clear().map_err(|e| {
+                StkError::simple(Domain::Cache, 20, "清理磁盘渲染缓存失败")
+                    .with_detail(format!("{}：{e}", c.dir().display()))
+            })?;
+            let (left_bytes, left_count) = c.usage();
+            Ok(Envelope::ok(
+                cmd,
+                serde_json::json!({
+                    "enabled": true,
+                    "dir": c.dir().display().to_string(),
+                    "removed_entries": removed,
+                    "bytes_before": bytes,
+                    "entries_after": left_count,
+                    "bytes_after": left_bytes,
+                }),
+            ))
+        }
+    }
+}
+
 /// host 可执行文件在哪：`STK_RENDERER_HOST` → 与 CLI 同目录的 `subtitletool-render-host.exe`。
 /// 找不到不是错误，是诊断信息（28 §2 把它列为独立产物，没打包就是没有）。
 pub fn renderer_host_exe() -> Option<PathBuf> {
@@ -1116,6 +1224,7 @@ mod tests {
             overwrite: task_engine::OverwritePolicy::Rename,
             inject_fonts: false,
             no_font_cache: false,
+            render_cache: true,
         }
     }
 

@@ -16,6 +16,12 @@ pub enum Domain {
     Output,
     Validate,
     Dependency,
+    /// 37 §2 的磁盘渲染缓存。
+    ///
+    /// 单独立一域而不是并进 `Output`：缓存的故障语义与输出不同 ——
+    /// 输出失败意味着用户拿不到东西，缓存失败只意味着这一次慢一点。
+    /// 混在一个域里，读报告的人分不清「产物坏了」和「缓存坏了」。
+    Cache,
 }
 
 impl Domain {
@@ -33,6 +39,7 @@ impl Domain {
             Domain::Output => "OUT",
             Domain::Validate => "VAL",
             Domain::Dependency => "DEP",
+            Domain::Cache => "RCA",
         }
     }
 }
@@ -121,8 +128,9 @@ mod tests {
             Domain::Output,
             Domain::Validate,
             Domain::Dependency,
+            Domain::Cache,
         ];
-        assert_eq!(all.len(), 12);
+        assert_eq!(all.len(), 13);
         for d in all {
             assert_eq!(d.tag().len(), 3);
         }

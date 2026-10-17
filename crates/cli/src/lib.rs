@@ -13,6 +13,10 @@ pub mod mkv;
 pub mod output;
 pub mod pipeline;
 pub mod render;
+// 磁盘缓存与 `front`（前半链）是一体的：它的公开面里带着 `front::Rendered` /
+// `front::RenderJob`，而那两个类型本就是 crate 内部的。整体压到 `pub(crate)` 比把
+// `front` 的内部类型提升为对外 API 更诚实：这个模块没有对外契约。
+pub(crate) mod rendercache;
 pub mod run;
 pub mod subset;
 

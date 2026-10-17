@@ -81,6 +81,7 @@ commands:
 
 全局开关：--json（单行信封）/ --dry-run（不写盘）/ --out PATH / --overwrite skip|rename|replace
          / --no-font-cache（不使用字体库磁盘缓存，每次全量重扫）
+         / --no-render-cache（37 §2：不用磁盘渲染缓存，每次都真渲染）
          / --inject-fonts（17 §7：把解析到的字体字节交给 libass，让渲染用的就是那份字节）
 覆盖策略默认 rename：目标已存在就换个名字写，绝不直接截断原文件（15 §6、AT-OUT-001）
 尚未实现（返回 STK-INP-0060 并指明所属 Phase，不会假装成功）：
@@ -141,6 +142,16 @@ const SWITCHES: &[&str] = &[
     "--mkv-attachments",
 ];
 
+/// `cache` 子命令的两个动作（37 §2）。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum CacheAction {
+    /// 只报账：目录、字节数、条数、配额上限。
+    #[default]
+    Stat,
+    /// 删掉所有渲染缓存记录（只删本产品自己的 `.rc` 文件）。
+    Clear,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum Command {
     Probe {
@@ -199,6 +210,13 @@ pub enum Command {
     },
     #[default]
     Doctor,
+    /// 37 §2：查看或清理磁盘渲染缓存的账目。
+    ///
+    /// 为什么需要这条命令：配额、命中率与损坏计数如果不给用户看，
+    /// 缓存就变成一个不可核对的愚盒 —— 而 37 §2 明确要求配额与容量有记录。
+    Cache {
+        action: CacheAction,
+    },
     /// 15 §1 的批量任务：输入集合 × 多个输出 profile，spec 是 JSON。
     Batch {
         spec: PathBuf,
@@ -286,6 +304,10 @@ pub struct Invocation {
     /// 不要用磁盘字体库缓存（17 §2/AI5）。留着它是为了"怀疑缓存时有一条独立可复现的路"，
     /// 不是为了日常提速 —— 默认那条路在使用点复核过被用到的每个 face。
     pub no_font_cache: bool,
+    /// 37 §2 的磁盘渲染缓存开关。默认开：它是一个**纯优化**（命中就省一次 native
+    /// 渲染，未命中就是没命中），不改变输出字节。
+    /// 关掉是为了两件事：对照跑（验证两次运行真的一样）与排查"是不是缓存骗了我"。
+    pub render_cache: bool,
 }
 
 /// 参数解析阶段的失败。这里**没有**"用法错 / 取值错"的区分：
@@ -330,6 +352,7 @@ impl Command {
             Command::PgsValidate { .. } => "pgs validate",
             Command::PgsEncode { .. } => "pgs encode",
             Command::Doctor => "doctor",
+            Command::Cache { .. } => "cache",
             Command::Render { .. } => "render",
             Command::Batch { .. } => "batch",
             Command::FontScan { .. } => "font scan",
@@ -438,6 +461,8 @@ pub fn parse(argv: &[String]) -> Result<Invocation, ArgError> {
         overwrite: OverwritePolicy::Rename,
         inject_fonts: false,
         no_font_cache: false,
+        // 默认开：纯优化，命中不改变输出字节（37 §2）。
+        render_cache: true,
     };
     // 第一遍：抽走全局开关，剩下的 token 才是命令与其专属参数
     let mut tokens: Vec<String> = Vec::with_capacity(argv.len());
@@ -452,6 +477,7 @@ pub fn parse(argv: &[String]) -> Result<Invocation, ArgError> {
             "--json" => inv.json = true,
             "--dry-run" => inv.dry_run = true,
             "--no-font-cache" => inv.no_font_cache = true,
+            "--no-render-cache" => inv.render_cache = false,
             "--inject-fonts" => inv.inject_fonts = true,
             "--overwrite" => {
                 let v = match inline {
@@ -779,6 +805,21 @@ pub fn parse(argv: &[String]) -> Result<Invocation, ArgError> {
                 return Err(ArgError::usage("doctor 不接受位置参数"));
             }
             Command::Doctor
+        }
+        "cache" => {
+            let action = match rest.first().map(|s| s.as_str()).unwrap_or("stat") {
+                "stat" => CacheAction::Stat,
+                "clear" => CacheAction::Clear,
+                other => {
+                    return Err(ArgError::usage(format!(
+                        "cache 的子命令只能是 stat 或 clear，收到 {other}"
+                    )));
+                }
+            };
+            if rest.len() > 1 {
+                return Err(ArgError::usage("cache 最多接一个子命令"));
+            }
+            Command::Cache { action }
         }
         "render" => {
             let mut fps = Fps::NTSC_23976;

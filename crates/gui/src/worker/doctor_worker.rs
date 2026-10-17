@@ -26,6 +26,8 @@ pub fn run() -> Result<serde_json::Value, String> {
         overwrite: task_engine::OverwritePolicy::Rename,
         no_font_cache: false,
         inject_fonts: false,
+        // GUI 的任务也受益于 37 §2 的磁盘缓存；关掉它没有理由。
+        render_cache: true,
     };
     match cli::run::execute(&inv) {
         Ok(env) => Ok(env.data.unwrap_or(serde_json::Value::Null)),

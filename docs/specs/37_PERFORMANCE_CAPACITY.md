@@ -1,6 +1,6 @@
 # 性能、缓存与容量规划
 
-本文区分现有内存路径与性能目标。缓存配额、LRU、benchmark 阈值和完整跨 profile 共享尚未全部交付，不以目标值描述当前测量结果。
+本文区分现有内存路径与性能目标。**Render Cache 两级与配额（§2）已落地**；benchmark 阈值（§6）与完整跨 profile 共享仍未交付，不以目标值描述当前测量结果。
 
 ## 1. 性能目标
 - 文本转换：1000 个普通字幕文件的 parse/transform 不应被 GUI 阻塞；
@@ -10,10 +10,41 @@
 
 ## 2. Render Cache
 两级：
-- Memory LRU：最近 frames/indexed images；
-- Disk cache：批量/多输出中间产物。
+- **内存 LRU**：最近 frames/indexed images；
+- **磁盘 cache**：批量/多输出中间产物。
 
 Disk cache 默认放 `%LOCALAPPDATA%\SubtitleToolkit\cache`，设置容量上限和自动清理。
+
+**实现状态（2026-10-17）：内存共享（`front::RenderMemo`）与磁盘这级均已落地。**
+
+### 磁盘这级的实测事实
+
+- 命令：`--no-render-cache` 关，`cache stat` / `cache clear` 看与清；
+  环境变量 `STK_RENDERCACHE=0` 关掉、`STK_RENDERCACHE_DIR` 改目录、
+  `STK_RENDERCACHE_MAX_BYTES` 改配额（默认 512 MiB）；
+- 目录走 [`DataDir`](file:///D:/Code/SubtitleToolkit/crates/core-model/src/datadir.rs)：
+  便携包内是包内 `data/rendercache/`，非便携是 `%LOCALAPPDATA%\subtitletool\rendercache`；
+- 缓存 key 与内存共享**同一口径**：输入内容哈希 + 画布 + 帧率 + 默认字体
+  + renderer 二进制哈希 + 注入字体哈希。后半链参数（`exact_colors`/`level`/`min_axis`）
+  不进 key——它们不改变前半链产物，这正是跨运行复用成立的原因；
+- 配额执行：写入后按 mtime 从旧到新淘汰到 90%，避免"刚清完又满"的抖动。
+  实测：上限 20 KiB 时 5 份 17,786 字节的记录只留 1 份；上限 60 KiB 时留 3 份 / 53,062 字节；
+- 读回时逐字段校验（魔数、key、长度、patch 的 RGBA 与宽高自洽）。
+  不符就当作**未命中并删掉**，而不是把别人的字节当自己的结果用。
+  实测：截断一半、改魔数、换 key 读同一份字节，三种情况都计 `corrupt` 并重渲染，产物不变；
+- 报告里 `render_cache.hit` / `counters` 是显式事实，不是内部细节：
+  同一命令两次运行的耗时差异必须可解释。
+
+等价性证据（真 libass 渲染，见 `crates/cli/tests/render_cache.rs`）：
+
+1. 第 1 次 `hit=false`、第 2 次 `hit=true`，两次的 XML 与每个 PNG **逐字节相同**；
+2. `--no-render-cache` 与命中给出**同一份**产物（缓存是纯优化，不改变输出）；
+3. 改文案后 `hit=false` 且位图确实变化；改回原样重新命中（判据是内容哈希）；
+4. `cache stat/clear` 报的条数与字节数与磁盘实际一致。
+
+未做的：没有把渲染层做成"LRU 内存缓 + 磁盘二级"的自动分级
+（当前内存那级是批量内的同 key 共享 + 引用计数式的 slot，不是容量受限的 LRU）。
+本机不测"更快"：那需要基准与噪声控制，而 `hit` 这个显式标志才是可核对的事实。
 
 此目录是未来应用运行时缓存候选，不是构建目录。开发会话必须先运行 `tools/set_build_cache.ps1`；Cargo/native/download/tmp 缓存均使用非 C 盘。构建指南不能将上面的运行时目录当成构建缓存。
 

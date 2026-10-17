@@ -716,6 +716,9 @@ pub fn run_batch_with_cancel(
                     overwrite,
                     no_font_cache: inv.no_font_cache,
                     inject_fonts: inv.inject_fonts,
+                    // 子调用继承父调用：批量里的「关掉渲染缓存」必须真的关到每个 profile，
+                    // 否则批量路径与单命令路径的输出会出现不可解释的差异。
+                    render_cache: inv.render_cache,
                 };
                 // 渲染型 profile 才需要前半链；文本 profile 传 None 就是单命令语义
                 let shared = if r.renders {

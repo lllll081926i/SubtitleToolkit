@@ -261,12 +261,36 @@ impl<'a> SharedRender<'a> {
     }
 }
 
-/// 前半链的取法：批量走共享缓存，单命令自己跑。
-pub(crate) fn resolve(shared: Option<&SharedRender<'_>>, job: &RenderJob<'_>) -> Result<Rendered> {
-    match shared {
-        Some(s) => s.obtain(job),
-        None => render_to_plan(job),
+/// 前半链的取法：批量走共享缓存，单命令走磁盘缓存（都可以关）。
+///
+/// 37 §2 的磁盘这级就挂在**这一个**入口上，因为它是两条路径唯一都经过的地方。
+/// 挂在别处（例如 CLI 命令层）会漏掉批量路径；分成两处则两条路径的复用
+/// 语义会各自演化。
+pub(crate) fn resolve_cached(
+    shared: Option<&SharedRender<'_>>,
+    cache: Option<&crate::rendercache::DiskCache>,
+    job: &RenderJob<'_>,
+) -> Result<(Rendered, bool)> {
+    if let Some(s) = shared {
+        return s.obtain(job).map(|r| (r, false));
     }
+    let Some(c) = cache else {
+        return render_to_plan(job).map(|r| (r, false));
+    };
+    // key 与 `RenderMemo` 同一口径：输入内容 + 画布 + 帧率 + 默认字体
+    // + renderer 二进制哈希 + 注入字体哈希（见 `rendercache` 顶部第一条设计决定）。
+    let dll_hash = job
+        .dll
+        .and_then(|p| std::fs::read(p).ok())
+        .map(|b| crate::pipeline::sha256_hex(&b))
+        .unwrap_or_default();
+    let inject_hashes: Vec<String> = job
+        .inject
+        .map(|l| l.iter().map(|f| f.expect_sha.clone()).collect())
+        .unwrap_or_default();
+    let key = crate::rendercache::key_for(job, &dll_hash, &inject_hashes);
+    let loaded = c.obtain(&key, job)?;
+    Ok((loaded.rendered, loaded.from_disk))
 }
 
 #[cfg(test)]

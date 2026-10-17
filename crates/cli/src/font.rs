@@ -327,6 +327,7 @@ mod tests {
             overwrite: OverwritePolicy::ReplaceAfterVerify,
             inject_fonts: false,
             no_font_cache: false,
+            render_cache: true,
         }
     }
 

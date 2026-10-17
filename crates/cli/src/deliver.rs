@@ -460,6 +460,7 @@ mod tests {
             overwrite: OverwritePolicy::Rename,
             inject_fonts: false,
             no_font_cache: true,
+            render_cache: true,
         };
         let e = embed_fonts(
             &inv,
@@ -497,6 +498,7 @@ mod tests {
             overwrite: OverwritePolicy::Rename,
             inject_fonts: false,
             no_font_cache: true,
+            render_cache: true,
         };
         let r = embed_fonts(
             &inv,
@@ -538,6 +540,7 @@ mod tests {
             overwrite: OverwritePolicy::Rename,
             inject_fonts: false,
             no_font_cache: true,
+            render_cache: true,
         };
         let r = mkv_attachments(&inv, &[("sub/dir\\Arial.ttf".to_string(), bytes)], &dir).unwrap();
         let entry = &r.report["attachments"][0];
@@ -610,6 +613,7 @@ mod tests {
             overwrite: OverwritePolicy::ReplaceAfterVerify,
             inject_fonts: false,
             no_font_cache: false,
+            render_cache: true,
         }
     }
 

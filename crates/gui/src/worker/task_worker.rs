@@ -102,6 +102,8 @@ pub fn run(
         overwrite: OverwritePolicy::Rename,
         no_font_cache: false,
         inject_fonts: false,
+        // GUI 的任务也受益于 37 §2 的磁盘缓存；关掉它没有理由。
+        render_cache: true,
     };
 
     // 把 GUI 的取消标志交给引擎：它会在每个 (输入, profile) 之前检查，

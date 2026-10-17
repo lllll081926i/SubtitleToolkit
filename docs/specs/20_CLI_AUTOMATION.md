@@ -11,9 +11,12 @@
 - `probe`、`convert`、`time`、`hdr`；
 - `render`、`batch`；
 - `pgs adjust`、`pgs validate`、`pgs encode`；
-- `font scan`、`font subset`、`mkv identify|extract|remux`、`doctor`。
+- `font scan`、`font subset`、`mkv identify|extract|remux`、`cache stat|clear`、`doctor`。
 
 全部已规划命令都已实现，`doctor` 的 `not_built` 为空。`--preset` 尚未实现（它不是命令，走参数层的明确拒绝）。
+
+全局开关：`--json`、`--dry-run`、`--out`、`--overwrite`、`--no-font-cache`、
+`--no-render-cache`（37 §2：不用磁盘渲染缓存）、`--inject-fonts`。
 
 ## 2. 命令与退出码
 
@@ -30,6 +33,7 @@
   `--mkv-attachments` 生成可直接嗂给 `mkv remux --attach-font` 的附件目录。
 - `mkv identify` 列出轨道与附件；`mkv extract` 抽出字幕轨或字体附件；`mkv remux` 重封装成新 MKV（绝不原地修改）。
 - `doctor` 报告环境与未实现能力。
+- `cache stat|clear` 报账或清理 37 §2 的磁盘渲染缓存（目录、条数、字节数、配额上限）。
 
 退出码固定为：0 成功、1 执行失败、2 命令行用法错误。未实现的命令以执行失败返回，并在结果中指出能力未实现。
 

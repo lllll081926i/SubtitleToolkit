@@ -78,6 +78,10 @@ commands:
                      18 §2/§4：重封装成新 MKV，绝不原地修改；写完重新 identify 核对元数据
                      需要 MKVToolNix（--tools-dir 或 STK_MKVTOOLNIX_DIR），不做视频/音频转码
   doctor                             环境自检：架构、可写路径、ffprobe 身份、未实现清单
+cache [stat|clear]                 37 §2：报账或清理磁盘渲染缓存
+settings [show|init|set]           36 §1：查看/初始化/修改全局偏好
+   settings set <键> <值>           受管字段：log_level / ui_language / default_fps / default_canvas
+diagnose [--include-input F]…      22 §5：打出诊断包 zip（**默认不含**原字幕/视频，附上需点名）
 
 全局开关：--json（单行信封）/ --dry-run（不写盘）/ --out PATH / --overwrite skip|rename|replace
          / --no-font-cache（不使用字体库磁盘缓存，每次全量重扫）
@@ -104,6 +108,9 @@ pub const COMMAND_CATALOG: &[&str] = &[
     "mkv identify",
     "mkv extract",
     "mkv remux",
+    "cache",
+    "settings",
+    "diagnose",
     "doctor",
 ];
 

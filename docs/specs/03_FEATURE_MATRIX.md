@@ -23,8 +23,11 @@
 | Smart sync | 可选 | 已实现确定性执行（`time --piecewise`） | `PiecewiseMap` 多段线性映射，控制点由调用方显式给出；**不做**剪辑点自动检测（需要内容比对，另一条研究线）。RL01 的自动对齐仍未做 |
 | Advanced PGS author / Strict validator | 后续 | 第 1–6 层已实现（含第 5 层解码器模型） | 第 7 层设备语料未取得，`strict_badge_allowed` 仍恒为 false；第 5 层未含缓冲区占用曲线与 acquisition 分支 |
 | OCR SUP→SRT | 可选 | 未实现 | 独立研究线，不进入 CLI MVP 前置条件 |
-| Windows GUI | P0 产品目标 | 已接通（Iced 工作台 + 真 batch 通路） | AT-UI-001 的 60 秒响应实测、A/B 对比渲染、设置持久化未做 |
-| Installer、portable、签名与更新 | 发布阶段 | portable 包已实现 | 安装器、Authenticode 签名、SBOM、更新器未做 |
+| Windows GUI | P0 产品目标 | 已接通（Iced 工作台 + 真 batch 通路） | AT-UI-001 的 60 秒响应实测、A/B 对比渲染未做（设置持久化已交付：36 §1 AppSettings 落盘） |
+| Installer、portable、签名与更新 | 发布阶段 | portable 包已实现（checksums + SBOM + notices 三件套） | 安装器、Authenticode 签名、更新器未做 |
+| 36 §1 AppSettings | 已交付 | `settings show\|init\|set`；未知字段保留、坏文件不阻塞、原子写 | ToolDefaults 与 Preset（需 TOML 依赖获批）未做 |
+| 37 §2 渲染缓存 | 已交付 | 内存共享 + 磁盘（配额、清理、损坏自愈、跨运行复用） | 内存那级不是容量受限 LRU；benchmark 阈值（37 §6）未做 |
+| 22 §5 诊断包 | 已交付 | `diagnose`；默认白名单不含用户内容，附样本需显式点名 | 22 §1 日志文件、§2 correlation ID、§6 minidump 未做 |
 
 ## 明确不做的功能矩阵
 

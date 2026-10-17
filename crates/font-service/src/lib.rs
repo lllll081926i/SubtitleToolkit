@@ -20,7 +20,8 @@ pub mod subset;
 pub mod usage;
 
 pub use attachments::{
-    decode_base64, parse as parse_font_attachments, Attachment, MAX_ATTACHMENT_BYTES,
+    decode_base64, encode_base64, encode_fonts_section, insert_fonts_section,
+    parse as parse_font_attachments, strip_fonts_section, Attachment, MAX_ATTACHMENT_BYTES,
     MAX_TOTAL_BYTES,
 };
 pub use core_model::{DataDir, DataDirKind};

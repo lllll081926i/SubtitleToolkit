@@ -91,6 +91,8 @@ fn rewrite_twice_only_touches_the_script_coordinate_space() {
         .contains("Comment: 0,0:00:01.00,0:00:02.00,Default,,10,10,10,,{\\pos(100,100)}注释不动"));
 
     // 脚本坐标空间
+    // AT-CANVAS-001：1080→2160 保持完整 16:9（PlayRes 缩放），且关键定位 ×2。
+    // 定义与阈值见 docs/specs/25_ACCEPTANCE_TESTS.md。
     assert!(out.contains("PlayResX: 3840\r\nPlayResY: 2160\r\n"));
     assert!(out.contains("Style: Default,Arial,96,&H00FFFFFF,&H000000FF,&H00000000,&H80000000,0,0,0,0,100,100,2,0,1,6,4,2,120,120,100,1"));
     assert!(out.contains("Default,,40,40,40,,"), "逐行边距要跟着缩放");

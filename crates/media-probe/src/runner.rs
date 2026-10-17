@@ -258,7 +258,7 @@ mod tests {
         const CHILD_FLAG: &str = "STK_PROBE_CLOSED_OUTPUT_CHILD";
         if let Ok(mode) = std::env::var(CHILD_FLAG) {
             if mode == "sleep" {
-                std::thread::sleep(Duration::from_secs(5));
+                std::thread::sleep(Duration::from_secs(2));
                 std::process::exit(0);
             }
             if scenario == "stderr-descendant" {
@@ -287,10 +287,10 @@ mod tests {
                 }
             }
             if scenario == "stderr-descendant" {
-                std::thread::sleep(Duration::from_millis(100));
+                std::thread::sleep(Duration::from_millis(50));
                 std::process::exit(0);
             }
-            std::thread::sleep(Duration::from_secs(5));
+            std::thread::sleep(Duration::from_secs(2));
             std::process::exit(0);
         }
 
@@ -304,14 +304,14 @@ mod tests {
             .spawn()
             .unwrap();
         let started = Instant::now();
-        let probe = SystemProbe::new(&exe, Duration::from_secs(1));
+        let probe = SystemProbe::new(&exe, Duration::from_millis(300));
         let result = probe.read_child(child);
         assert!(matches!(
             result,
             Err(ProbeError::Timeout | ProbeError::TimeoutUncontained(_))
         ));
         assert!(
-            started.elapsed() < Duration::from_secs(3),
+            started.elapsed() < Duration::from_secs(2),
             "关闭输出管道后仍须执行超时"
         );
     }

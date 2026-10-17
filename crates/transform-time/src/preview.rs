@@ -85,6 +85,15 @@ fn mapping_ratio(cfg: &TimeConfig, spec: Option<&TwoPointSpec>) -> Result<Ration
             })?
             .fit()
             .map(|(a, _)| a),
+        // 10 §5 分段同步：各段斜率可以不同，所以**没有单个倍率**。
+        // 不编一个"代表值"出来：那会让界面上显示一个不存在的数字，
+        // 而用户拿着它去核对时对不上。改为报错，让调用方走分段专用的展示路径。
+        TimeMode::Piecewise => Err(StkError::simple(
+            Domain::Transform,
+            codes::NEED_CONTROL_POINTS,
+            "分段同步没有单一倍率，不能按倍率预览",
+        )
+        .with_action("分段同步的映射逐段不同；请按具体的源时间查它对应的目标时间")),
     }
 }
 

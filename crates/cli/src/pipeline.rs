@@ -13,7 +13,9 @@ use core_model::loss::LossReport;
 use core_model::time::Fps;
 use core_model::Canvas;
 use task_engine::{AtomicOutput, OverwritePolicy};
-use transform_time::{apply as apply_time, Cue, TimeConfig, TimeMode, TwoPointSpec};
+use transform_time::{
+    apply_full as apply_time, Cue, PiecewiseSpec, TimeConfig, TimeMode, TwoPointSpec,
+};
 
 /// CLI 层的错误码从 110 起，避开各 crate 自己的编号空间（22 §错误模型）。
 fn cli_err(code: u16, msg: &str) -> StkError {
@@ -406,9 +408,10 @@ pub fn time_srt(
     sub: &TextSubtitle,
     cfg: &TimeConfig,
     spec: Option<&TwoPointSpec>,
+    piecewise: &PiecewiseSpec,
 ) -> Result<(TextSubtitle, LossReport)> {
     let cues: Vec<Cue> = sub.cues.iter().map(|c| (c.start, c.end)).collect();
-    let (moved, loss) = apply_time(&cues, cfg, spec)?;
+    let (moved, loss) = apply_time(&cues, cfg, spec, Some(piecewise))?;
     if moved.len() != sub.cues.len() {
         return Err(cli_err(113, "时间变换返回的 cue 数与输入不符"));
     }
@@ -424,6 +427,7 @@ pub fn time_ass(
     doc: &mut AssDocument,
     cfg: &TimeConfig,
     spec: Option<&TwoPointSpec>,
+    piecewise: &PiecewiseSpec,
 ) -> Result<(usize, LossReport)> {
     let positions = doc.sorted_dialogue_positions();
     let mut cues: Vec<Cue> = Vec::with_capacity(positions.len());
@@ -434,7 +438,7 @@ pub fn time_ass(
             .ok_or_else(|| cli_err(114, "事件条目消失"))?;
         cues.push((view.start()?, view.end()?));
     }
-    let (moved, loss) = apply_time(&cues, cfg, spec)?;
+    let (moved, loss) = apply_time(&cues, cfg, spec, Some(piecewise))?;
     for ((si, ei, _), (start, end)) in positions.iter().zip(moved) {
         let s = doc
             .section_mut(*si)
@@ -554,7 +558,7 @@ mod tests {
         let mut d = doc();
         let before = d.render();
         let cfg = TimeConfig::offset(1_000);
-        let (n, _loss) = time_ass(&mut d, &cfg, None).unwrap();
+        let (n, _loss) = time_ass(&mut d, &cfg, None, &PiecewiseSpec::new(Vec::new())).unwrap();
         assert_eq!(n, 2);
         let after = d.render();
         assert_ne!(after, before);

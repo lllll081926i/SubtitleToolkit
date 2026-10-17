@@ -63,6 +63,7 @@ pub(crate) fn execute_ctx(
             target_fps,
             offset_ms,
             two_point,
+            piecewise,
         } => {
             let cfg = TimeConfig {
                 mode: *mode,
@@ -70,8 +71,8 @@ pub(crate) fn execute_ctx(
                 target_fps: *target_fps,
                 offset_ms: *offset_ms,
             };
-            cfg.validate()?;
-            time(inv, input, &cfg, two_point.as_ref(), cmd)
+            cfg.validate_with(two_point.as_ref())?;
+            time(inv, input, &cfg, two_point.as_ref(), piecewise, cmd)
         }
         Command::Hdr { input, settings } => hdr(inv, input, settings, cmd),
         Command::PgsAdjust { input, ops } => pgs_adjust(inv, input, ops, cmd),
@@ -541,13 +542,14 @@ fn time(
     input: &Path,
     cfg: &TimeConfig,
     spec: Option<&transform_time::TwoPointSpec>,
+    piecewise: &transform_time::PiecewiseSpec,
     cmd: &str,
 ) -> Result<Envelope> {
     let src = load_input(input)?;
     match src.format {
         FormatKind::Ass => {
             let mut doc = AssDocument::parse(&src.loaded.text);
-            let (n, loss) = pipeline::time_ass(&mut doc, cfg, spec)?;
+            let (n, loss) = pipeline::time_ass(&mut doc, cfg, spec, piecewise)?;
             let bytes = doc.render().into_bytes();
             let data =
                 serde_json::json!({"format": "ass", "mode": cfg.mode.label(), "dialogues": n});
@@ -566,7 +568,7 @@ fn time(
         }
         FormatKind::Srt => {
             let (sub, loss) = parse_srt(&src.loaded.bytes)?;
-            let (moved, tl_loss) = pipeline::time_srt(&sub, cfg, spec)?;
+            let (moved, tl_loss) = pipeline::time_srt(&sub, cfg, spec, piecewise)?;
             let mut loss = loss;
             loss.merge(&tl_loss);
             let bytes = write_srt(&moved)?;
@@ -1259,6 +1261,7 @@ mod tests {
                     target_fps: None,
                     offset_ms: 1_500,
                     two_point: None,
+                    piecewise: transform_time::PiecewiseSpec::new(Vec::new()),
                 },
                 None,
                 true,

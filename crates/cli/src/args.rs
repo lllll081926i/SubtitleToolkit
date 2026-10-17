@@ -15,7 +15,7 @@ use core_model::profile::{FormatKind, HdrMode, HdrSettings, ValidationLevel};
 use core_model::time::{Fps, Rational, Time};
 use core_model::Canvas;
 use task_engine::OverwritePolicy;
-use transform_time::{TimeMode, TwoPointSpec};
+use transform_time::{ControlPoint, PiecewiseSpec, TimeMode, TwoPointSpec};
 
 pub const USAGE: &str = "\
 usage: subtitletool-cli <command> [options] [--out PATH] [--json] [--dry-run]
@@ -27,6 +27,9 @@ commands:
                      [--layout-policy keep-as-is|scale-with-script|drop]
   time         <file> --offset-ms N | --speed SRC --to-fps DST | --snap-fps FPS
                      | --two-point 源1,目标1,源2,目标2
+                     | --piecewise 源,目标 --piecewise 源,目标 [--piecewise ...]
+                     10 §5：--piecewise 可重复给多段（相邻两点连成一段），用于广告/剪辑差异；
+                     段外按最近一段的斜率外推，并在报告里报出外推了多少条
   hdr          <file> --hdr-mode compatibility|percentage|reference-white
                      [--nits N] [--bp 万分比] [--touch-alpha]
                      [--touch-styles yes|no] [--touch-inline yes|no]
@@ -157,6 +160,8 @@ pub enum Command {
         target_fps: Option<Fps>,
         offset_ms: i64,
         two_point: Option<TwoPointSpec>,
+        /// 10 §5 分段同步的控制点（可重复的 `--piecewise 源,目标`）
+        piecewise: PiecewiseSpec,
     },
     Hdr {
         input: PathBuf,
@@ -530,6 +535,7 @@ pub fn parse(argv: &[String]) -> Result<Invocation, ArgError> {
             let mut dst: Option<Fps> = None;
             let mut off = 0i64;
             let mut tp: Option<TwoPointSpec> = None;
+            let mut pw: Vec<ControlPoint> = Vec::new();
             let input = scan(rest, &mut |name, value| {
                 match name {
                     "--offset-ms" => {
@@ -564,13 +570,37 @@ pub fn parse(argv: &[String]) -> Result<Invocation, ArgError> {
                         });
                         mode = Some(TimeMode::TwoPoint);
                     }
+                    // 10 §5 分段同步：可重复给 `--piecewise 源,目标`，相邻两点连成一段。
+                    // 用可重复的小开关而不是一个长串：控制点数量不定，
+                    // 而且用户是一条一条从播放器里量出来的。
+                    "--piecewise" => {
+                        let parts: Vec<&str> = value.split(',').map(str::trim).collect();
+                        if parts.len() != 2 {
+                            return Err(ArgError::value(
+                                "--piecewise 需要 2 个时间：源,目标（可重复给多段）",
+                            ));
+                        }
+                        pw.push(ControlPoint::new(
+                            parse_time(parts[0])?,
+                            parse_time(parts[1])?,
+                        ));
+                        mode = Some(TimeMode::Piecewise);
+                    }
                     _ => return Err(ArgError::value(format!("time 不支持开关 {name}"))),
                 }
                 Ok(())
             })?;
             let mode = mode.ok_or_else(|| {
-                ArgError::value("time 需要 --offset-ms / --speed / --snap-fps / --two-point 之一")
+                ArgError::value(
+                    "time 需要 --offset-ms / --speed / --snap-fps / --two-point / --piecewise 之一",
+                )
             })?;
+            if mode == TimeMode::Piecewise && pw.len() < 2 {
+                return Err(ArgError::value(format!(
+                    "--piecewise 至少需要 2 个控制点（相邻两点连成一段），收到 {}",
+                    pw.len()
+                )));
+            }
             if mode == TimeMode::SpeedScale && (src.is_none() || dst.is_none()) {
                 return Err(ArgError::value(
                     "speed 模式需要 --speed SRC 与 --to-fps DST（两者都是有理数 FPS，ADR-007）",
@@ -583,6 +613,7 @@ pub fn parse(argv: &[String]) -> Result<Invocation, ArgError> {
                 target_fps: dst,
                 offset_ms: off,
                 two_point: tp,
+                piecewise: PiecewiseSpec::new(pw),
             }
         }
         "hdr" => {

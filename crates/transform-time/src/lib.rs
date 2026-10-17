@@ -8,14 +8,16 @@
 
 mod mode;
 mod ops;
+mod piecewise;
 mod preview;
 mod pts;
 
-pub use mode::{apply, TimeConfig, TimeMode, TwoPointSpec};
+pub use mode::{apply, apply_full, PiecewiseSpec, TimeConfig, TimeMode, TwoPointSpec};
 pub use ops::{
     apply_frame_snap, apply_offset, apply_speed_scale, apply_two_point, min_duration_policy,
     two_point_fit, Cue, ALIGN_KEY, EXTEND_KEY,
 };
+pub use piecewise::{ControlPoint, PiecewiseMap};
 pub use preview::{preview, preview_with, TimePreview};
 pub use pts::shift_pts_ticks;
 

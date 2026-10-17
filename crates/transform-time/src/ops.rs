@@ -226,6 +226,18 @@ fn infallible(cues: &[Cue], r: Result<(Vec<Cue>, LossReport), StkError>) -> (Vec
     }
 }
 
+/// 供其它模块（piecewise）复用的包装。
+/// 这两个收尾工作（倒序计数、负时间拒绝）必须与其它模式完全一致——
+/// 两处各写一份就会在某一刻分叉。
+pub(crate) fn note_inverted_inputs_pub(cues: &[Cue], loss: &mut LossReport) {
+    note_inverted_inputs(cues, loss)
+}
+
+/// 同上：变换后不得出现负时间（无 offset 场景，不给"安全下限"提示）。
+pub(crate) fn require_non_negative_pub(cues: &[Cue]) -> Result<(), StkError> {
+    require_non_negative(cues, None)
+}
+
 fn note_inverted_inputs(cues: &[Cue], loss: &mut LossReport) {
     let inverted = cues.iter().filter(|c| c.1 < c.0).count();
     if inverted > 0 {

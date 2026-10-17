@@ -17,22 +17,29 @@ pub enum TimeMode {
     SpeedScale,
     /// `t' = a*t + b`，由 4 个控制点拟合（10 §4）。
     TwoPoint,
+    /// 10 §5：多段 piecewise 线性映射，用于广告/剪辑差异。
+    /// 每段由相邻两个控制点唯一确定，段间连续。
+    Piecewise,
 }
 
 impl TimeMode {
-    /// 02 §3 第 3 步的四个 UI 选项名。
+    /// 02 §3 第 3 步的四个 UI 选项名（分段同步是高级档，排在后面）。
     pub fn label(self) -> &'static str {
         match self {
             TimeMode::Offset => "Offset only",
             TimeMode::FrameSnap => "Snap to frame only",
             TimeMode::SpeedScale => "Speed/Duration scale",
             TimeMode::TwoPoint => "Two-point linear fit",
+            TimeMode::Piecewise => "Segmented (piecewise) sync",
         }
     }
 
     /// 是否会改变影片总时长语义。Offset/FrameSnap 恒为 false，UI 的 `?` tooltip 直接用。
     pub fn changes_duration(self) -> bool {
-        matches!(self, TimeMode::SpeedScale | TimeMode::TwoPoint)
+        matches!(
+            self,
+            TimeMode::SpeedScale | TimeMode::TwoPoint | TimeMode::Piecewise
+        )
     }
 
     pub fn requires_source_fps(self) -> bool {
@@ -44,6 +51,25 @@ impl TimeMode {
             self,
             TimeMode::FrameSnap | TimeMode::SpeedScale | TimeMode::TwoPoint
         )
+    }
+}
+
+/// 分段同步的控制点集合（10 §5）。
+///
+/// 与 `TwoPointSpec` 平行：两者都需要 `TimeConfig` 装不下的信息，
+/// 所以各自单独传入，`apply` 不会因为缺参数就退回更弱的模式。
+#[derive(Clone, Debug, PartialEq)]
+pub struct PiecewiseSpec {
+    pub points: Vec<crate::piecewise::ControlPoint>,
+}
+
+impl PiecewiseSpec {
+    pub fn new(points: Vec<crate::piecewise::ControlPoint>) -> PiecewiseSpec {
+        PiecewiseSpec { points }
+    }
+
+    pub fn map(&self) -> Result<crate::piecewise::PiecewiseMap, StkError> {
+        crate::piecewise::PiecewiseMap::new(&self.points)
     }
 }
 
@@ -111,7 +137,18 @@ impl TimeConfig {
         }
     }
 
-    /// 只校验 `TimeConfig` 自身。`TwoPoint` 模式需要控制点，因此这里会显式失败，避免 UI 以为参数已完备。
+    /// 分段同步只需要控制点，`TimeConfig` 里没有它的位置。
+    pub fn piecewise() -> TimeConfig {
+        TimeConfig {
+            mode: TimeMode::Piecewise,
+            source_fps: None,
+            target_fps: None,
+            offset_ms: 0,
+        }
+    }
+
+    /// 只校验 `TimeConfig` 自身。`TwoPoint`/`Piecewise` 模式需要额外控制点，
+    /// 因此这里会显式失败，避免 UI 以为参数已完备。
     pub fn validate(&self) -> Result<(), StkError> {
         self.validate_with(None)
     }
@@ -145,6 +182,20 @@ pub fn apply(
     cfg: &TimeConfig,
     spec: Option<&TwoPointSpec>,
 ) -> Result<(Vec<Cue>, LossReport), StkError> {
+    apply_full(cues, cfg, spec, None)
+}
+
+/// `apply` 的完整签名。
+///
+/// 分段同步（10 §5）需要另一类控制点（N 个而不是 4 个），
+/// 所以它走单独的入参而不是塞进 `TwoPointSpec`。
+/// 两个 spec 都传 `None` 但模式要求它们时，就报缺参数——**绝不退回更弱的模式**。
+pub fn apply_full(
+    cues: &[Cue],
+    cfg: &TimeConfig,
+    spec: Option<&TwoPointSpec>,
+    piecewise: Option<&PiecewiseSpec>,
+) -> Result<(Vec<Cue>, LossReport), StkError> {
     cfg.validate_with(spec)?;
     match cfg.mode {
         TimeMode::Offset => ops::apply_offset(cues, cfg.offset_ms),
@@ -155,6 +206,10 @@ pub fn apply(
         TimeMode::TwoPoint => {
             let (a, b) = spec.ok_or_else(|| missing_control_points(cfg))?.fit()?;
             ops::try_apply_two_point(cues, a, b)
+        }
+        TimeMode::Piecewise => {
+            let p = piecewise.ok_or_else(|| missing_piecewise_points(cfg))?;
+            p.map()?.apply(cues)
         }
     }
 }
@@ -176,6 +231,16 @@ fn missing_control_points(cfg: &TimeConfig) -> StkError {
         "Two-point 模式缺少 4 个控制点",
     )
     .with_action("在 TwoPointSpec 里填写 source1/target1/source2/target2")
+    .with_detail(format!("mode = {}", cfg.mode.label()))
+}
+
+fn missing_piecewise_points(cfg: &TimeConfig) -> StkError {
+    StkError::simple(
+        Domain::Transform,
+        codes::NEED_CONTROL_POINTS,
+        "分段同步模式缺少控制点",
+    )
+    .with_action("在 PiecewiseSpec 里至少填 2 个 (source, target) 对；相邻两点连成一段")
     .with_detail(format!("mode = {}", cfg.mode.label()))
 }
 

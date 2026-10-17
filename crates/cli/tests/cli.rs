@@ -231,6 +231,114 @@ fn preserve_is_a_byte_for_byte_no_op_through_the_binary() {
 }
 
 #[test]
+fn piecewise_sync_shifts_only_the_segments_it_should() {
+    // 10 §5：广告/剪辑差异。片头与广告前不变，广告后整体后移。
+    // 这条用例锁的是"分段真的按段生效"——全局 offset/two-point 做不到这件事。
+    let d = workspace("piecewise");
+    let ass = write(
+        &d,
+        "p.ass",
+        "[Script Info]\r\nScriptType: v4.00+\r\nPlayResX: 1920\r\nPlayResY: 1080\r\n\r\n\
+         [V4+ Styles]\r\nFormat: Name, Fontname, Fontsize, PrimaryColour, Outline, Shadow, \
+         Spacing, MarginL, MarginR, MarginV\r\n\
+         Style: Default,Arial,48,&H00FFFFFF,3,2,1,60,60,50\r\n\r\n\
+         [Events]\r\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, \
+         Effect, Text\r\n\
+         Dialogue: 0,0:00:05.00,0:00:07.00,Default,,0,0,0,,before ad\r\n\
+         Dialogue: 0,0:00:25.00,0:00:27.00,Default,,0,0,0,,after ad\r\n",
+    );
+    let out_path = d.join("p.out.ass");
+    let out = run(&[
+        "time",
+        ass.to_str().unwrap(),
+        "--piecewise",
+        "0:00:00.00,0:00:00.00",
+        "--piecewise",
+        "0:00:10.00,0:00:10.00",
+        "--piecewise",
+        "0:00:20.00,0:00:25.00",
+        "--piecewise",
+        "0:00:30.00,0:00:35.00",
+        "--out",
+        out_path.to_str().unwrap(),
+        "--json",
+    ]);
+    assert!(out.status.success(), "{out:?}");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["data"]["mode"], "Segmented (piecewise) sync");
+    assert_eq!(v["data"]["dialogues"], 2);
+
+    let text = std::fs::read_to_string(&out_path).unwrap();
+    // 广告之前的 cue 一动不动（这是分段与全局变换的分水岭）
+    assert!(
+        text.contains("0:00:05.00,0:00:07.00,Default,,0,0,0,,before ad"),
+        "广告前的 cue 不该被改：{text}"
+    );
+    // 广告之后整体 +5s
+    assert!(
+        text.contains("0:00:30.00,0:00:32.00,Default,,0,0,0,,after ad"),
+        "广告后的 cue 该后移 5s：{text}"
+    );
+    // 报告里能看出"做了分段映射"
+    let preserved = v["loss"]["preserved"].to_string();
+    assert!(preserved.contains("4"), "要报出控制点数：{preserved}");
+    std::fs::remove_dir_all(&d).ok();
+}
+
+/// 分段同步的两个用法错误必须在解析层就挡住，而不是跑起来才发现。
+#[test]
+fn piecewise_sync_rejects_under_specified_control_points() {
+    let d = workspace("piecewise-bad");
+    let ass = write(&d, "p.ass", ASS);
+
+    // 只有一个控制点：定不出任何一段
+    let out = run(&[
+        "time",
+        ass.to_str().unwrap(),
+        "--piecewise",
+        "0:00:00.00,0:00:00.00",
+        "--json",
+    ]);
+    assert_eq!(out.status.code(), Some(2), "参数不足应为用法错误");
+    let msg = String::from_utf8_lossy(&out.stderr);
+    assert!(msg.contains("至少需要 2 个控制点"), "{msg}");
+
+    // 形状不对：只有一半
+    let out = run(&[
+        "time",
+        ass.to_str().unwrap(),
+        "--piecewise",
+        "0:00:00.00",
+        "--json",
+    ]);
+    assert_eq!(out.status.code(), Some(2));
+    assert!(String::from_utf8_lossy(&out.stderr).contains("源,目标"));
+
+    // 目标时间倒退：该段字幕会倒流 -> 执行层报错，不是静默接受
+    let out = run(&[
+        "time",
+        ass.to_str().unwrap(),
+        "--piecewise",
+        "0:00:00.00,0:00:00.00",
+        "--piecewise",
+        "0:00:10.00,0:00:20.00",
+        "--piecewise",
+        "0:00:20.00,0:00:15.00",
+        "--out",
+        d.join("never.ass").to_str().unwrap(),
+        "--json",
+    ]);
+    assert_eq!(out.status.code(), Some(1), "执行失败应为 1");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["ok"], false);
+    let err = v["errors"][0].to_string();
+    assert!(err.contains("第 1 段"), "要指认是哪一段：{err}");
+    // 失败的变换不该留下产物
+    assert!(!d.join("never.ass").exists(), "失败时不能留下半成品");
+    std::fs::remove_dir_all(&d).ok();
+}
+
+#[test]
 fn time_hdr_and_srt_to_ass_are_reachable() {
     let d = workspace("time-hdr");
     let srt = write(&d, "s.srt", SRT);

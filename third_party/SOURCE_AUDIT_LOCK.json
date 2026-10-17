@@ -437,8 +437,22 @@
         "mkvextract.exe": "bd79d648762787226e8aee23f003c0825b4ff17bc515adaa9d61facceda52346",
         "mkvpropedit.exe": "7cfad6fe2f370a02305b2956a0818e3f44a8277495193e7602a083cf32a3402b"
       },
-      "used_by": "AT-MKV-001（容器 helper，尚未实现）；当前仅登记可用性与哈希，未接入产品",
-      "status": "available-not-integrated"
+      "used_by": "AT-MKV-001（mkv identify/extract/remux，crate container-adapter）。以固定 argv 的外部进程方式调用（23 §外部进程），不链接、不再分发；GPL-2.0-or-later 因此不构成对核心的传染（21 §1 的外部进程边界）。",
+      "status": "external-process-adapter-in-use",
+      "integration": {
+        "mode": "外部进程调用（spawn + 固定 argv + Job Object 约束 + 超时）",
+        "commands": [
+          "mkv identify",
+          "mkv extract",
+          "mkv remux"
+        ],
+        "code": [
+          "crates/container-adapter/src/lib.rs",
+          "crates/cli/src/mkv.rs"
+        ],
+        "resolution": "由 --tools-dir 或环境变量 STK_MKVTOOLNIX_DIR / STK_MKVMERGE+STK_MKVEXTRACT 指定；不随产品分发",
+        "verified": "AT-MKV-001 用真实 v102.0 执行 23/23 断言通过（2026-10-17）"
+      }
     }
   },
   "libass_runtime_lock": "third_party/LIBASS_RUNTIME_LOCK.json",

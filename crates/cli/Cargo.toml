@@ -30,9 +30,11 @@ win-job = { workspace = true }
 image-core = { workspace = true }
 codec-bdn = { workspace = true }
 font-service = { workspace = true }
+container-adapter = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
 # 只为模糊冒烟：BDN XML 也必须做到"任何字节都不 panic"
 codec-bdn = { workspace = true }
+sha2 = { workspace = true }

@@ -1,0 +1,14 @@
+[package]
+name = "container-adapter"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "MKVToolNix 外部 adapter（18_CONTAINER_HELPER）：identify / extract / remux，绝不原地修改源文件"
+
+[dependencies]
+core-model = { workspace = true }
+win-job = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }

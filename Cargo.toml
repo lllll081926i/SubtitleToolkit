@@ -21,6 +21,7 @@ members = [
   "crates/win-job",
   "crates/renderer-host",
   "crates/font-service",
+  "crates/container-adapter",
   "crates/gui",
 ]
 
@@ -51,6 +52,7 @@ render-libass = { path = "crates/render-libass", version = "0.1.0" }
 win-job = { path = "crates/win-job", version = "0.1.0" }
 renderer-host = { path = "crates/renderer-host", version = "0.1.0" }
 font-service = { path = "crates/font-service", version = "0.1.0" }
+container-adapter = { path = "crates/container-adapter", version = "0.1.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 # 13 §3.1 的 ODS payload 不变量与 12 §4 的 provider 身份都需要密码学哈希（Apache-2.0，21 §1 允许）

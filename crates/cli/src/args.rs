@@ -56,6 +56,16 @@ commands:
                      并读注册表 HKLM/HKCU\\...\\CurrentVersion\\Fonts 的登记（--no-registry 可关）
                      [--copy-fonts DIR] 17 §6 第二档：把解析到的字体文件连 manifest 一起复制过去
                      不带 --copy-fonts 时只出报告：不写字体、不装字体、不 subset（17 §6 第一档）
+  mkv identify <file.mkv> [--tools-dir DIR]
+                     18 §2：列出轨道（语言/名称/default/forced）与附件（含字体附件）
+  mkv extract  <file.mkv> --track ID:OUT... [--attachment ID:OUT]... [--tools-dir DIR]
+                     18 §2：抽出字幕轨或字体附件；源文件只读
+  mkv remux    <file.mkv> --out NEW.mkv [--subtitle-tracks 2,3 | --all-subtitles]
+                     [--drop-video] [--drop-audio] [--attach-font FONT]...
+                     [--track-name ID:NAME] [--track-language ID:LANG]
+                     [--default-track ID] [--forced-track ID] [--tools-dir DIR]
+                     18 §2/§4：重封装成新 MKV，绝不原地修改；写完重新 identify 核对元数据
+                     需要 MKVToolNix（--tools-dir 或 STK_MKVTOOLNIX_DIR），不做视频/音频转码
   doctor                             环境自检：架构、可写路径、ffprobe 身份、未实现清单
 
 全局开关：--json（单行信封）/ --dry-run（不写盘）/ --out PATH / --overwrite skip|rename|replace
@@ -63,7 +73,7 @@ commands:
          / --inject-fonts（17 §7：把解析到的字体字节交给 libass，让渲染用的就是那份字节）
 覆盖策略默认 rename：目标已存在就换个名字写，绝不直接截断原文件（15 §6、AT-OUT-001）
 尚未实现（返回 STK-INP-0060 并指明所属 Phase，不会假装成功）：
-  font subset / mkv
+  font subset
   --preset FILE                        等 TOML 依赖按 21 §1 批准（ISSUES E4）；现在会明确报错
 ";
 
@@ -80,7 +90,9 @@ pub const COMMAND_CATALOG: &[&str] = &[
     "batch",
     "font scan",
     "font subset",
-    "mkv",
+    "mkv identify",
+    "mkv extract",
+    "mkv remux",
     "doctor",
 ];
 
@@ -111,6 +123,9 @@ const SWITCHES: &[&str] = &[
     "--exact-colors",
     "--no-registry",
     "--snap-pts",
+    "--all-subtitles",
+    "--drop-video",
+    "--drop-audio",
 ];
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -182,11 +197,49 @@ pub enum Command {
         /// 17 §6 的第二档：把解析到的 face 文件连同 manifest 复制到指定目录
         copy_fonts: Option<PathBuf>,
     },
+    /// 18 §2 的 MKV 助手：identify / extract / remux，全部走外部 MKVToolNix。
+    Mkv {
+        action: MkvAction,
+        /// MKVToolNix 安装目录（mkvmerge/mkvextract 都在里面）；None 走环境变量/默认
+        tools_dir: Option<PathBuf>,
+    },
     /// 20 §Commands 已规划、但当前 Phase 还没有 backing crate 的命令。
     /// 明确报错而不是"看起来成功了"，这是 39 检查表的要求。
     NotBuilt {
         name: String,
         phase: String,
+    },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum MkvAction {
+    /// `mkv identify FILE`：列出轨道与附件（18 §2 第一条）。
+    Identify { input: PathBuf },
+    /// `mkv extract FILE --track ID:OUT [--attachment ID:OUT]...`
+    Extract {
+        input: PathBuf,
+        tracks: Vec<(u64, PathBuf)>,
+        attachments: Vec<(u64, PathBuf)>,
+    },
+    /// `mkv remux FILE [...]`：新的 MKV，绝不原地修改（18 §4）。
+    /// 输出路径走全局 `--out`（与其它写产物的命令一致），不是子命令专属开关。
+    Remux {
+        input: PathBuf,
+        /// 保留哪些字幕轨（mkvmerge 轨道 id）。空 = 全部丢弃。
+        subtitle_tracks: Vec<u64>,
+        /// `--all-subtitles`：保留全部字幕轨（与 `--subtitle-tracks` 互斥）
+        all_subtitles: bool,
+        /// 保留哪些视频/音频轨；默认全保留（`--drop-video`/`--drop-audio` 显式丢弃）
+        keep_video: bool,
+        keep_audio: bool,
+        /// 要附加的字体文件（18 §2 `attach subset fonts`）
+        attach_fonts: Vec<PathBuf>,
+        /// 设置轨道元数据：`--track-name ID:NAME`、`--track-language ID:LANG`、
+        /// `--default-track ID`、`--forced-track ID`
+        track_name: Vec<(u64, String)>,
+        track_language: Vec<(u64, String)>,
+        default_track: Vec<u64>,
+        forced_track: Vec<u64>,
     },
 }
 
@@ -250,6 +303,11 @@ impl Command {
             Command::Render { .. } => "render",
             Command::Batch { .. } => "batch",
             Command::FontScan { .. } => "font scan",
+            Command::Mkv { action, .. } => match action {
+                MkvAction::Identify { .. } => "mkv identify",
+                MkvAction::Extract { .. } => "mkv extract",
+                MkvAction::Remux { .. } => "mkv remux",
+            },
             Command::NotBuilt { .. } => "not-built",
         }
     }
@@ -790,10 +848,183 @@ pub fn parse(argv: &[String]) -> Result<Invocation, ArgError> {
                 }
             }
         }
-        "mkv" => not_built("mkv", "Phase 7（container-adapter，外部 MKVToolNix）"),
+        "mkv" => {
+            let sub = rest.first().map(String::as_str).unwrap_or("");
+            let tail = rest.get(1..).unwrap_or(&[]);
+            let action =
+                match sub {
+                    "identify" => {
+                        let mut tools_dir = None;
+                        let input = scan(tail, &mut |name, value| match name {
+                            "--tools-dir" => {
+                                tools_dir = Some(PathBuf::from(value));
+                                Ok(())
+                            }
+                            _ => Err(ArgError::value(format!("mkv identify 不支持开关 {name}"))),
+                        })?;
+                        (MkvAction::Identify { input }, tools_dir)
+                    }
+                    "extract" => {
+                        let mut tracks: Vec<(u64, PathBuf)> = Vec::new();
+                        let mut attachments: Vec<(u64, PathBuf)> = Vec::new();
+                        let mut tools_dir = None;
+                        let input = scan(tail, &mut |name, value| match name {
+                            "--track" => {
+                                tracks.push(parse_id_path(value, "--track")?);
+                                Ok(())
+                            }
+                            "--attachment" => {
+                                attachments.push(parse_id_path(value, "--attachment")?);
+                                Ok(())
+                            }
+                            "--tools-dir" => {
+                                tools_dir = Some(PathBuf::from(value));
+                                Ok(())
+                            }
+                            _ => Err(ArgError::value(format!("mkv extract 不支持开关 {name}"))),
+                        })?;
+                        if tracks.is_empty() && attachments.is_empty() {
+                            return Err(ArgError::usage(
+                                "mkv extract 至少要一个 --track ID:OUT 或 --attachment ID:OUT",
+                            ));
+                        }
+                        (
+                            MkvAction::Extract {
+                                input,
+                                tracks,
+                                attachments,
+                            },
+                            tools_dir,
+                        )
+                    }
+                    "remux" => {
+                        let mut subtitle_tracks: Vec<u64> = Vec::new();
+                        let mut all_subtitles = false;
+                        let mut keep_video = true;
+                        let mut keep_audio = true;
+                        let mut attach_fonts: Vec<PathBuf> = Vec::new();
+                        let mut track_name: Vec<(u64, String)> = Vec::new();
+                        let mut track_language: Vec<(u64, String)> = Vec::new();
+                        let mut default_track: Vec<u64> = Vec::new();
+                        let mut forced_track: Vec<u64> = Vec::new();
+                        let mut tools_dir = None;
+                        let input =
+                            scan(tail, &mut |name, value| {
+                                match name {
+                                    "--out" => return Err(ArgError::usage(
+                                        "--out 是全局开关：写成 mkv remux in.mkv --out o.mkv 即可",
+                                    )),
+                                    "--subtitle-tracks" => subtitle_tracks
+                                        .extend(parse_id_list(value, "--subtitle-tracks")?),
+                                    "--all-subtitles" => all_subtitles = true,
+                                    "--drop-video" => keep_video = false,
+                                    "--drop-audio" => keep_audio = false,
+                                    "--attach-font" => attach_fonts.push(PathBuf::from(value)),
+                                    "--track-name" => {
+                                        track_name.push(parse_u64_str(value, "--track-name")?)
+                                    }
+                                    "--track-language" => track_language
+                                        .push(parse_u64_str(value, "--track-language")?),
+                                    "--default-track" => default_track
+                                        .push(parse_u64_only(value, "--default-track")?),
+                                    "--forced-track" => {
+                                        forced_track.push(parse_u64_only(value, "--forced-track")?)
+                                    }
+                                    "--tools-dir" => tools_dir = Some(PathBuf::from(value)),
+                                    _ => {
+                                        return Err(ArgError::value(format!(
+                                            "mkv remux 不支持开关 {name}"
+                                        )))
+                                    }
+                                }
+                                Ok(())
+                            })?;
+                        if all_subtitles && !subtitle_tracks.is_empty() {
+                            return Err(ArgError::value(
+                                "--all-subtitles 与 --subtitle-tracks 不能同时给（语义冲突）",
+                            ));
+                        }
+                        (
+                            MkvAction::Remux {
+                                input,
+                                subtitle_tracks,
+                                all_subtitles,
+                                keep_video,
+                                keep_audio,
+                                attach_fonts,
+                                track_name,
+                                track_language,
+                                default_track,
+                                forced_track,
+                            },
+                            tools_dir,
+                        )
+                    }
+                    other => {
+                        return Err(ArgError::usage(format!(
+                            "mkv 子命令未知：{other}（可用：identify|extract|remux）"
+                        )))
+                    }
+                };
+            Command::Mkv {
+                action: action.0,
+                tools_dir: action.1,
+            }
+        }
         other => return Err(ArgError::usage(format!("未知命令：{other}"))),
     };
     Ok(inv)
+}
+
+/// `ID:OUT` —— mkv 的轨道/附件选择。id 必须能解析成数字：一个能写法错的字段
+/// 在解析层挡住，比跑到 mkvextract 才因为拼错而拿到二进制垃圾桶要好。
+fn parse_id_path(value: &str, flag: &str) -> Result<(u64, PathBuf), ArgError> {
+    let (id, path) = value
+        .split_once(':')
+        .ok_or_else(|| ArgError::value(format!("{flag} 需要 ID:OUT 形式，收到 {value}")))?;
+    let id: u64 = id
+        .trim()
+        .parse()
+        .map_err(|_| ArgError::value(format!("{flag} 的 ID 必须是数字，收到 {id}")))?;
+    if path.is_empty() {
+        return Err(ArgError::value(format!("{flag} 缺少输出路径")));
+    }
+    Ok((id, PathBuf::from(path)))
+}
+
+/// `1,3,5` —— 轨道 id 列表。
+fn parse_id_list(value: &str, flag: &str) -> Result<Vec<u64>, ArgError> {
+    if value.trim().is_empty() {
+        return Err(ArgError::value(format!("{flag} 至少要给一个轨道 id")));
+    }
+    value
+        .split(',')
+        .map(|s| {
+            s.trim()
+                .parse::<u64>()
+                .map_err(|_| ArgError::value(format!("{flag} 里的轨道 id 必须是数字：{s}")))
+        })
+        .collect()
+}
+
+/// `ID` 单独一个数字。
+fn parse_u64_only(value: &str, flag: &str) -> Result<u64, ArgError> {
+    value
+        .trim()
+        .parse::<u64>()
+        .map_err(|_| ArgError::value(format!("{flag} 需要轨道 id（数字），收到 {value}")))
+}
+
+/// `ID:VALUE` —— 轨道 id 加一个字符串（名称/语言），值里允许有冒号（名称常带）。
+fn parse_u64_str(value: &str, flag: &str) -> Result<(u64, String), ArgError> {
+    let (id, rest) = value
+        .split_once(':')
+        .ok_or_else(|| ArgError::value(format!("{flag} 需要 ID:VALUE 形式，收到 {value}")))?;
+    let id = parse_u64_only(id, flag)?;
+    if rest.is_empty() {
+        return Err(ArgError::value(format!("{flag} 的值不能为空")));
+    }
+    Ok((id, rest.to_string()))
 }
 
 fn not_built(name: &str, phase: &str) -> Command {
@@ -1162,14 +1393,133 @@ mod tests {
         assert!(parse(&argv(&["font", "scan"])).is_err());
     }
 
+    /// 18 §4 的"绝不原地修改"在解析层就要能表达出来：`mkv remux` 必须带 `--out`，
+    /// 否则它只能写回源文件，而那是规格明禁的。
+    #[test]
+    fn mkv_remux_requires_out_and_rejects_conflicting_subtitle_selectors() {
+        let inv = parse(&argv(&[
+            "mkv",
+            "remux",
+            "in.mkv",
+            "--out",
+            "out.mkv",
+            "--subtitle-tracks",
+            "2,3",
+            "--attach-font",
+            "f.ttf",
+        ]))
+        .unwrap();
+        assert_eq!(inv.command.name(), "mkv remux");
+        assert_eq!(inv.out.as_deref(), Some(std::path::Path::new("out.mkv")));
+        match inv.command {
+            Command::Mkv {
+                action:
+                    MkvAction::Remux {
+                        subtitle_tracks,
+                        attach_fonts,
+                        keep_video,
+                        keep_audio,
+                        ..
+                    },
+                ..
+            } => {
+                assert_eq!(subtitle_tracks, vec![2, 3]);
+                assert_eq!(attach_fonts, vec![PathBuf::from("f.ttf")]);
+                assert!(keep_video && keep_audio, "默认不该丢视频/音频");
+            }
+            other => panic!("{other:?}"),
+        }
+        // 没有 --out 时解析本身合法（--out 是全局开关），但执行层必须拒；
+        // 这里只校验解析结果里确实没有输出路径
+        let no_out = parse(&argv(&["mkv", "remux", "in.mkv"])).unwrap();
+        assert_eq!(no_out.out, None);
+        // --all-subtitles 与 --subtitle-tracks 语义冲突
+        let e = parse(&argv(&[
+            "mkv",
+            "remux",
+            "in.mkv",
+            "--out",
+            "o.mkv",
+            "--all-subtitles",
+            "--subtitle-tracks",
+            "2",
+        ]))
+        .unwrap_err();
+        assert!(e.message.contains("不能同时"), "{e:?}");
+    }
+
+    #[test]
+    fn mkv_extract_needs_ids_and_parses_them_strictly() {
+        let inv = parse(&argv(&[
+            "mkv",
+            "extract",
+            "in.mkv",
+            "--track",
+            "2:sub.ass",
+            "--attachment",
+            "1:font.ttf",
+        ]))
+        .unwrap();
+        match inv.command {
+            Command::Mkv {
+                action:
+                    MkvAction::Extract {
+                        tracks,
+                        attachments,
+                        ..
+                    },
+                ..
+            } => {
+                assert_eq!(tracks, vec![(2, PathBuf::from("sub.ass"))]);
+                assert_eq!(attachments, vec![(1, PathBuf::from("font.ttf"))]);
+            }
+            other => panic!("{other:?}"),
+        }
+        // 一个也不选就是空跑，必须在解析层报用法错而不是静默成功
+        assert!(parse(&argv(&["mkv", "extract", "in.mkv"])).is_err());
+        // id 不是数字：挡住，别把拼写错误带到 mkvextract
+        assert!(parse(&argv(&["mkv", "extract", "in.mkv", "--track", "x:sub.ass"])).is_err());
+        // 缺冒号
+        assert!(parse(&argv(&["mkv", "extract", "in.mkv", "--track", "2"])).is_err());
+    }
+
+    #[test]
+    fn mkv_identify_takes_an_input_and_an_optional_tools_dir() {
+        let inv = parse(&argv(&[
+            "mkv",
+            "identify",
+            "in.mkv",
+            "--tools-dir",
+            "D:\\mkt",
+        ]))
+        .unwrap();
+        assert_eq!(inv.command.name(), "mkv identify");
+        match inv.command {
+            Command::Mkv {
+                action: MkvAction::Identify { input },
+                tools_dir,
+            } => {
+                assert_eq!(input, PathBuf::from("in.mkv"));
+                assert_eq!(tools_dir, Some(PathBuf::from("D:\\mkt")));
+            }
+            other => panic!("{other:?}"),
+        }
+        assert!(parse(&argv(&["mkv", "bogus", "in.mkv"])).is_err());
+        assert!(parse(&argv(&["mkv", "identify"])).is_err());
+    }
+
     #[test]
     fn unimplemented_commands_are_not_silently_ok() {
         // 未实现清单问解析器要（`not_built_commands`），不手抄第二份：
         // 手抄的那份在命令落地之后还在宣称它未实现，而且没有任何测试会发现（ISSUES AC4）。
         let pending = not_built_commands();
         assert!(
-            pending.contains(&"font subset") && pending.contains(&"mkv"),
-            "font subset/mkv 必须仍然在未实现清单里：{pending:?}"
+            pending.contains(&"font subset"),
+            "font subset 必须仍然在未实现清单里：{pending:?}"
+        );
+        assert!(
+            !pending.contains(&"mkv"),
+            "mkv 已经落地（container-adapter），不能再列为未实现：{pending:?}"
         );
         for name in &pending {
             let mut args: Vec<String> = name.split(' ').map(str::to_string).collect();
@@ -1181,7 +1531,15 @@ mod tests {
             );
         }
         // 已落地的命令不许继续躺在清单里；pgs encode 与 render 都曾经是占位
-        for done in ["render", "pgs encode", "batch", "font scan"] {
+        for done in [
+            "render",
+            "pgs encode",
+            "batch",
+            "font scan",
+            "mkv identify",
+            "mkv extract",
+            "mkv remux",
+        ] {
             assert!(
                 !pending.contains(&done),
                 "{done} 已经有实现，却仍被列为未实现：{pending:?}"

@@ -18,7 +18,7 @@
 | VapourSynth/AviSynth adapter | 可选 | 未实现 | legacy 可选项，不阻塞 libass |
 | Font health | P1 | 基础扫描与报告已实现 | DirectWrite 权威、完整字体环境和外部渲染仍需核验 |
 | Font subset | 后续 | 未实现 | 需复杂文字 shaping 等价语料和依赖许可裁决 |
-| MKV helper | 后续 | 未实现 | 调用外部工具；原文件不改，产物重读校验 |
+| MKV helper | 后续 | 已实现（`mkv identify\|extract\|remux`） | 调用外部 MKVToolNix；原文件不改，产物重读逐轨校验（AT-MKV-001 已执行通过；无 EBML 自实现） |
 | Media probe | P1 | ffprobe adapter 已实现 | 真实工具与视频样本验证；只提供建议，不自动改速度 |
 | Smart sync | 可选 | 未实现 | 外部依赖和 GPL 边界先行评估 |
 | Advanced PGS author / Strict validator | 后续 | 未实现完整能力 | 需要 buffer 模型、真盘样本和播放器矩阵 |

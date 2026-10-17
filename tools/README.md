@@ -27,6 +27,7 @@ Cargo 配置将编译子进程的临时目录固定为仓库 `target/tmp/`。初
 $env:RELEASE = '1'
 $env:STK_LIBASS_DLL = 'D:/dependencies/libass/ass-9.dll'
 $env:STK_FFPROBE = 'D:/dependencies/ffmpeg/ffprobe.exe'
+$env:STK_MKVTOOLNIX_DIR = 'D:/dependencies/mkvtoolnix'
 & ./tools/check_all.ps1 --strict
 ```
 

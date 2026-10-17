@@ -46,12 +46,17 @@ fn doctor_json_is_one_line_and_names_missing_capabilities() {
     assert_eq!(v["command"], "doctor");
     assert_eq!(v["ok"], true);
     let nb = v["data"]["not_built"].as_array().unwrap();
-    // 未实现清单现在只剩 font subset / mkv：`render` 与 `font scan` 都从占位变成了实命令，
+    // 未实现清单现在只剩 font subset：`render`、`font scan` 与 `mkv *` 都从占位变成了实命令，
     // 如果这里还写着它们，就是 doctor 在替产品撒一个过期的谎
     assert!(!nb.contains(&serde_json::json!("render")), "{nb:?}");
     assert!(!nb.contains(&serde_json::json!("font scan")), "{nb:?}");
     assert!(nb.contains(&serde_json::json!("font subset")), "{nb:?}");
-    assert!(nb.contains(&serde_json::json!("mkv")), "{nb:?}");
+    // mkv 已落地（18 §2/§4）：三个子命令都不该再出现。
+    // 注意 catalog 里的是 "mkv identify" 这种子命令形式，不是裸的 "mkv"。
+    assert!(!nb.contains(&serde_json::json!("mkv")), "{nb:?}");
+    assert!(!nb.contains(&serde_json::json!("mkv identify")), "{nb:?}");
+    assert!(!nb.contains(&serde_json::json!("mkv extract")), "{nb:?}");
+    assert!(!nb.contains(&serde_json::json!("mkv remux")), "{nb:?}");
     // doctor 的清单是从解析器推出来的，所以它必须和实际退出码一致：
     // 列在未实现里的命令真的回 STK-INP-0060，没列的必须不报这个码
     for listed in nb {
@@ -286,11 +291,17 @@ fn usage_errors_exit_two_and_run_errors_exit_one() {
     assert_eq!(v["errors"][0]["code"], "STK-INP-0110");
     assert!(v["errors"][0]["action"].is_null() || true);
 
-    // 占位命令：明确失败、给 0060，而不是假成功
-    let out = run(&["mkv", "x", "--json"]);
+    // 占位命令：明确失败、给 0060，而不是假成功。
+    // mkv 已经落地（18 §2/§4），所以拿仍然未实现的 font subset 当样本。
+    let out = run(&["font", "subset", "x.ass", "--json"]);
     assert_eq!(out.status.code(), Some(1));
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(v["errors"][0]["code"], "STK-INP-0060");
+
+    // mkv 的未知子命令是**用法错误**(2)，不是运行错误(1)：
+    // 命令拼错与命令跑不起来是两件事，退出码不能混。
+    let out = run(&["mkv", "x", "--json"]);
+    assert_eq!(out.status.code(), Some(2), "未知子命令应为用法错误");
 
     // 已实现的 `render` 走的是同一条"取值没问题但跑不起来"的路：0110 而不是 0060。
     // 这条断言的存在理由：占位命令换成实命令时，只有正向检查才会发现清单漂移。
@@ -331,10 +342,22 @@ fn usage_errors_exit_two_and_run_errors_exit_one() {
             "{cmd} 已实现，却还留在\"尚未实现\"里：\n{help}"
         );
     }
-    for pending in ["font subset", "mkv", "--preset", "STK-INP-0060"] {
+    for pending in ["font subset", "--preset", "STK-INP-0060"] {
         assert!(
             pending_part.contains(pending),
             "usage 少了未实现项 {pending}：\n{help}"
+        );
+    }
+    // mkv 已经落地（18 §2/§4）：它的三个子命令必须在"已实现"段落里，
+    // 且不得再出现在"尚未实现"那一段里
+    for done in ["mkv identify", "mkv extract", "mkv remux"] {
+        assert!(
+            impl_part.contains(done),
+            "usage 的已实现段落少了 {done}：\n{help}"
+        );
+        assert!(
+            !pending_part.contains(done),
+            "{done} 已实现，却还留在\"尚未实现\"里：\n{help}"
         );
     }
     assert!(

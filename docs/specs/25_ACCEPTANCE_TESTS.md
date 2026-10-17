@@ -23,6 +23,12 @@
 - AT-FONT-001：中文字体缺字被报告。
 - AT-FONT-002：font environment 改变导致 render cache miss。
 - AT-MKV-001：提取→处理→新MKV，原文件不改，字体附件存在。
+
+> 2026-10-17 更新：已实现 `mkv identify|extract|remux`（18 §2/§4），并用真实 MKVToolNix v102.0
+> 执行 **23/23 断言通过**：源文件 SHA-256 前后一致；产物经独立 `mkvmerge --identify` 认定合法且
+> 逐轨元数据保持；字体附件经独立 `mkvextract` 抽回与原字体哈希一致；`--out` 等于输入时被拒（`STK-INP-0257`）。
+> 集成用例 `crates/cli/tests/mkv.rs`（找不到 MKVToolNix 时明确跳过）。详见
+> [MKV 助手裁决](../reviews/2026-10-17-mkv-container-helper.md)。**AT-MKV-001 已执行并通过**。
 - AT-BATCH-001：100 文件×3 profiles，单文件失败不阻塞其他。
 - AT-UI-001：重任务期间 UI 60s 内持续可响应、取消可点击。
 - AT-PATH-001：中文/emoji/260+长路径正确。

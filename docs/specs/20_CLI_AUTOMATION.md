@@ -11,9 +11,11 @@
 - `probe`、`convert`、`time`、`hdr`；
 - `render`、`batch`；
 - `pgs adjust`、`pgs validate`、`pgs encode`；
-- `font scan`、`doctor`。
+- `font scan`、`mkv identify`、`mkv extract`、`mkv remux`、`doctor`。
 
-参数解析器也识别规划中的 `font subset`、`mkv`，但这些命令返回 `STK-INP-0060`，不会报告成功。`--preset` 尚未实现。
+参数解析器也识别规划中的 `font subset`，但该命令返回 `STK-INP-0060`，不会报告成功。
+`mkv` 已落地（`container-adapter` 调用外部 MKVToolNix），需要 `--tools-dir` 或环境变量
+`STK_MKVTOOLNIX_DIR` 指定安装目录。`--preset` 尚未实现。
 
 ## 2. 命令与退出码
 
@@ -25,6 +27,7 @@
 - `pgs adjust|validate|encode` 分别处理 PGS 快速变换、分层校验和 Basic 编码。Basic 编码不代表 Strict Blu-ray 合规。
 - `batch` 从 JSON 任务规格运行多个输入与输出 profile。
 - `font scan` 扫描 ASS 字体请求并生成报告；`--copy-fonts` 可交付完整字体文件。
+- `mkv identify` 列出轨道与附件；`mkv extract` 抽出字幕轨或字体附件；`mkv remux` 重封装成新 MKV（绝不原地修改）。
 - `doctor` 报告环境与未实现能力。
 
 退出码固定为：0 成功、1 执行失败、2 命令行用法错误。未实现的命令以执行失败返回，并在结果中指出能力未实现。

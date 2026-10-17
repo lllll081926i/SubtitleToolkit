@@ -9,6 +9,7 @@ pub mod deliver;
 pub mod font;
 pub(crate) mod fontenv;
 pub(crate) mod front;
+pub mod mkv;
 pub mod output;
 pub mod pipeline;
 pub mod render;

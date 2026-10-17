@@ -42,6 +42,20 @@
   （含真 libass 通过检查并真的渲染出 BDN XML，以及“同位 PE 不被误判”的负基线）；
   `core-model/src/pe.rs` 的 4 用例把 Itanium（0x0200）正确归为 `Other` 而不是 x64。
   详见[PE 架构检测裁决](reviews/2026-10-17-pe-arch-check.md)。
+- 2026-10-17 **实现 22 §6 的崩溃现场记录**（真 minidump 仍未做，且说明了为何不做）：
+  新增 `renderer-host::crash`。host 在阶段边界（启动 / 载脚本 / 出第 N 帧 / 收尾）
+  把现场写成一个 json；主进程崩后读回来，把「阶段、序号、provider 身份、
+  上一个成功动作」拼进**错误卡**。手工验证：注入 abort 后退出码 3221226505（`0xC0000409`），
+  错误卡里出现 `崩溃现场：阶段=startup；已运行=0ms；原因=注入 abort`。
+  最关键的一条是 D-CRASH-04：**起 host 之前先删旧记录** —— 真崩溃常常发生在
+  写不出记录的地方（访问违例、栈溢出），那时留着上一回的文件会让报告说出一个
+  “斩钉截铁但完全错误”的阶段与 provider，**一份错的现场比没有现场坏得多**。
+  已实现并验证：同目录先注入再不带注入重跑，记录已不存在。
+  真 minidump 不做：它必须在**异常处理器**里调 `MiniDumpWriteDump`
+  （一堆异步信号安全约束，写错比不写更危险），且 dump 含进程内存镜像
+  —— 而本产品处理用户的字幕与内嵌字体，诊断包默认要能直接外发（22 §5）。
+  记成**已知能力缺口**而不是用残缺的异常处理器假装做到。
+  详见[崩溃现场记录裁决](reviews/2026-10-17-host-crash-record.md)。
 - 2026-10-17 **给 AT-UI-001 补上实测证据**（此前只有结构证据）：新增
   `crates/gui/tests/ui_responsiveness.rs`（5 用例）。真重任务（12 份输入 × 4000 条 cue）
   在后台跑时反复计时 `SubtitleApp::update`，实测**最慢 18.5µs / 均值 9.5µs**，
@@ -85,6 +99,9 @@
 - 22 §1 结构化日志（`tracing`），按日轮转 7 天 + 10 MiB 总量上限，随 `DataDir` 落盘。
 - 22 §2 correlation id（`J/O/R` 三层 + 共享段）：信封、人读输出和日志三处是同一个值，
   batch 另有 `output_ids[]` 与 `renderer_id`。
+- 22 §6 的崩溃现场记录（`renderer-host::crash`）：host 在阶段边界写 json，
+  主进程读回来进错误卡（阶段/第几帧/provider 身份）；起 host 前先删旧记录。
+  **真 minidump 未做**（需异常处理器 + 含内存镜像，与 22 §5 默认可外发相抵）。
 - AT-UI-001 的**实测**：真重任务在后台跑时反复计时 `SubtitleApp::update`，
   最慢 18.5µs / 均值 9.5µs（预算 8ms，37 §1）；取消点击不阻塞且令牌与 worker 同源。
 - 23 §DLL 的 PE arch 检测（单份实现在 `core_model::pe`，主程序与 host 共用）；
@@ -112,7 +129,8 @@
 - 22 §1 日志文件已实现（`core_model::logging`，`tracing` + 按日轮转 + 启动清理，
   随 `DataDir` 落盘、便携包内自动进 `data/logs/`）；日志已进 `diagnose` 的诊断包。
   **22 §2 correlation id 已实现**（`J/O/R` 三层，日志与报告同一个值）。
-  22 §6 的 SEH minidump 仍未实现。
+  **22 §6 的崩溃现场记录已实现**（阶段/帧号/provider 身份进错误卡）；
+  真 minidump 仍未做（需异常处理器，且含内存镜像与 22 §5 冲突）。
 - 36 §1 的另外两层（ToolDefaults、Preset）未实现；Preset 需要 TOML 依赖获批（ISSUES E4）。
 
 ## 2026-10-08 早前代码审查验证

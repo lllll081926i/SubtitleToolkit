@@ -26,6 +26,14 @@ use image_core::Frame;
 
 use crate::run;
 
+/// 22 §6：崩溃现场目录。
+///
+/// 每次调用都重新解析（`DataDir::resolve_current_exe` 会去 stat exe 旁的
+/// `portable.flag`），所以不要把它放进热循环 —— 只在真正要起 host 时算一次。
+fn crash_dir() -> Option<std::path::PathBuf> {
+    core_model::DataDir::resolve_current_exe().file("host-crashes")
+}
+
 /// 一次前半链的输入取值。
 #[derive(Clone, Copy)]
 pub(crate) struct RenderJob<'a> {
@@ -101,6 +109,7 @@ pub(crate) fn render_to_plan(job: &RenderJob<'_>) -> Result<Rendered> {
             .with_detail("实际渲染必须通过 subtitletool-render-host.exe 隔离运行")
             .with_action("构建 renderer-host 并设置 STK_RENDERER_HOST，或将它放在 CLI 同目录")
     })?;
+    let crash = crash_dir();
     let spec = renderer_host::client::HostSpec {
         host_exe: &host_exe,
         dll: &dll_path,
@@ -109,6 +118,9 @@ pub(crate) fn render_to_plan(job: &RenderJob<'_>) -> Result<Rendered> {
         default_font: job.default_font,
         timeout: std::time::Duration::from_secs(30),
         crash_injection: None,
+        // 22 §6：崩溃现场写到数据目录下的 host-crashes/。
+        // 走 `DataDir` 于是便携包里自动落在包内，不需另外一套目录规则。
+        crash_dir: crash.as_deref(),
     };
     let mut host = renderer_host::client::Host::start(&spec).map_err(render_host_error)?;
     // 17 §7：把"我们解析到并读过的那份字节"直接交给 libass。
@@ -197,7 +209,21 @@ pub(crate) fn render_to_plan(job: &RenderJob<'_>) -> Result<Rendered> {
 
 fn render_host_error(error: renderer_host::client::HostFailure) -> StkError {
     let title = error.title();
-    StkError::simple(Domain::Render, 91, &title).with_detail(format!("{}：{error:?}", error.code()))
+    let mut e = StkError::simple(Domain::Render, 91, &title)
+        .with_detail(format!("{}：{error:?}", error.code()));
+    // 22 §6：崩溃现场必须进错误卡。
+    //
+    // 只说“退出码 3”对用户毫无用处；“死在 render 阶段的第 417 帧、
+    // provider 是 x64”才能让人判断要不要换个 DLL、还是把那一帧的内容发过来。
+    if let Some(summary) = error.crash_summary() {
+        e = e.with_detail(format!("崩溃现场：{summary}"));
+    }
+    if let renderer_host::client::HostFailure::Crashed { log_tail, .. } = &error {
+        if !log_tail.trim().is_empty() {
+            e = e.with_detail(format!("host 日志尾部：{}", log_tail.trim()));
+        }
+    }
+    e
 }
 
 /// 一次批量任务内的渲染记忆化。

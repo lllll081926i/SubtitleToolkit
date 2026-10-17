@@ -52,6 +52,9 @@ pub async fn render_single_frame(
         let storage_canvas = Canvas::new(canvas.0, canvas.1).unwrap_or(Canvas::FHD1080);
         let output_canvas = Canvas::new(canvas.0, canvas.1).unwrap_or(Canvas::FHD1080);
 
+        // 22 §6：预览的 host 崩溃也要有现场 —— 预览是用户最常用的一条渲染路径，
+        // 而“预览一闪就没了”是最难报告的一类问题。
+        let crash = core_model::DataDir::resolve_current_exe().file("host-crashes");
         let spec = renderer_host::client::HostSpec {
             host_exe: &host,
             dll: &dll,
@@ -60,6 +63,7 @@ pub async fn render_single_frame(
             default_font: "Arial",
             timeout: std::time::Duration::from_secs(5),
             crash_injection: None,
+            crash_dir: crash.as_deref(),
         };
 
         let mut client = renderer_host::client::Host::start(&spec).map_err(|e| format!("{e:?}"))?;

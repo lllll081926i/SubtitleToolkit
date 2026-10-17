@@ -27,7 +27,8 @@
 | Installer、portable、签名与更新 | 发布阶段 | portable 包已实现（checksums + SBOM + notices 三件套） | 安装器、Authenticode 签名、更新器未做 |
 | 36 §1 AppSettings | 已交付 | `settings show\|init\|set`；未知字段保留、坏文件不阻塞、原子写 | ToolDefaults 与 Preset（需 TOML 依赖获批）未做 |
 | 37 §2 渲染缓存 | 已交付 | 内存共享 + 磁盘（配额、清理、损坏自愈、跨运行复用） | 内存那级不是容量受限 LRU；benchmark 阈值（37 §6）未做 |
-| 22 §5 诊断包 | 已交付 | `diagnose`；默认白名单不含用户内容，附样本需显式点名 | 22 §1 日志文件、§2 correlation ID、§6 minidump 未做 |
+| 22 §5 诊断包 | 已交付 | `diagnose`；默认白名单不含用户内容，附样本需显式点名 | 真 minidump（需异常处理器 + 含内存镜像）未做 |
+| 22 §1 日志 + §2 关联 ID + §6 崩溃现场 | 已交付 | tracing 按日轮转；`J/O/R` 三层 id（日志与报告同一个值）；host 崩溃现场进错误卡 | 真 minidump 未做（见裁决）；日志无 json 输出模式 |
 
 ## 明确不做的功能矩阵
 

@@ -12,6 +12,7 @@
 //! 分帧协议见 [`protocol`]：`1 字节标签 + u32 长度 + 负载`，标签 1 是 JSON、2 是原始字节。
 
 pub mod client;
+pub mod crash;
 // 12 §3 / 23 §DLL 的 PE 头读取在 `core-model`：主程序与 host 都要在加载 DLL
 // 之前判定位数，而**两份实现对同一个 DLL 会给出不同答案**。
 // 这里只重新导出，保持既有调用点（`crate::pe::…`）不变。
@@ -19,5 +20,6 @@ pub use core_model::pe;
 pub mod protocol;
 
 pub use client::{Abandoned, Frame, Host, HostFailure, HostSpec};
+pub use crash::{CrashNote, Phase, Tracker};
 pub use pe::{arch_of_bytes, arch_of_file, PeArch};
 pub use protocol::{Handshake, Request, Response, API_VERSION};

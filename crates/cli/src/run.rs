@@ -1572,6 +1572,7 @@ fn render_host_report() -> serde_json::Value {
             "reason": "没有可用的 libass：给 --libass-dll 或设 STK_LIBASS_DLL",
         });
     };
+    let crash = core_model::DataDir::resolve_current_exe().file("host-crashes");
     let spec = renderer_host::client::HostSpec {
         host_exe: &exe,
         dll: &dll,
@@ -1580,6 +1581,9 @@ fn render_host_report() -> serde_json::Value {
         default_font: "Arial",
         timeout: std::time::Duration::from_secs(10),
         crash_injection: None,
+        // doctor 的握手演练也用同一个目录：它跑的就是真 host，
+        // 而一旦它在启动时就崩，那份现场正是诊断最需要的东西。
+        crash_dir: crash.as_deref(),
     };
     match renderer_host::client::Host::start(&spec) {
         Ok(mut host) => {

@@ -28,6 +28,12 @@ pub const MAX_MESSAGE_BYTES: usize = 64 * 1024 * 1024;
 /// 控制面协议本身不再携带任何自毁指令（2026-10-09 审查：正式二进制不得留有
 /// 可被客户端控制的 abort/hang 后门）。AT-RENDER-002 的崩溃用例经此开关触发。
 pub const CRASH_ENV: &str = "STK_HOST_CRASH";
+
+/// 22 §6：崩溃现场记录写到哪个目录。
+///
+/// 与 `CRASH_ENV` 同一类（**启动环境**而不是控制面）：客户端无法在运行时
+/// 把它改到别处，也就不存在"让 host 往任意目录写文件"这条路径。
+pub const CRASH_DIR_ENV: &str = "STK_HOST_CRASH_DIR";
 pub const FRAME_CHUNK_BYTES: usize = 16 * 1024 * 1024;
 
 /// 握手结果：12 §2 要求逐项交代 provider 类型、名字、版本、PE 位数、API 版本、像素格式。

@@ -21,6 +21,7 @@ use core_model::canvas::Canvas;
 use core_model::loss::LossReport;
 use sha2::{Digest as _, Sha256};
 
+use crate::crash;
 use crate::pe::{self, PeArch};
 use crate::protocol::{self, Handshake, Message, Request, Response, API_VERSION};
 
@@ -38,6 +39,12 @@ pub struct HostSpec<'a> {
     /// 它是**启动环境**的一部分，不是控制面指令，所以发布二进制没有可远程触发的自杀路径。
     /// 传 `None` 就是正常宿主，占用该进程的 `STK_HOST_CRASH` 环境变量。
     pub crash_injection: Option<&'a str>,
+    /// 22 §6：host 把崩溃现场写到哪里。
+    ///
+    /// `None` = 不记录（host 仍然正常工作，只是崩溃后只能看到退出码）。
+    /// 由调用方指定而不是硬编码：部署形态不同（便携包、安装版、测试）
+    /// 应该落在不同的目录里，而那是调用方知道的事。
+    pub crash_dir: Option<&'a Path>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -60,12 +67,30 @@ pub enum HostFailure {
         log_tail: String,
         contained: bool,
         job_error: u32,
+        /// 22 §6：host 死之前写下的现场（阶段、第几步、provider 身份）。
+        /// `None` = 没有记录（大多数崩溃发生在写不了记录的地方，或没设目录）。
+        /// 有这个字段与没有它是两回事：前者能回答“哪一步死的”。
+        crash_note: Option<Box<crash::CrashNote>>,
     },
     Protocol(String),
     Io(String),
 }
 
 impl HostFailure {
+    /// 22 §6：这次崩溃的现场摘要（如果有记录）。
+    ///
+    /// 提成一个方法而不是让调用方去 match 变体：
+    /// “崩溃时给出一行现场”是一个契约，不该由每个调用点各自记得怎么写。
+    pub fn crash_summary(&self) -> Option<String> {
+        match self {
+            HostFailure::Crashed {
+                crash_note: Some(n),
+                ..
+            } => Some(crate::crash::summarize(n)),
+            _ => None,
+        }
+    }
+
     /// 给人看的错误码（20 §错误模型：每一类失败都要有能对上的码）。
     pub fn code(&self) -> &'static str {
         match self {
@@ -129,6 +154,8 @@ pub struct Host {
     handshake: Handshake,
     timeout: Duration,
     exe: PathBuf,
+    /// 22 §6：崩溃现场的目录。`None` = host 不记录（拿不到目录）。
+    crash_dir: Option<PathBuf>,
 }
 
 impl Host {
@@ -148,6 +175,18 @@ impl Host {
         let mut command = Command::new(spec.host_exe);
         if let Some(how) = spec.crash_injection {
             command.env(protocol::CRASH_ENV, how);
+        }
+        // 22 §6：崩溃现场写到哪儿。与 `STK_HOST_CRASH` 同一类：
+        // 启动环境而不是控制面，客户端无法在运行时改它。
+        if let Some(dir) = spec.crash_dir {
+            command.env(protocol::CRASH_DIR_ENV, dir);
+            // 22 §6：**先删掉上一次的记录**再起进程。
+            //
+            // 不删的后果很隐蔽：这次崩溃发生在写不出记录的地方（访问违例、
+            // 栈溢出），而目录里还留着上一回的现场 —— 于是报告会把上一次崩溃的
+            // “阶段/第几帧/provider”当成这一次的。**一份错的现场比没有现场坏得多**，
+            // 因为它会让调查直接走错方向。删失败不算错（没有旧文件就是常态）。
+            let _ = std::fs::remove_file(dir.join(crate::crash::FILE_NAME));
         }
         let mut child = command
             .stdin(Stdio::piped())
@@ -217,6 +256,7 @@ impl Host {
             handshake: empty_handshake(),
             timeout: spec.timeout,
             exe: spec.host_exe.to_path_buf(),
+            crash_dir: spec.crash_dir.map(|p| p.to_path_buf()),
         };
 
         let hello = Request::Hello {
@@ -420,6 +460,18 @@ impl Host {
         &self.exe
     }
 
+    /// 22 §6：把 host 死前写下的现场读回来。
+    ///
+    /// 读不到就返回 `None`：没有记录是**常态**（大多数运行不崩，而真崩溃常常
+    /// 发生在写不了记录的地方 —— 访问违例、栈溢出）。把“没记录”当成错误
+    /// 只会给用户一个他无法处理的噪声。
+    ///
+    /// 这个记录属于**本次**会话：旧记录在 `start` 里就被删掉了（见那里的注释）。
+    fn crash_note(&self) -> Option<Box<crate::crash::CrashNote>> {
+        let dir = self.crash_dir.as_ref()?;
+        crate::crash::read(dir).map(Box::new)
+    }
+
     /// provider log 尾部（12 §2："crash code / provider log 返回主进程"）。
     pub fn log_tail(&self, bytes: usize) -> String {
         let Ok(g) = self.stderr.lock() else {
@@ -469,6 +521,7 @@ impl Host {
         HostFailure::Crashed {
             exit_code,
             log_tail: self.log_tail(4096),
+            crash_note: self.crash_note(),
             contained: self.job.is_some(),
             job_error: self.job_error,
         }
@@ -484,6 +537,7 @@ impl Host {
             RecvTimeoutError::Disconnected => HostFailure::Crashed {
                 exit_code: None,
                 log_tail: self.log_tail(4096),
+                crash_note: self.crash_note(),
                 contained: self.job.is_some(),
                 job_error: self.job_error,
             },
@@ -650,6 +704,7 @@ mod tests {
                 log_tail: String::new(),
                 contained: true,
                 job_error: 0,
+                crash_note: None,
             },
             HostFailure::Protocol("x".to_string()),
             HostFailure::Io("x".to_string()),

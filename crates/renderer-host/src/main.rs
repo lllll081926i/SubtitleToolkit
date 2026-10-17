@@ -58,9 +58,13 @@ fn reply_err(w: &mut impl Write, code: &str, title: &str) -> io::Result<()> {
 }
 
 fn serve() -> Result<(), String> {
+    // 22 §6：崩溃现场追踪器。先建它，这样连“握手之前就死了”也有记录。
+    let tracker = renderer_host::crash::Tracker::from_env();
+    tracker.enter(renderer_host::crash::Phase::Startup, None);
+
     // 在读取任何控制面消息之前就处理崩溃注入：环境变量只有宿主进程自己的启动环境能设，
     // 管道对端无论发什么都无法在运行时自毁宿主。
-    maybe_inject_crash_from_env();
+    maybe_inject_crash_from_env(&tracker);
 
     let stdin = io::stdin();
     let mut reader = stdin.lock();
@@ -112,6 +116,12 @@ fn serve() -> Result<(), String> {
     let mut sh = Sha256::new();
     sh.update(&dll_bytes);
     let provider_sha = hex(&sh.finalize());
+    // 22 §6：provider 身份是“哪个 DLL 死的”这个问题的答案。
+    tracker.record_provider(&dll_path, &provider_sha, &arch_label(provider_arch));
+    tracker.record_canvas(
+        (storage_canvas.width, storage_canvas.height),
+        (output_canvas.width, output_canvas.height),
+    );
 
     // 到这里才真的 LoadLibrary（render-libass 里那套 LOAD_LIBRARY_SEARCH_*，不搜当前目录）
     let mut provider =
@@ -154,6 +164,7 @@ fn serve() -> Result<(), String> {
                     .map_err(|e| e.to_string())?;
             }
             Request::LoadScript => {
+                tracker.enter(renderer_host::crash::Phase::LoadScript, None);
                 let blob = protocol::read_message(&mut reader)
                     .map_err(|e| e.to_string())?
                     .ok_or("LoadScript 之后没有负载")?;
@@ -228,7 +239,7 @@ fn serve() -> Result<(), String> {
         }
     };
     reply(&mut writer, &Response::ScriptLoaded { bytes: ass.len() }).map_err(|e| e.to_string())?;
-    serve_render_requests(&mut reader, &mut writer, &script, output_canvas)
+    serve_render_requests(&mut reader, &mut writer, &script, output_canvas, &tracker)
 }
 
 fn serve_render_requests(
@@ -236,7 +247,12 @@ fn serve_render_requests(
     writer: &mut impl Write,
     script: &render_libass::Script<'_>,
     output: Canvas,
+    tracker: &renderer_host::crash::Tracker,
 ) -> Result<(), String> {
+    // 22 §6：进入烧帧阶段。之后的每次崩溃注入都能在记录里看到
+    // “死在出第几帧”，那正是调查的第一个问题。
+    tracker.enter(renderer_host::crash::Phase::Render, Some(0));
+    let mut frames: u64 = 0;
     while let Some(msg) = protocol::read_message(reader).map_err(|e| e.to_string())? {
         let req: Request = protocol::from_json(&msg).map_err(|e| e.to_string())?;
         match req {
@@ -258,33 +274,39 @@ fn serve_render_requests(
                 reply_err(writer, "STK-RND-0205", "字体必须在 LoadScript 之前注入")
                     .map_err(|e| e.to_string())?;
             }
-            Request::Render { pts_ms } => match render_at(Some(script), pts_ms, output) {
-                Ok((frame, digest, detect_change, images, loss)) => {
-                    let bytes = frame.rgba.len();
-                    reply(
-                        writer,
-                        &Response::Frame {
-                            width: frame.canvas.width,
-                            height: frame.canvas.height,
-                            bytes,
-                            digest,
-                            detect_change,
-                            images,
-                            loss,
-                        },
-                    )
-                    .map_err(|e| e.to_string())?;
-                    for chunk in frame.rgba.chunks(protocol::FRAME_CHUNK_BYTES) {
-                        protocol::write_message(writer, &Message::Blob(chunk.to_vec()))
-                            .map_err(|e| e.to_string())?;
+            Request::Render { pts_ms } => {
+                frames += 1;
+                tracker.enter(renderer_host::crash::Phase::Render, Some(frames));
+                match render_at(Some(script), pts_ms, output) {
+                    Ok((frame, digest, detect_change, images, loss)) => {
+                        tracker.note_ok("render");
+                        let bytes = frame.rgba.len();
+                        reply(
+                            writer,
+                            &Response::Frame {
+                                width: frame.canvas.width,
+                                height: frame.canvas.height,
+                                bytes,
+                                digest,
+                                detect_change,
+                                images,
+                                loss,
+                            },
+                        )
+                        .map_err(|e| e.to_string())?;
+                        for chunk in frame.rgba.chunks(protocol::FRAME_CHUNK_BYTES) {
+                            protocol::write_message(writer, &Message::Blob(chunk.to_vec()))
+                                .map_err(|e| e.to_string())?;
+                        }
+                        writer.flush().map_err(|e| e.to_string())?;
                     }
-                    writer.flush().map_err(|e| e.to_string())?;
+                    Err((code, title)) => {
+                        reply_err(writer, &code, &title).map_err(|e| e.to_string())?
+                    }
                 }
-                Err((code, title)) => {
-                    reply_err(writer, &code, &title).map_err(|e| e.to_string())?
-                }
-            },
+            }
             Request::Bye => {
+                tracker.enter(renderer_host::crash::Phase::Shutdown, None);
                 reply(writer, &Response::ByeOk).map_err(|e| e.to_string())?;
                 writer.flush().map_err(|e| e.to_string())?;
                 return Ok(());
@@ -334,10 +356,14 @@ fn render_at(
 /// 只有宿主进程自己的环境变量 `STK_HOST_CRASH` 能走到这里。它在 `serve()` 的最早阶段
 /// 被消费，所以发布二进制里没有任何来自控制面的自杀路径（2026-10-09 审查）。
 /// 未知取值直接退出：静默忽略会让测试以为崩溃注入生效了，实际却在正常跑。
-fn maybe_inject_crash_from_env() {
+fn maybe_inject_crash_from_env(tracker: &renderer_host::crash::Tracker) {
     let Ok(how) = std::env::var(protocol::CRASH_ENV) else {
         return;
     };
+    // 22 §6：注入之前先把现场写下来。这就是“真崩溃时也有一份记录”的代理证据 ——
+    // 记录本身写不了的地方（访问违例、栈溢出），真实崩溃在那里也一样写不了。
+    // 写失败**不算错**：诊断文件的写失败不该把一次注入变成另一种结果。
+    let _ = tracker.write(&format!("注入 {how}"));
     match how.as_str() {
         // 3 号：像 assert/abort 那样死掉，没有 Rust panic 信息
         "abort" => std::process::abort(),

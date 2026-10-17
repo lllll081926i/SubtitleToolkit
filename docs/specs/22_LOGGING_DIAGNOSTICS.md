@@ -98,5 +98,47 @@ zip 内容：app/version、OS、settings-redacted、job plan、logs、dependency
 ## 6. renderer-host
 单独 stdout/stderr capture；超时、exit code、SEH crash/minidump 分离记录。
 
-**实现状态**：部分。超时、exit code 与「host 死了」的区分已实现
-（`renderer-host` 的 `HostFailure` 变体）；**SEH crash 的 minidump 未实现**。
+**实现状态（2026-10-17）**：前三项已实现；第四项**部分实现**（崩溃现场记录），
+完整的 minidump **明确未做**。
+
+| 规格要求 | 落法 |
+|---|---|
+| stdout/stderr capture | `Host::log_tail(n)`，进错误的 details |
+| 超时 | `HostFailure::Timeout { waited_ms, contained, job_error }` |
+| exit code | `HostFailure::Crashed { exit_code, … }` |
+| SEH crash 分离记录 | `renderer_host::crash` 的**崩溃现场记录**（非 minidump） |
+
+### 崩溃现场记录（`crates/renderer-host/src/crash.rs`）
+
+host 在自己的阶段边界（启动 / 载脚本 / 出第 N 帧 / 收尾）把现场写成一个 json 文件，
+主进程崩后把它读回来进**错误卡**：
+
+```
+崩溃现场：阶段=render；序号=417；已运行=1234ms；provider=x64；
+         provider sha256=a1b2c3d4e5f6…；上一个成功动作=render；原因=注入 abort
+```
+
+要点：
+
+- **写盘走临时文件 + 改名**：半截 json 会让主进程解析失败，而那时用户已经丢了崩溃信息。
+- **写不进去不影响渲染**：崩溃记录的用途是“事后来看”，让它的写失败把正常渲染搞坏，
+  是拿主功能去换附属功能。
+- **日志目录走 `DataDir`**（`host-crashes/`）：便携包里自动落在包内，不需另一套目录规则。
+- **起 host 之前先删旧记录**。这是本格里最危险的一格：真崩溃常常发生在写不出记录的地方
+  （访问违例、栈溢出），那时目录里如果还留着上一回的文件，报告会说出一个
+  **斩钉截铁但完全错误**的阶段与 provider，而调查会照着它走错方向。
+- 目录由**启动环境**（`STK_HOST_CRASH_DIR`）指定，与控制面同一类：
+  客户端无法在运行时把它改到别处。
+
+### 真 minidump 为什么没做（以及为什么不用半成品顶上）
+
+完整 minidump 要 `DbgHelp` 的 `MiniDumpWriteDump`，而它有两条硬前提：
+
+1. 必须在**异常处理器**里调用，且那个处理器要满足一堆异步信号安全的约束
+  （不能分配内存、不能拿锁、不能调大部分 Win32 API）。写一个**不正确**的
+  异常处理器比不写更危险：它会掩盖真正的崩溃原因，或在最需要它的时候二次崩溃。
+2. dump 含进程内存镜像。本产品处理用户的字幕与内嵌字体，而诊断包默认要能直接外发
+  （22 §5）—— 含内存镜像的 dump 与那条承诺直接冲突。
+
+所以真 minidump 仍然是一件**未做**的事，而现状是“崩溃现场记录”：它不含内存内容，
+但能回答“哪一步死的”。不用一个残缺的异常处理器假装做到了。

@@ -152,6 +152,18 @@ pub enum CacheAction {
     Clear,
 }
 
+/// `settings` 子命令（36 §1）。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum SettingsAction {
+    /// 报出当前生效的设置、来源与文件位置（**默认**）。
+    #[default]
+    Show,
+    /// 把设置写成一份带默认值的文件，便于用户手工编辑。
+    Init,
+    /// 改一个受管字段：`settings set <键> <值>`。
+    Set,
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum Command {
     Probe {
@@ -216,6 +228,14 @@ pub enum Command {
     /// 缓存就变成一个不可核对的愚盒 —— 而 37 §2 明确要求配额与容量有记录。
     Cache {
         action: CacheAction,
+    },
+    /// 36 §1 的 AppSettings：查看/修改跨会话保留的全局偏好。
+    Settings {
+        action: SettingsAction,
+        /// `set` 的目标字段名；其余动作是空。
+        key: Option<String>,
+        /// `set` 的新值；其余动作是空。
+        value: Option<String>,
     },
     /// 15 §1 的批量任务：输入集合 × 多个输出 profile，spec 是 JSON。
     Batch {
@@ -353,6 +373,7 @@ impl Command {
             Command::PgsEncode { .. } => "pgs encode",
             Command::Doctor => "doctor",
             Command::Cache { .. } => "cache",
+            Command::Settings { .. } => "settings",
             Command::Render { .. } => "render",
             Command::Batch { .. } => "batch",
             Command::FontScan { .. } => "font scan",
@@ -820,6 +841,35 @@ pub fn parse(argv: &[String]) -> Result<Invocation, ArgError> {
                 return Err(ArgError::usage("cache 最多接一个子命令"));
             }
             Command::Cache { action }
+        }
+        "settings" => {
+            let action = match rest.first().map(|s| s.as_str()).unwrap_or("show") {
+                "show" => SettingsAction::Show,
+                "init" => SettingsAction::Init,
+                "set" => SettingsAction::Set,
+                other => {
+                    return Err(ArgError::usage(format!(
+                        "settings 的子命令只能是 show、init 或 set，收到 {other}"
+                    )));
+                }
+            };
+            let (key, value) = match action {
+                SettingsAction::Set => {
+                    if rest.len() != 3 {
+                        return Err(ArgError::usage(
+                            "settings set 需要两个参数：字段名与值（例：settings set log_level debug）",
+                        ));
+                    }
+                    (Some(rest[1].clone()), Some(rest[2].clone()))
+                }
+                _ => {
+                    if rest.len() > 1 {
+                        return Err(ArgError::usage("settings show/init 不接受额外参数"));
+                    }
+                    (None, None)
+                }
+            };
+            Command::Settings { action, key, value }
         }
         "render" => {
             let mut fps = Fps::NTSC_23976;

@@ -116,6 +116,9 @@ pub(crate) fn execute_ctx(
         ),
         Command::Doctor => doctor(cmd),
         Command::Cache { action } => cache_cmd(*action, cmd),
+        Command::Settings { action, key, value } => {
+            settings_cmd(*action, key.as_deref(), value.as_deref(), cmd)
+        }
         Command::Render {
             input,
             fps,
@@ -1109,6 +1112,191 @@ fn cache_cmd(action: crate::args::CacheAction, cmd: &str) -> Result<Envelope> {
             ))
         }
     }
+}
+
+/// 36 §1 的 AppSettings：看、初始化、改一个字段。
+///
+/// 三件事必须报出来，否则这条命令跟没有一样：**生效的值**、
+/// **值从哪来**（文件还是内置默认）、以及**文件在哪**（用户要知道改哪个文件）。
+/// 28 §4 把“settings 落盘”列为未实现项，这里把它补上；同一个数据目录解析
+/// （`DataDir`）让便携包里的设置也落在包内。
+fn settings_cmd(
+    action: crate::args::SettingsAction,
+    key: Option<&str>,
+    value: Option<&str>,
+    cmd: &str,
+) -> Result<Envelope> {
+    use crate::args::SettingsAction;
+    // `STK_SETTINGS` 优先：测试与“把设置放在别处”都要一条不依赖 exe 位置的路。
+    let store = match std::env::var("STK_SETTINGS") {
+        Ok(p) if !p.trim().is_empty() => core_model::SettingsStore::at(PathBuf::from(p)),
+        _ => core_model::SettingsStore::current(),
+    };
+    match action {
+        SettingsAction::Show => {
+            let got = store.load();
+            Ok(Envelope::ok(
+                cmd,
+                serde_json::json!({
+                    "path": store.path().map(|p| p.display().to_string()),
+                    "source": got.source.label(),
+                    "settings": serde_json::to_value(settings_json(&got.settings))
+                        .unwrap_or(serde_json::Value::Null),
+                    // 非空 = 有些东西没被采纳。空列表和“没查”必须区分开，
+                    // 所以这里总是给一个列表而不是省略键。
+                    "problems": got.problems,
+                    "quarantined": got.quarantined.map(|p| p.display().to_string()),
+                }),
+            ))
+        }
+        SettingsAction::Init => {
+            // 先读一次：已有文件就把它的值当基准写回（未知字段也保留），
+            // 而不是拿默认值把用户现有的设置盖掉。
+            let got = store.load();
+            if got.source == core_model::SettingsSource::File {
+                return Err(StkError::simple(
+                    Domain::Input,
+                    320,
+                    "设置文件已存在，init 不会覆盖它",
+                )
+                .with_detail(format!(
+                    "{}（来源 {}）",
+                    store
+                        .path()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_default(),
+                    got.source.label()
+                ))
+                .with_action("直接编辑该文件，或用 `settings set <字段> <值>` 修改"));
+            }
+            let path = store.save(&got.settings)?;
+            Ok(Envelope::ok(
+                cmd,
+                serde_json::json!({
+                    "path": path.display().to_string(),
+                    "source": "defaults",
+                    "written": true,
+                    "problems": got.problems,
+                }),
+            ))
+        }
+        SettingsAction::Set => {
+            let key = key.unwrap_or_default();
+            let value = value.unwrap_or_default();
+            let got = store.load();
+            // schema 比当前高就不写：新版写的设置里可能有旧版无法表达的语义，
+            // 强行写回等于降级破坏（36 §3）。
+            if got.settings.schema > core_model::settings::CURRENT_SCHEMA {
+                return Err(StkError::simple(
+                    Domain::Input,
+                    321,
+                    "设置文件的 schema 高于本程序支持的版本，拒绝写回",
+                )
+                .with_detail(format!(
+                    "文件 schema={}，本程序支持到 {}",
+                    got.settings.schema,
+                    core_model::settings::CURRENT_SCHEMA
+                ))
+                .with_action("用较新版本的程序修改，或手工编辑该文件"));
+            }
+            let mut s = got.settings.clone();
+            apply_setting(&mut s, key, value)?;
+            let path = store.save(&s)?;
+            Ok(Envelope::ok(
+                cmd,
+                serde_json::json!({
+                    "path": path.display().to_string(),
+                    "changed": key,
+                    "settings": serde_json::to_value(settings_json(&s))
+                        .unwrap_or(serde_json::Value::Null),
+                    // 之前读时的警告（例如别的字段格式不对）也要一并给出，
+                    // 否则用户会以为整份文件都好了。
+                    "problems": got.problems,
+                }),
+            ))
+        }
+    }
+}
+
+/// 受管字段的白名单。不在表里的字段一律拒绝，理由：
+/// 静默接受一个拼错的字段名，用户会以为设置生效了 —— 而它其实写进了一个没人读的地方。
+fn apply_setting(s: &mut core_model::AppSettings, key: &str, value: &str) -> Result<()> {
+    let bad = |why: String| {
+        StkError::simple(Domain::Input, 322, "设置取值不合法")
+            .with_detail(why)
+            .with_action("settings show 可以看到当前值与字段名")
+    };
+    match key {
+        "log_level" => {
+            // 与 tracing 的过滤语法对齐：只收已知级别名，避免把拼错的值写进文件。
+            const LEVELS: &[&str] = &["off", "error", "warn", "info", "debug", "trace"];
+            if !LEVELS.contains(&value) {
+                return Err(bad(format!(
+                    "log_level 只能是 {}，收到 {value:?}",
+                    LEVELS.join("/")
+                )));
+            }
+            s.log_level = value.to_string();
+        }
+        "ui_language" => {
+            // 空串 = 清掉这个偏好（跟随系统），与写显式 null 同义。
+            s.ui_language = (!value.is_empty()).then(|| value.to_string());
+        }
+        "default_fps" => {
+            core_model::Fps::from_label(value).map_err(|_| {
+                bad(format!(
+                    "default_fps 取值 {value:?} 不是合法帧率（整数、a/b 分数或 23.976 这类标签）"
+                ))
+            })?;
+            s.default_fps = value.to_string();
+        }
+        "default_canvas" => {
+            let ok = value
+                .split_once(['x', 'X'])
+                .and_then(|(w, h)| {
+                    Some((w.trim().parse::<u32>().ok()?, h.trim().parse::<u32>().ok()?))
+                })
+                .is_some_and(|(w, h)| w > 0 && h > 0);
+            if !ok {
+                return Err(bad(format!(
+                    "default_canvas 要写成 WxH 形式（例：1920x1080），收到 {value:?}"
+                )));
+            }
+            s.default_canvas = value.to_string();
+        }
+        "experimental" => {
+            return Err(bad(
+                "experimental 是一个开关表，不能整表赋值；直接编辑设置文件里的 experimental 对象"
+                    .to_string(),
+            ));
+        }
+        "schema" => {
+            return Err(bad(
+                "schema 由程序维护，不应手工改；它决定迁移行为".to_string()
+            ));
+        }
+        other => {
+            return Err(bad(format!(
+                "没有名为 {other:?} 的设置字段（受管字段：log_level/ui_language/default_fps/default_canvas）"
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// 设置的 JSON 表示。手写而不是给 `AppSettings` 派生 `Serialize`：
+/// 派生会把 `extra` 的原始 JSON 也当成“我们管的东西”输出，而它必须只在
+/// `serialize` 里按 36 §3 合并 —— 两处表达同一件事就会分叉。
+fn settings_json(s: &core_model::AppSettings) -> serde_json::Value {
+    serde_json::json!({
+        "schema": s.schema,
+        "ui_language": s.ui_language,
+        "log_level": s.log_level,
+        "default_fps": s.default_fps,
+        "default_canvas": s.default_canvas,
+        "experimental": s.experimental,
+        "preserved_unknown_fields": s.extra.keys().collect::<Vec<_>>(),
+    })
 }
 
 /// host 可执行文件在哪：`STK_RENDERER_HOST` → 与 CLI 同目录的 `subtitletool-render-host.exe`。

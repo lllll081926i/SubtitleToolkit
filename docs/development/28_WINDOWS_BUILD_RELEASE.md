@@ -71,6 +71,29 @@
 
 仍未实现：settings/presets/logs 的落盘（目前只有字体库缓存走数据目录）。
 
+**AppSettings 已落地（2026-10-17，36 §1）**：`core_model::SettingsStore` + CLI `settings show|init|set`。
+
+- 文件在 `DataDir` 里的 `settings.json`（便携包里就是包内 `data/`）；
+  `STK_SETTINGS` 可指定一个完全独立的路径（测试与“把设置放别处”）。
+- **未知字段保留**（36 §3）：读一份新版写的设置、写回时新版字段不会丢，
+  并在 `settings show` 的 `preserved_unknown_fields` 里列出来。
+  注意这与 batch spec 的 `deny_unknown_fields` 是**相反**的策略，也有相反的理由：
+  spec 拼错字段会跑错任务（必须拒），设置里有陌生字段只说明它来自别的版本（必须留）。
+- **单个字段坏不废整份**：`log_level` 类型不对就退回默认值并记警告，
+  其余字段照常生效。设置是偏好，不是数据。
+- **坏文件不退不硬删**：退回默认值 + 在 `problems` 里说明 + 原文件改名成
+  `settings.json.bad-<时间戳>` 保留证据。
+- **`schema` 只向前迁移**：高于本程序就只读不写（避免降级破坏新版字段）。
+- **写入原子**：同目录临时文件 + 改名，不在磁盘上留半截文件。
+- 非法值在**写入前**就被拒（`STK-INP-0322`），不会把一个拼错的 `log_level`
+  静默写进没人读的地方；`init` 不覆盖已有文件（`STK-INP-0320`）。
+
+已实测：改一个设置后**新进程**读得到（`crates/cli/tests/settings.rs`，7 用例）、
+未知字段往返不丢、`init` 拒绝覆盖、5 种非法取值全被拒且不落文件、
+坏文件降级并保留证据、设置确实落在 `DataDir` 内。
+
+仍未实现：ToolDefaults / Preset（36 §1 的其余两层）与日志落盘。
+
 ## 5. Signing
 正式 release：所有 EXE/DLL/installer 用同一 publisher identity Authenticode；timestamp server；CI 验证签名后再上传。
 

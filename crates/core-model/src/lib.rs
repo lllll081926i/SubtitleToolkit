@@ -7,6 +7,7 @@ pub mod error;
 pub mod geometry;
 pub mod loss;
 pub mod profile;
+pub mod settings;
 pub mod time;
 
 pub use canvas::Canvas;
@@ -22,4 +23,5 @@ pub use profile::{
     FormatKind, HdrMode, HdrSettings, JobSnapshot, OutputProfile, Plan, RendererChoice,
     ValidationLevel, ValueOrigin,
 };
+pub use settings::{AppSettings, SettingsLoad, SettingsSource, SettingsStore};
 pub use time::{BdnTimecode, Fps, Rational, Time};

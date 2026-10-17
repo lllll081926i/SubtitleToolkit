@@ -11,7 +11,8 @@
 - `probe`、`convert`、`time`、`hdr`；
 - `render`、`batch`；
 - `pgs adjust`、`pgs validate`、`pgs encode`；
-- `font scan`、`font subset`、`mkv identify|extract|remux`、`cache stat|clear`、`doctor`。
+- `font scan`、`font subset`、`mkv identify|extract|remux`、`cache stat|clear`、
+  `settings show|init|set`、`doctor`。
 
 全部已规划命令都已实现，`doctor` 的 `not_built` 为空。`--preset` 尚未实现（它不是命令，走参数层的明确拒绝）。
 
@@ -34,6 +35,7 @@
 - `mkv identify` 列出轨道与附件；`mkv extract` 抽出字幕轨或字体附件；`mkv remux` 重封装成新 MKV（绝不原地修改）。
 - `doctor` 报告环境与未实现能力。
 - `cache stat|clear` 报账或清理 37 §2 的磁盘渲染缓存（目录、条数、字节数、配额上限）。
+- `settings show|init|set` 读写 36 §1 的 AppSettings；`show` 报出生效值、来源与文件位置。
 
 退出码固定为：0 成功、1 执行失败、2 命令行用法错误。未实现的命令以执行失败返回，并在结果中指出能力未实现。
 

@@ -3,11 +3,29 @@
 本文是目标 TOML preset 草案。当前 CLI 已有 JSON batch spec 和 `.jobstate.json` 恢复凭据，不读取或写入 TOML preset；GUI 与统一 JobSnapshot 尚未实现。草案不能作为 `batch --spec` 输入。当前可执行配置见 [CLI 规格](20_CLI_AUTOMATION.md)，实现范围见[功能矩阵](03_FEATURE_MATRIX.md)。
 
 ## 1. 配置分层
-- AppSettings：全局偏好；
-- ToolDefaults：每个工具默认；
-- Preset：用户可命名、导入导出；
-- JobSnapshot：一次执行的完整冻结参数；
-- Plan：Planner 解析后的实际 stage DAG。
+- AppSettings：全局偏好；**已实现**（见下）；
+- ToolDefaults：每个工具默认；**未实现**；
+- Preset：用户可命名、导入导出；**未实现**（TOML 依赖未获批，见 ISSUES E4）；
+- JobSnapshot：一次执行的完整冻结参数；**已实现**（JSON batch spec + `jobstate`）；
+- Plan：Planner 解析后的实际 stage DAG；**已实现**。
+
+### AppSettings 的实现与边界（2026-10-17）
+
+`core_model::SettingsStore`（`crates/core-model/src/settings.rs`）+ CLI `settings show|init|set`。
+文件是 `DataDir` 里的 `settings.json`；`STK_SETTINGS` 可指一个独立路径。
+
+它的存在理由是 28 §4 把“settings 落盘”列为未实现项，而 AppSettings 是分层的**最底层**：
+ToolDefaults 与 Preset 都会从它取默认。放到 CLI 或 GUI 里各写一份，两份默认值
+迟早不一致，而用户看到的正是“同一个设置在两个入口表现不同”这类报告。
+
+与本文其他部分的三个关键差异：
+
+- **未知字段保留**（§3）在这里是真行为，不是目标：`settings show` 会列出
+  `preserved_unknown_fields`，写回时原样合并。这与 batch spec 的 `deny_unknown_fields`
+  是**相反**的策略，因为两者的失败代价不同：spec 拼错字段会跑错任务（必须拒），
+  设置里有陌生字段只说明它来自别的版本（必须留）。
+- **schema 只向前迁移**：高于本程序的 schema 只读不写（避免降级破坏新版字段）。
+- **坏文件不自伤**：退回默认值 + 说明原因 + 原文件改名保留。设置是偏好，不是数据。
 
 ## 2. Preset 示例
 ```toml

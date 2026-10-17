@@ -20,11 +20,11 @@
 | Font subset | 后续 | 已实现（`font subset`） | `allsorts` 子集 + cmap 级等价检查 + 真 libass 逐像素 RGBA 对照；复杂脚本一律回退整份 |
 | MKV helper | 后续 | 已实现（`mkv identify\|extract\|remux`） | 调用外部 MKVToolNix；原文件不改，产物重读逐轨校验（AT-MKV-001 已执行通过；无 EBML 自实现） |
 | Media probe | P1 | ffprobe adapter 已实现 | 真实工具与视频样本验证；只提供建议，不自动改速度 |
-| Smart sync | 可选 | 未实现 | 外部依赖和 GPL 边界先行评估 |
-| Advanced PGS author / Strict validator | 后续 | 未实现完整能力 | 需要 buffer 模型、真盘样本和播放器矩阵 |
+| Smart sync | 可选 | 已实现确定性执行（`time --piecewise`） | `PiecewiseMap` 多段线性映射，控制点由调用方显式给出；**不做**剪辑点自动检测（需要内容比对，另一条研究线）。RL01 的自动对齐仍未做 |
+| Advanced PGS author / Strict validator | 后续 | 第 1–6 层已实现（含第 5 层解码器模型） | 第 7 层设备语料未取得，`strict_badge_allowed` 仍恒为 false；第 5 层未含缓冲区占用曲线与 acquisition 分支 |
 | OCR SUP→SRT | 可选 | 未实现 | 独立研究线，不进入 CLI MVP 前置条件 |
-| Windows GUI | P0 产品目标 | 未实现 | CLI 数据契约稳定后实施 |
-| Installer、portable、签名与更新 | 发布阶段 | 未实现 | 只发布实际构建和验收过的目标 |
+| Windows GUI | P0 产品目标 | 已接通（Iced 工作台 + 真 batch 通路） | AT-UI-001 的 60 秒响应实测、A/B 对比渲染、设置持久化未做 |
+| Installer、portable、签名与更新 | 发布阶段 | portable 包已实现 | 安装器、Authenticode 签名、SBOM、更新器未做 |
 
 ## 明确不做的功能矩阵
 

@@ -23,6 +23,24 @@ import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def workspace_version() -> str:
+    """从根 Cargo.toml 读版本，不手抄。
+
+    SBOM 里的产品版本手抄一份就会在下次发版时与二进制不一致，
+    而 "这份 SBOM 描述的是哪个构建" 是它唯一的用途。
+    读不到时返回 "unknown" 而不是编一个：读者应当能看出这个字段没填对。
+    """
+    try:
+        data = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))
+        v = data.get("workspace", {}).get("package", {}).get("version")
+        return str(v) if v else "unknown"
+    except (OSError, tomllib.TOMLDecodeError):
+        return "unknown"
+
+
+APP_VERSION = workspace_version()
 # 门阶把这条的输出重定向进日志文件；Windows 控制台默认 cp936，会把中文结论写成非 UTF-8 字节，
 # 于是 `target/gate/notices.log` 既不好读也没法 diff（与 tools/doc_claims_check.py 同一个处理）。
 if hasattr(sys.stdout, "reconfigure"):
@@ -549,6 +567,32 @@ def main(argv: list[str]) -> int:
                     "清单过期：%s 的源码归档锁定哈希不在 THIRD_PARTY_NOTICES.md 里，重跑 python tools/notices.py"
                     % r["name"]
                 )
+        # SBOM 同样会过期：依赖增删后不重生成，它就描述了一个不存在的构建。
+        # 只检查“存在 + 能解析 + 组件数与当前依赖对得上”，不比整份内容：
+        # 时间戳每次生成都会变，逐字节比对会让门阶永远红。
+        sbom = ROOT / "sbom.cdx.json"
+        if not sbom.is_file():
+            problems.append("缺少 sbom.cdx.json：28 §2 要求 checksums + SBOM + third-party notices")
+        else:
+            import json
+
+            try:
+                doc = json.loads(sbom.read_text(encoding="utf-8"))
+            except (OSError, ValueError) as e:
+                problems.append("sbom.cdx.json 解析失败：%s" % e)
+            else:
+                got = len(doc.get("components", []))
+                want = len(rows) + len(srows) + len(nrows) + len(EXTRA)
+                if got != want:
+                    problems.append(
+                        "SBOM 过期：有 %d 个组件，当前依赖树应该是 %d 个，重跑 python tools/notices.py"
+                        % (got, want)
+                    )
+                if doc.get("metadata", {}).get("component", {}).get("version") != APP_VERSION:
+                    problems.append(
+                        "SBOM 里的产品版本与 Cargo.toml 不一致（SBOM %s ｜ 仓库 %s）"
+                        % (doc.get("metadata", {}).get("component", {}).get("version"), APP_VERSION)
+                    )
     if problems:
         print("PROBLEMS (%d):" % len(problems))
         for p in problems[:40]:
@@ -556,8 +600,140 @@ def main(argv: list[str]) -> int:
         rc = 1
     if not check:
         (ROOT / "THIRD_PARTY_NOTICES.md").write_text(text, encoding="utf-8")
+        write_sbom(rows, srows, nrows)
     print("NOTICES %s：%d 个第三方包 + %d 个源码归档 + %d 条 native/二进制哈希锁，%d 个问题" % ("FAIL" if rc else "OK", len(rows), len(srows), len(nrows), len(problems)))
     return rc
+
+
+def sbom_document(rows: list, srows: list[dict], nrows: list[dict]) -> dict:
+    """按 28 §2 的 `checksums + SBOM + third-party notices` 产出 CycloneDX 1.5 文档。
+
+    为什么挑 CycloneDX 而不是 SPDX：它原生表达“组件 + 哈希 + 许可证”这三件本仓库
+    真正持有的事实（21 §11 要求的正是这三样），而 SPDX 的文档模型更偏静态许可声明。
+    选它的另一个理由是字段少且直白——能用一份自己的代码写对，就不必引第三方依赖。
+
+    三条纪律：
+
+    1. **只写我们真的知道的事**。拿不到 license 的写 `UNKNOWN` 而不是猜一个；
+       拿不到 `.crate` 哈希的就不写哈希字段。SBOM 的价值在于可核对，编进去的值会毁掉它。
+    2. **`dev-only` 与 `bundled` 必须分开**。开发期工具（cargo-deny、vcpkg）不进安装包，
+       把它们列成 runtime 组件会让下游误判分发义务。这与 THIRD_PARTY_NOTICES.md 的口径一致。
+    3. **native/二进制产物带实测状态**。`absent-here` 是“这台机器上没有那个文件”，
+       与 `match` 分开写：混起来就是拿未实测的值当已核对。
+    """
+    import datetime
+
+    components: list[dict] = []
+
+    def spdx_ids(expr: str) -> list[str]:
+        # SBOM 里许可证用 SPDX id 列表；表达式的 OR/AND 结构在 notices 表里已经写明，
+        # 这里展开成 id 集合，不重复表达组合语义（那会与 notices 表形成两个据）。
+        out = []
+        for part in re.split(r"[()\s]+|\bOR\b|\bAND\b|\bWITH\b|/", expr):
+            p = part.strip()
+            if p and p not in out and p not in {"OR", "AND", "WITH"}:
+                out.append(p)
+        return out or ["UNKNOWN"]
+
+    for name, version, lic, repo, sha, _ck in rows:
+        c: dict = {
+            "type": "library",
+            "name": name,
+            "version": version or "unknown",
+            "scope": "required",
+            "licenses": [{"license": {"id": i}} if i != "UNKNOWN" else {"license": {"name": "UNKNOWN"}}
+                         for i in spdx_ids(lic)],
+        }
+        if sha:
+            c["hashes"] = [{"alg": "SHA-256", "content": sha}]
+        if repo:
+            c["externalReferences"] = [{"type": "vcs", "url": repo}]
+        components.append(c)
+
+    for r in srows:
+        c = {
+            "type": "library",
+            "name": r["name"],
+            "version": r["version"] or "unknown",
+            # 源码归档是研究材料，不是默认安装包依赖；标 excluded 而不是 required
+            "scope": "excluded",
+            "licenses": [{"license": {"id": i}} for i in spdx_ids(r["license"])],
+            "properties": [
+                {"name": "stk:role", "value": "source-archive(研究材料，不入默认安装包)"},
+                {"name": "stk:artifact", "value": r["artifact"]},
+                {"name": "stk:hash-status", "value": r["status"]},
+            ],
+        }
+        if r["locked"]:
+            c["hashes"] = [{"alg": "SHA-256", "content": r["locked"]}]
+        if r["source"]:
+            c["externalReferences"] = [{"type": "vcs", "url": r["source"]}]
+        components.append(c)
+
+    for r in nrows:
+        c = {
+            "type": "library",
+            "name": r["component"],
+            "version": r["version"] or "unknown",
+            "scope": "required",
+            "licenses": [{"license": {"id": i}} for i in spdx_ids(r["license"])],
+            "properties": [
+                {"name": "stk:artifact-path", "value": r["path"]},
+                # 实测状态分开写：absent-here 不等于已核对
+                {"name": "stk:hash-status", "value": r["status"]},
+                {"name": "stk:measured-sha256", "value": r["actual"] or "(本机无此文件)"},
+            ],
+        }
+        if r["locked"]:
+            c["hashes"] = [{"alg": "SHA-256", "content": r["locked"]}]
+        components.append(c)
+
+    for name, lic, url, role in EXTRA:
+        components.append(
+            {
+                "type": "library",
+                "name": name,
+                "version": "n/a",
+                # dev-only 的明确标 excluded：下游据此判断分发义务
+                "scope": "excluded" if "dev-only" in role else "required",
+                "licenses": [{"license": {"id": i}} for i in spdx_ids(lic)],
+                "externalReferences": [{"type": "website", "url": url}],
+                "properties": [{"name": "stk:role", "value": role}],
+            }
+        )
+
+    return {
+        "bomFormat": "CycloneDX",
+        "specVersion": "1.5",
+        "version": 1,
+        "metadata": {
+            "timestamp": datetime.datetime.now(datetime.timezone.utc)
+            .replace(microsecond=0)
+            .isoformat()
+            .replace("+00:00", "Z"),
+            "tools": [{"vendor": "SubtitleToolkit", "name": "tools/notices.py", "version": "1"}],
+            "component": {"type": "application", "name": "SubtitleToolkit", "version": APP_VERSION},
+            "properties": [
+                {
+                    "name": "stk:scope-note",
+                    "value": "required=随安装包分发；excluded=开发期工具或研究材料，不随包；"
+                    "native 产物的 stk:hash-status 是**本机实测**结果，absent-here 不等于已核对",
+                }
+            ],
+        },
+        # CycloneDX 用 urn:uuid 或 serialNumber 标识一次生成；
+        # 用内容派生的稳定串而不是随机 uuid：同一份依赖树两次生成应当得到同一标识。
+        "serialNumber": "urn:stk:sbom:" + file_sha256(ROOT / "Cargo.lock")[:32],
+        "components": components,
+    }
+
+
+def write_sbom(rows: list, srows: list[dict], nrows: list[dict]) -> None:
+    import json
+
+    doc = sbom_document(rows, srows, nrows)
+    out = ROOT / "sbom.cdx.json"
+    out.write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
 if __name__ == "__main__":

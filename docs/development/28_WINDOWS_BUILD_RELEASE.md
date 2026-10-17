@@ -2,7 +2,21 @@
 
 本文件是发布阶段的目标清单，不是当前发行物清单。当前 workspace 只定义 CLI 与 x64 `subtitletool-render-host.exe`；GUI、x86 host、安装包、签名和更新器均未实现。只有经过实际构建与验收的产物才能加入支持矩阵。
 
-**已落地（2026-10-17）**：根目录许可证正文 `LICENSE-MIT` / `LICENSE-APACHE`（此前为缺失状态）；`tools/make_portable.ps1` 产出自包含 portable zip（含 `SHA256SUMS.txt`、许可/第三方声明副本与 `portable.flag`）。已实测：解包后两个可执行文件可运、`data_dir.kind=portable`、缓存落在包内 `data/`、哈希校验通过。安装器、签名与 SBOM 仍未完成。
+**已落地（2026-10-17）**：根目录许可证正文 `LICENSE-MIT` / `LICENSE-APACHE`（此前为缺失状态）；`tools/make_portable.ps1` 产出自包含 portable zip（含 `SHA256SUMS.txt`、许可/第三方声明副本、`sbom.cdx.json` 与 `portable.flag`）。已实测：解包后三个可执行文件可运、`data_dir.kind=portable`、缓存落在包内 `data/`、包内 9 个文件的哈希全部与 `SHA256SUMS.txt` 一致。安装器与 Authenticode 签名仍未完成。
+
+**SBOM（2026-10-17）**：`tools/notices.py` 现在同时产出 `sbom.cdx.json`（CycloneDX 1.5，529 个组件）。
+决策与纪律：
+
+- 选 CycloneDX 而不是 SPDX：它原生表达“组件 + 哈希 + 许可证”这三件本仓库真正持有的事实
+  （正是 21 §11 要求的三样），且字段少到能用一份自己的代码写对——不引第三方依赖。
+- `scope` 把 `required` 与 `excluded` 分开：开发期工具（cargo-deny、vcpkg）与研究用源码归档
+  不进安装包，列成 runtime 会让下游误判分发义务。口径与 `THIRD_PARTY_NOTICES.md` 一致。
+- native/二进制产物带 `stk:hash-status`：`match`（本机实测相等）与 `absent-here`
+  （这台机器上没有那个文件）**分开写**，混起来就是拿未实测的值当已核对。本机实测 23 match / 6 absent-here。
+- 产品版本从根 `Cargo.toml` 读，不手抄；`serialNumber` 由 `Cargo.lock` 哈希派生，
+  同一份依赖树两次生成得到同一标识。
+- **门禁会查它过期**：组件数对不上或版本不一致就报错退 1。已实测：把 SBOM 改成 5 个组件，
+  门禁报 `SBOM 过期：有 5 个组件，当前依赖树应该是 529 个`。
 
 以下文件名是发行包候选命名；只有 `tools/make_portable.ps1` 实际生成的名字才算数。Cargo 产物名以各 crate 的 `[[bin]]` 配置为准。
 

@@ -10,7 +10,11 @@
 | ab_glyph_rasterizer | 0.1.10 | Apache-2.0 | https://github.com/alexheretic/ab-glyph | 366ffbaa4442f468... | bundled(允许随包) |
 | adler2 | 2.0.1 | 0BSD OR MIT OR Apache-2.0 | https://github.com/oyvindln/adler2 | 320119579fcad9c2... | bundled(允许随包) |
 | ahash | 0.8.12 | MIT OR Apache-2.0 | https://github.com/tkaitchuck/ahash | 5a15f179cd60c458... | bundled(允许随包) |
+| aliasable | 0.1.3 | MIT | https://github.com/avitex/rust-aliasable | 250f629c0161ad81... | bundled(允许随包) |
+| alloc-no-stdlib | 2.0.4 | BSD-3-Clause | https://github.com/dropbox/rust-alloc-no-stdlib | cc7bb162ec39d46a... | bundled(允许随包) |
+| alloc-stdlib | 0.2.4 | BSD-3-Clause | https://github.com/dropbox/rust-alloc-no-stdlib | 0e76a019e91224d2... | bundled(允许随包) |
 | allocator-api2 | 0.2.21 | MIT OR Apache-2.0 | https://github.com/zakarumych/allocator-api2 | 683d7910e743518b... | bundled(允许随包) |
+| allsorts | 0.17.0 | Apache-2.0 | https://github.com/yeslogic/allsorts | 83b5535c25712f8b... | bundled(允许随包) |
 | android-activity | 0.6.1 | MIT OR Apache-2.0 | https://github.com/rust-mobile/android-activity | 0f2a1bb052857d5d... | bundled(允许随包) |
 | android-properties | 0.2.2 | MIT | https://github.com/miklelappo/android-properties | fc7eb209b1518d6b... | bundled(允许随包) |
 | android_system_properties | 0.1.6 | MIT OR Apache-2.0 | https://github.com/nical/android_system_properties | ae221649c9976a6f... | bundled(允许随包) |
@@ -39,11 +43,13 @@
 | bit_field | 0.10.3 | Apache-2.0/MIT | https://github.com/phil-opp/rust-bit-field | 1e4b40c7323adcfc... | bundled(允许随包) |
 | bitflags | 1.3.2 | MIT/Apache-2.0 | https://github.com/bitflags/bitflags | bef38d45163c2f1d... | bundled(允许随包) |
 | bitflags | 2.13.2 | MIT OR Apache-2.0 | https://github.com/bitflags/bitflags | 3ded4057c258ba19... | bundled(允许随包) |
+| bitreader | 0.3.11 | MIT OR Apache-2.0 | https://github.com/irauta/bitreader | 886559b1e163d56c... | bundled(允许随包) |
 | block | 0.1.6 | MIT | http://github.com/SSheldon/rust-block | 0d8c1fef690941d3... | bundled(允许随包) |
 | block-buffer | 0.10.4 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils | 3078c7629b62d3f0... | bundled(允许随包) |
 | block2 | 0.5.1 | MIT | https://github.com/madsmtm/objc2 | 2c132eebf10f5cad... | bundled(允许随包) |
 | block2 | 0.6.2 | MIT | https://github.com/madsmtm/objc2 | cdeb9d8705160014... | bundled(允许随包) |
 | blocking | 1.7.0 | Apache-2.0 OR MIT | https://github.com/smol-rs/blocking | a70e4329df6cb943... | bundled(允许随包) |
+| brotli-decompressor | 5.0.3 | BSD-3-Clause/MIT | https://github.com/dropbox/rust-brotli-decompressor | 3a32acac15fe1967... | bundled(允许随包) |
 | bumpalo | 3.20.3 | MIT OR Apache-2.0 | https://github.com/fitzgen/bumpalo | 72f5acc6cb2ba439... | bundled(允许随包) |
 | by_address | 1.2.1 | MIT OR Apache-2.0 | https://github.com/mbrubeck/by_address | 64fa3c856b712db6... | bundled(允许随包) |
 | bytemuck | 1.25.2 | Zlib OR Apache-2.0 OR MIT | https://github.com/Lokathor/bytemuck | 95832e849adfb211... | bundled(允许随包) |
@@ -73,6 +79,7 @@
 | core-foundation-sys | 0.8.7 | MIT OR Apache-2.0 | https://github.com/servo/core-foundation-rs | 773648b94d0e5d62... | bundled(允许随包) |
 | core-graphics | 0.23.2 | MIT OR Apache-2.0 | https://github.com/servo/core-foundation-rs | c07782be35f9e114... | bundled(允许随包) |
 | core-graphics-types | 0.1.3 | MIT OR Apache-2.0 | https://github.com/servo/core-foundation-rs | 45390e6114f68f71... | bundled(允许随包) |
+| core_detect | 1.0.0 | MIT/Apache-2.0 | https://github.com/thomcc/core_detect | 7f8f80099a98041a... | bundled(允许随包) |
 | cosmic-text | 0.12.1 | MIT OR Apache-2.0 | https://github.com/pop-os/cosmic-text | 59fd57d82eb4bfe7... | bundled(允许随包) |
 | cpufeatures | 0.2.17 | MIT OR Apache-2.0 | https://github.com/RustCrypto/utils | 59ed5838eebb26a2... | bundled(允许随包) |
 | crc32fast | 1.5.2 | MIT OR Apache-2.0 | https://github.com/srijs/rust-crc32fast | 01a7799fd6b852db... | bundled(允许随包) |
@@ -97,6 +104,7 @@
 | drm-sys | 0.8.1 | MIT | https://github.com/Smithay/drm-rs | ecc8e1361066d91f... | bundled(允许随包) |
 | dtor | 0.8.1 | Apache-2.0 OR MIT | https://github.com/mmastrac/rust-ctor | edf234dd1594d6dd... | bundled(允许随包) |
 | either | 1.19.0 | MIT OR Apache-2.0 | https://github.com/rayon-rs/either | 0e9c71c2167ca323... | bundled(允许随包) |
+| encoding_rs | 0.8.42 | (Apache-2.0 OR MIT) AND BSD-3-Clause | https://github.com/hsivonen/encoding_rs | 8e985e0451871ad2... | bundled(允许随包) |
 | endi | 1.1.1 | MIT | https://github.com/zeenix/endi | 66b7e2430c6dff6a... | bundled(允许随包) |
 | enumflags2 | 0.7.12 | MIT OR Apache-2.0 | https://github.com/meithecatte/enumflags2 | 1027f7680c853e05... | bundled(允许随包) |
 | enumflags2_derive | 0.7.12 | MIT OR Apache-2.0 | https://github.com/meithecatte/enumflags2 | 67c78a4d8fdf9953... | bundled(允许随包) |
@@ -140,6 +148,7 @@
 | glam | 0.25.0 | MIT OR Apache-2.0 | https://github.com/bitshifter/glam-rs | 151665d9be52f9bb... | bundled(允许随包) |
 | glow | 0.13.1 | MIT OR Apache-2.0 OR Zlib | https://github.com/grovesNL/glow | bd348e04c43b3257... | bundled(允许随包) |
 | glutin_wgl_sys | 0.5.0 | Apache-2.0 | https://github.com/rust-windowing/glutin | 6c8098adac955faa... | bundled(允许随包) |
+| glyph-names | 0.2.0 | BSD-3-Clause | https://github.com/yeslogic/glyph-names | c3531d702d6c1a3b... | bundled(允许随包) |
 | gpu-alloc | 0.6.2 | MIT OR Apache-2.0 | https://github.com/zakarumych/gpu-alloc | 45cf04b2726f02df... | bundled(允许随包) |
 | gpu-alloc-types | 0.3.1 | MIT OR Apache-2.0 | https://github.com/zakarumych/gpu-alloc | b2bbed164dd10ed5... | bundled(允许随包) |
 | gpu-allocator | 0.25.0 | MIT OR Apache-2.0 | https://github.com/Traverse-Research/gpu-allocator | 6f56f6318968d03c... | bundled(允许随包) |
@@ -150,6 +159,7 @@
 | hashbrown | 0.14.5 | MIT OR Apache-2.0 | https://github.com/rust-lang/hashbrown | e5274423e17b7c9f... | bundled(允许随包) |
 | hashbrown | 0.17.1 | MIT OR Apache-2.0 | https://github.com/rust-lang/hashbrown | ed5909b6e89a2db4... | bundled(允许随包) |
 | hassle-rs | 0.11.0 | MIT | https://github.com/Traverse-Research/hassle-rs | af2a7e73e1f34c48... | bundled(允许随包) |
+| heck | 0.4.1 | MIT OR Apache-2.0 | https://github.com/withoutboats/heck | 95505c38b4572b2d... | bundled(允许随包) |
 | hermit-abi | 0.5.3 | MIT OR Apache-2.0 | https://github.com/hermit-os/hermit-rs | e17592d60ebacc7d... | bundled(允许随包) |
 | hex | 0.4.3 | MIT OR Apache-2.0 | https://github.com/KokaKiwi/rust-hex | 7f24254aa9a54b5c... | bundled(允许随包) |
 | hexf-parse | 0.2.1 | CC0-1.0 | https://github.com/lifthrasiir/hexf | dfa686283ad6dd06... | bundled(允许随包) |
@@ -176,6 +186,7 @@
 | image | 0.24.9 | MIT OR Apache-2.0 | https://github.com/image-rs/image | 5690139d2f55868e... | bundled(允许随包) |
 | indexmap | 2.14.2 | Apache-2.0 OR MIT | https://github.com/indexmap-rs/indexmap | cc4e190f5d26ca70... | bundled(允许随包) |
 | instant | 0.1.13 | BSD-3-Clause | https://github.com/sebcrozet/instant | e0242819d153cba4... | bundled(允许随包) |
+| itertools | 0.14.0 | MIT OR Apache-2.0 | https://github.com/rust-itertools/itertools | 2b192c782037fadd... | bundled(允许随包) |
 | itoa | 1.0.18 | MIT OR Apache-2.0 | https://github.com/dtolnay/itoa | 8f42a60cbdf9a97f... | bundled(允许随包) |
 | jni | 0.22.4 | MIT OR Apache-2.0 | https://github.com/jni-rs/jni-rs | 5efd9a482cf3a427... | bundled(允许随包) |
 | jni-macros | 0.22.4 | MIT OR Apache-2.0 | https://github.com/jni-rs/jni-rs | a00109accc170f0b... | bundled(允许随包) |
@@ -189,6 +200,7 @@
 | khronos-egl | 6.0.0 | MIT/Apache-2.0 | https://github.com/timothee-haudebourg/khronos-egl | 6aae1df220ece3c0... | bundled(允许随包) |
 | khronos_api | 3.1.0 | Apache-2.0 | https://github.com/brendanzab/gl-rs/ | e2db585e1d738fc7... | bundled(允许随包) |
 | kurbo | 0.10.4 | MIT OR Apache-2.0 | https://github.com/linebender/kurbo | 1618d4ebd923e97d... | bundled(允许随包) |
+| lazy_static | 1.5.1 | MIT OR Apache-2.0 | https://github.com/rust-lang-nursery/lazy-static.rs | 20870f649af7073d... | bundled(允许随包) |
 | lebe | 0.5.3 | BSD-3-Clause | https://github.com/johannesvollmer/lebe | 7a79a3332a660948... | bundled(允许随包) |
 | libc | 0.2.190 | MIT OR Apache-2.0 | https://github.com/rust-lang/libc | ce5d3ddc6d3fa000... | bundled(允许随包) |
 | libloading | 0.7.4 | ISC | https://github.com/nagisa/rust_libloading/ | b67380fd3b2fbe75... | bundled(允许随包) |
@@ -214,6 +226,7 @@
 | metal | 0.27.0 | MIT OR Apache-2.0 | https://github.com/gfx-rs/metal-rs | c43f73953f8cbe51... | bundled(允许随包) |
 | miniz_oxide | 0.8.9 | MIT OR Zlib OR Apache-2.0 | https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide | 1fa76a2c86f704bd... | bundled(允许随包) |
 | miniz_oxide | 0.9.1 | MIT OR Zlib OR Apache-2.0 | https://github.com/Frommi/miniz_oxide/tree/master/miniz_oxide | b63fbc4a50860e98... | bundled(允许随包) |
+| multiversion_no_op | 1.0.0 | Apache-2.0 OR MIT | https://github.com/hsivonen/multiversion_no_op | 743fb55ba31b18fb... | bundled(允许随包) |
 | mutate_once | 0.1.2 | BSD-2-Clause | https://github.com/kamadak/mutate_once-rs | 13d2233c9842d08c... | bundled(允许随包) |
 | naga | 0.19.2 | MIT OR Apache-2.0 | https://github.com/gfx-rs/wgpu/tree/trunk/naga | 50e3524642f53d9a... | bundled(允许随包) |
 | ndk | 0.9.0 | MIT OR Apache-2.0 | https://github.com/rust-mobile/ndk | c3f42e7bbe13d351... | bundled(允许随包) |
@@ -253,6 +266,8 @@
 | once_cell | 1.21.4 | MIT OR Apache-2.0 | https://github.com/matklad/once_cell | 9f7c3e4beb33f85d... | bundled(允许随包) |
 | orbclient | 0.3.55 | MIT | https://gitlab.redox-os.org/redox-os/orbclient | 5df339f526ea9a60... | bundled(允许随包) |
 | ordered-stream | 0.2.0 | MIT OR Apache-2.0 | https://github.com/danieldg/ordered-stream | 9aa2b01e1d916879... | bundled(允许随包) |
+| ouroboros | 0.18.5 | MIT OR Apache-2.0 | https://github.com/someguynamedjosh/ouroboros | 1e0f050db9c44b97... | bundled(允许随包) |
+| ouroboros_macro | 0.18.5 | MIT OR Apache-2.0 | https://github.com/someguynamedjosh/ouroboros | 3c7028bdd3d43083... | bundled(允许随包) |
 | owned_ttf_parser | 0.25.1 | Apache-2.0 | https://github.com/alexheretic/owned-ttf-parser | 36820e9051aca101... | bundled(允许随包) |
 | oxideav-core | 0.1.37 | MIT | https://github.com/OxideAV/oxideav-core | d8de32b40e24dd0f... | bundled(允许随包) |
 | oxideav-sub-image | 0.0.7 | MIT | https://github.com/OxideAV/oxideav-sub-image | cb5030e2dce8efa5... | bundled(允许随包) |
@@ -265,6 +280,8 @@
 | parking_lot_core | 0.8.6 | Apache-2.0/MIT | https://github.com/Amanieu/parking_lot | 60a2cfe6f0ad2bfc... | bundled(允许随包) |
 | parking_lot_core | 0.9.12 | MIT OR Apache-2.0 | https://github.com/Amanieu/parking_lot | 2621685985a2ebf1... | bundled(允许随包) |
 | paste | 1.0.15 | MIT OR Apache-2.0 | https://github.com/dtolnay/paste | 57c0d7b74b563b49... | bundled(允许随包) |
+| pathfinder_geometry | 0.5.1 | MIT/Apache-2.0 | https://github.com/servo/pathfinder | 0b7b7e7b4ea70370... | bundled(允许随包) |
+| pathfinder_simd | 0.5.6 | MIT OR Apache-2.0 | https://github.com/servo/pathfinder | 4500030c302e4af1... | bundled(允许随包) |
 | percent-encoding | 2.3.2 | MIT OR Apache-2.0 | https://github.com/servo/rust-url/ | 9b4f627cb1b25917... | bundled(允许随包) |
 | phf | 0.13.1 | MIT | https://github.com/rust-phf/rust-phf | c1562dc717473dba... | bundled(允许随包) |
 | phf_shared | 0.13.1 | MIT | https://github.com/rust-phf/rust-phf | e57fef6bc5981e38... | bundled(允许随包) |
@@ -283,6 +300,7 @@
 | presser | 0.3.1 | MIT OR Apache-2.0 | https://github.com/EmbarkStudios/presser | e8cf8e6a8aa66ce3... | bundled(允许随包) |
 | proc-macro-crate | 3.5.0 | MIT OR Apache-2.0 | https://github.com/bkchr/proc-macro-crate | e67ba7e9b2b56446... | bundled(允许随包) |
 | proc-macro2 | 1.0.107 | MIT OR Apache-2.0 | https://github.com/dtolnay/proc-macro2 | 985e7ec9bb745e6c... | bundled(允许随包) |
+| proc-macro2-diagnostics | 0.10.1 | MIT/Apache-2.0 | https://github.com/SergioBenitez/proc-macro2-diagnostics | af066a9c399a26e0... | bundled(允许随包) |
 | profiling | 1.0.18 | MIT OR Apache-2.0 | https://github.com/aclysma/profiling | 3d595e54a326bc53... | bundled(允许随包) |
 | pulp | 0.22.3 | MIT | https://github.com/sarah-quinones/pulp/ | 046aa45b989642ec... | bundled(允许随包) |
 | pulp-wasm-simd-flag | 0.1.1 | MIT | https://github.com/sarah-quinones/pulp/ | 1d8f70e07b9c3962... | bundled(允许随包) |
@@ -381,11 +399,15 @@
 | ttf-parser | 0.21.1 | MIT OR Apache-2.0 | https://github.com/RazrFalcon/ttf-parser | 2c591d83f6977786... | bundled(允许随包) |
 | ttf-parser | 0.25.1 | MIT OR Apache-2.0 | https://github.com/harfbuzz/ttf-parser | d2df906b07856748... | bundled(允许随包) |
 | typenum | 1.20.1 | MIT OR Apache-2.0 | https://github.com/paholg/typenum | b6f5e870be6c3b37... | bundled(允许随包) |
+| ucd-trie | 0.1.7 | MIT OR Apache-2.0 | https://github.com/BurntSushi/ucd-generate | 2896d95c02a80c6d... | bundled(允许随包) |
 | uds_windows | 1.2.1 | MIT | https://github.com/haraldh/rust_uds_windows | f2f6fb2847f6742c... | bundled(允许随包) |
 | unicode-bidi | 0.3.18 | MIT OR Apache-2.0 | https://github.com/servo/unicode-bidi | 5c1cb5db39152898... | bundled(允许随包) |
 | unicode-bidi-mirroring | 0.2.0 | MIT/Apache-2.0 | https://github.com/RazrFalcon/unicode-bidi-mirroring | 23cb788ffebc92c5... | bundled(允许随包) |
+| unicode-canonical-combining-class | 1.0.0 | Apache-2.0 | https://github.com/yeslogic/unicode-canonical-combining-class | 41c99d5174052d02... | bundled(允许随包) |
 | unicode-ccc | 0.2.0 | MIT/Apache-2.0 | https://github.com/RazrFalcon/unicode-ccc | 1df77b101bcc4ea3... | bundled(允许随包) |
+| unicode-general-category | 1.1.0 | Apache-2.0 | https://github.com/yeslogic/unicode-general-category | 0b993bddc193ae5b... | bundled(允许随包) |
 | unicode-ident | 1.0.26 | (MIT OR Apache-2.0) AND Unicode-3.0 | https://github.com/dtolnay/unicode-ident | d245f478577f809a... | bundled(允许随包) |
+| unicode-joining-type | 1.0.0 | Apache-2.0 | https://github.com/yeslogic/unicode-joining-type | d8d00a7817097096... | bundled(允许随包) |
 | unicode-linebreak | 0.1.5 | Apache-2.0 | https://github.com/axelf4/unicode-linebreak | 3b09c83c3c29d375... | bundled(允许随包) |
 | unicode-properties | 0.1.4 | MIT/Apache-2.0 | https://github.com/unicode-rs/unicode-properties | 7df058c713841ad8... | bundled(允许随包) |
 | unicode-script | 0.5.8 | MIT OR Apache-2.0 | https://github.com/unicode-rs/unicode-script | 383ad40bb927465e... | bundled(允许随包) |
@@ -455,6 +477,7 @@
 | xkbcommon-dl | 0.4.2 | MIT | https://github.com/rust-windowing/xkbcommon-dl | d039de8032a9a885... | bundled(允许随包) |
 | xkeysym | 0.2.1 | MIT OR Apache-2.0 OR Zlib | https://github.com/notgull/xkeysym | b9cc00251562a284... | bundled(允许随包) |
 | xml-rs | 0.8.29 | MIT | https://github.com/kornelski/xml-rs | e450f9b2ed1dff33... | bundled(允许随包) |
+| yansi | 1.0.1 | MIT OR Apache-2.0 | https://github.com/SergioBenitez/yansi | cfe53a6657fd280e... | bundled(允许随包) |
 | yazi | 0.1.6 | MIT OR Apache-2.0 | https://github.com/dfrg/yazi | c94451ac9513335b... | bundled(允许随包) |
 | yoke | 0.8.3 | Unicode-3.0 | https://github.com/unicode-org/icu4x | 709fe23a0424b6a4... | bundled(允许随包) |
 | yoke-derive | 0.8.4 | Unicode-3.0 | https://github.com/unicode-org/icu4x | ec8ebde2db3681e8... | bundled(允许随包) |

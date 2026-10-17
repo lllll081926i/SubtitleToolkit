@@ -76,11 +76,14 @@ try {
         Copy-Item -LiteralPath $item.Src -Destination (Join-Path $stage $item.Name) -Force
     }
 
-    # 随包文档：许可正文与第三方声明（21 §11、28 §2）
+    # 随包文档：许可正文、第三方声明与 SBOM（21 §11、28 §2）
     $docs = @(
         @{ Rel = 'LICENSE-MIT';      Name = 'LICENSE-MIT' },
         @{ Rel = 'LICENSE-APACHE';   Name = 'LICENSE-APACHE' },
         @{ Rel = 'THIRD_PARTY_NOTICES.md'; Name = 'THIRD_PARTY_NOTICES.md' },
+        # 28 §2 把 checksums + SBOM + third-party notices 列为同一组交付物。
+        # SBOM 必须跟着包走：它的用途就是让人在拿到包的地方核对依赖。
+        @{ Rel = 'sbom.cdx.json';    Name = 'sbom.cdx.json' },
         @{ Rel = 'README.md';        Name = 'README.md' }
     )
     foreach ($d in $docs) {

@@ -15,6 +15,34 @@
 - glyph coverage；
 - SHA-256 / mtime。
 
+### 实现状态（2026-10-17）
+
+上面的清单**已全部交付**（`db::FaceRecord` 逐项对应），数据来源是
+“文件系统 + 注册表 + 读 `name`/`OS2`/`cmap`/`fvar` 表”。
+
+**权威性部分交付**：新增 **GDI 交叉核对**（`font-service::gdi`），
+`font scan --json` 的 `cross_check` 段给出本机实测：
+
+```
+gdi_faces_raw   6020   // GDI 枚举到的原始 face 数
+ gdi_faces       3233   // 过滤后（只数真曲线字体、不含 @ 竖排变体）
+ db_faces        1376   // 我们的库
+ missing_from_db    2   // GDI 看得到、我们一个 face 都匹配不上的家族
+ extra_in_db     1801   // 我们有、GDI 没枚举到的家族（信息，不是缺陷）
+```
+
+为什么是 GDI 而不是 DirectWrite：后者的 `IDWriteFactory` 是 **COM**，手写 vtable
+布局一个字段错就崩，而那类崩溃无法用测试穷尽 —— 与本仓库“不自己实现安全边界”的
+取向相同（同 23 §XML、PNG deflate、真 minidump）。GDI 的 `EnumFontFamiliesExW`
+是**扁平 C API**（只需两个 `extern "system"` 声明），枚举的是同一套系统字体注册表。
+
+它给的不是“权威替换”而是**权威交叉核对**：漏掉的 face 会让“找到作者引用的字体”
+静默失败，而那正是 §1 的全部目的。价值在于那些名字是**可执行的线索**
+（去查为什么没扫到），而“未实现”什么都不是。
+
+**仍未做**：DirectWrite 的 **fallback 链**（某个码位找不到时系统会回退到哪个 face）
+—— 那需要 `IDWriteFontFallback`，是 COM（ISSUES AG1）。
+
 不能只扫描 `C:\\Windows\\Fonts` 文件名，因为字体注册、localized family、TTC、用户字体和 variable font 都会让“文件名=Fontname”失效。
 
 ## 3. ASS Font Usage Scanner

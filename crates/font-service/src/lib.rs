@@ -14,6 +14,7 @@ pub mod attachments;
 pub mod cache;
 pub mod db;
 pub mod env;
+pub mod gdi;
 pub mod registry;
 pub mod report;
 pub mod subset;
@@ -30,6 +31,7 @@ pub use db::{
     FONT_CHANGED_AFTER_SCAN, FONT_EXTS,
 };
 pub use env::{identify, FontEnv, POLICY_VERSION};
+pub use gdi::{run as font_cross_check, CrossCheck, GdiFace};
 pub use registry::{RegisteredFont, RegistryReport};
 pub use report::{evaluate, evaluate_or_rescan, FaceSummary, FontMatch, Verdict};
 pub use subset::{

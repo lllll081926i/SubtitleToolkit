@@ -42,6 +42,20 @@
   （含真 libass 通过检查并真的渲染出 BDN XML，以及“同位 PE 不被误判”的负基线）；
   `core-model/src/pe.rs` 的 4 用例把 Itanium（0x0200）正确归为 `Other` 而不是 x64。
   详见[PE 架构检测裁决](reviews/2026-10-17-pe-arch-check.md)。
+- 2026-10-17 **补上 17 §2 的权威交叉核对**（此前只说“未使用 DirectWrite”，
+  而这个记载本身没有可执行价值）：新增 `font-service::gdi`，用 GDI 的
+  `EnumFontFamiliesExW`（**扁平 C API**，非 COM）枚举系统字体，与我们的库对照，
+  `font scan --json` 的 `cross_check` 段给出两边差异。本机实测：GDI 原始 6020 face /
+  过滤后 3233 / 库里 1376 / `missing_from_db` **2 个**（创艺简行楷、微软简老宋）。
+  为何不用 DirectWrite：`IDWriteFactory` 是 COM，手写 vtable 一个字段错就崩，
+  而那类崩溃无法用测试穷尽（同 23 §XML、PNG deflate、真 minidump 的取向）。
+  开发中抳出一个真缺陷：`TEXTMETRICW` 的 `tmFirstChar`…`tmBreakChar` 在 `wingdi.h`
+  里是 `WCHAR`（u16）而我写成了 `u8`，于是 `tmPitchAndFamily` 偏移差 4 字节、
+  恒读为 0，**所有字体都被当成非 TrueType**（6020 个 face 过滤后只剩 0 个）。
+  纯构造数据的单元测试看不见它 —— 只有真机用例能抳出来。已加编译期
+  `offset_of!` 自检，让这类错不再能静默通过。另：GDI 的具名实例与带风格后缀的族
+  （`Bahnschrift Light` 等）是同一份字体，需按尾部前缀剥离，否则会刷出 63 个假缺口。
+  详见[GDI 交叉核对裁决](reviews/2026-10-17-gdi-font-cross-check.md)。
 - 2026-10-17 **把 A/B 分屏对比从占位控件改成真实现**（05 §4.1）：交付前
   `ToggleSplitAb` **只翻转一个布尔值并改按钮文字**，画面毫无变化 ——
   而那正是 05 §1 第 3 条明令禁止的“占位控件”。现在 B 侧对**脚本文本**
@@ -120,7 +134,11 @@
   **真 minidump 未做**（需异常处理器 + 含内存镜像，与 22 §5 默认可外发相抵）。
 - AT-UI-001 的**实测**：真重任务在后台跑时反复计时 `SubtitleApp::update`，
   最慢 18.5µs / 均值 9.5µs（预算 8ms，37 §1）；取消点击不阻塞且令牌与 worker 同源。
+- 17 §2 的 GDI 权威交叉核对（`font-service::gdi`）：本机实测 GDI 原始 6020 face /
+  过滤后 3233 / 库里 1376，`missing_from_db` 逐家族列出（本机 2 个）。
 - 05 §4.1 的 A/B 分屏对比：B 侧对**脚本**应用 Profile 变换（HDR + 等比缩放）后重渲，
+  用与导出同一份 `transform_hdr`/`transform_resolution`；恒等映射会说明原因；
+  任一侧为空则两侧都清（防新的 A 配旧的 B）。
   用与导出同一份 `transform_hdr`/`transform_resolution`；恒等映射会说明原因；
   任一侧为空则两侧都清（防新的 A 配旧的 B）。
 - 23 §DLL 的 PE arch 检测（单份实现在 `core_model::pe`，主程序与 host 共用）；
@@ -141,7 +159,10 @@
 ## 未交付或未裁决
 
 - CSRI/VSFilterMod provider、x86 renderer host 和发行安装链未实现。
-- 字体服务未使用 DirectWrite 作为权威 resolver；字体子集正确性尚无复杂文字渲染语料。
+- 字体服务未使用 DirectWrite 作为权威 resolver；但已补 **GDI 权威交叉核对**
+  （`font scan --json` 的 `cross_check`）：GDI 看得到而库里匹配不上的家族会逐个列出。
+  DirectWrite 的 **fallback 链**仍未做（需 COM，ISSUES AG1）。
+  字体子集正确性尚无复杂文字渲染语料。
 - PGS Basic 编码不等于 Strict Blu-ray 合规。PCS 帧率字段、palette range/matrix、ODS 图末标记尚无真盘/设备结论；当前 ffprobe 证据只覆盖 `.sup` 容器段布局与时钟。第 5 层的不变式取的是**必要条件**（不满足一定有问题），不是充分条件。
 - Strict validator 已实现第 1–6 层（含第 5 层解码器模型）；**第 7 层设备语料**仍未取得，因此 `strict_badge_allowed` 仍恒为 false（报告给出 `coverage_gap`）。第 5 层本身未含缓冲区占用曲线与 acquisition/seamless 分支。
 - 仓库已补根目录 MIT/Apache-2.0 license 正文（`LICENSE-MIT`、`LICENSE-APACHE`，2026-10-17）；portable 包可由 [tools/make_portable.ps1](../tools/README.md) 生成（含三个 exe、`portable.flag`、`sbom.cdx.json`、许可正文与 `SHA256SUMS.txt`）。**安装器与 Authenticode 签名仍未完成**（这是发布链上剩下的一项）；第三方 DLL 分发审计也未完成。

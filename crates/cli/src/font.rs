@@ -128,7 +128,37 @@ pub fn run_font(inv: &Invocation) -> Result<Envelope> {
         .iter()
         .filter(|m| !m.missing_glyphs.is_empty())
         .count();
+
+    // 17 §2：权威交叉核对。把库里全部已知名字（家族 + 别名 + Win32 家族 +
+    // 全名 + PostScript）都拿出来与 GDI 对比。
+    //
+    // 全拿而不是只拿 typographic family：GDI 给的是 Win32 家族名，
+    // 只看 typographic family 会把字体误报成“我们漏了”。
+    let mut known: Vec<String> = Vec::new();
+    for f in &db.faces {
+        known.push(f.family.clone());
+        known.push(f.win32_family.clone());
+        known.push(f.full_name.clone());
+        known.push(f.postscript_name.clone());
+        known.extend(f.family_aliases.iter().cloned());
+    }
+    let cross = font_service::font_cross_check(&known, db.faces.len());
     let mut warnings: Vec<String> = Vec::new();
+    if cross.has_gap() {
+        warnings.push(format!(
+            "交叉核对：GDI 枚举到 {} 个曲线字体 face，而我们的库匹配不上其中 {} 个家族（{}）。\
+             这些字体的匹配会失败，可用 --registry 再试",
+            cross.gdi_faces,
+            cross.missing_from_db.len(),
+            cross
+                .missing_from_db
+                .iter()
+                .take(5)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join("、")
+        ));
+    }
     if db.cache == CacheState::Refreshed {
         // 索引在使用点被判为过期：多付的那次全量重扫算在 evaluate_ms 里，不说明的话
         // 读者看到的是"评级突然变慢了"。
@@ -241,12 +271,24 @@ pub fn run_font(inv: &Invocation) -> Result<Envelope> {
             "open_errors": reg.open_errors.len(),
             "field_errors": reg.field_errors.len(),
         },
+        // 17 §2 的权威交叉核对：GDI 看得到的系统字体里，有哪些是我们的库一个 face
+        // 都匹配不上的。
+        //
+        // 为什么用 GDI 而不是 DirectWrite：后者的 `IDWriteFactory` 是 COM，
+        // 手写 vtable 布局一个字段错就崩，而那类崩溃无法用测试穷尽。
+        // GDI 的 `EnumFontFamiliesExW` 是扁平 C API（只需两个 `extern "system"`
+        // 声明），枚举的是同一套系统字体注册表。
+        // 它给的不是“权威替换”而是**权威交叉核对**：漏掉的 face 会让“找到作者
+        // 引用的字体”静默失败，而那正是 17 §1 的全部目的。
+        "cross_check": cross,
         "matches": serde_json::to_value(&matches).map_err(|e| {
             cli_err(183, "字体报告序列化失败").with_detail(e.to_string())
         })?,
         "scope": [
             "默认 report only：除了 --out 的报告不写产物；给了 --copy-fonts 才按 17 §6 第二档复制整份字体并写 manifest。两种模式都不 subset（AG2）",
-            "匹配读的是字体文件里的 name/OS2/cmap 表，未使用 DirectWrite 权威（17 §2，ISSUES AG1）",
+            "匹配读的是字体文件里的 name/OS2/cmap 表；权威交叉核对走 GDI 枚举（本机系统字体），不是 DirectWrite 的 fallback 链（17 §2、ISSUES AG1）",
+            "cross_check.missing_from_db 是“GDI 看得到而我们的库一个 face 都匹配不上”的家族，它是可执行的线索：去查为什么没扫到",
+            "cross_check.extra_in_db 通常来自用户字体或 GDI 不暴露的格式，是信息而不是缺陷",
             "未询问 libass/VSFilterMod 的 fallback 链：Missing 表示按名字找不到，不等于渲染必然失败",
             "缺字按 cmap 码位判定；ligature/GSUB 层面的覆盖未建模（17 §5 的 corpus 未建，ISSUES AG2）",
         ],

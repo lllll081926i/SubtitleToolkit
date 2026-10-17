@@ -29,6 +29,12 @@ fn write(dir: &Path, name: &str, body: &str) -> PathBuf {
     p
 }
 
+/// 一段既非 UTF-8 也非可判定 UTF-16 的字节：格式探测阶段就必须拒绝（STK-INP-0112）。
+/// 不能用普通文本充"坏输入" —— 纯文本会被当成合法字幕（那是对的，不是缺陷）。
+fn bad_bytes() -> Vec<u8> {
+    vec![0x00, 0x01, 0x02, 0x03, 0xFF, 0xFE, 0x07, 0x08]
+}
+
 /// spec 里的相对路径都相对 spec 自身解析，所以 roots 写 "." 就够了。
 fn write_spec(dir: &Path, body: &str) -> PathBuf {
     let p = dir.join("job.json");
@@ -624,5 +630,95 @@ fn batch_does_not_share_renders_across_different_frame_rates() {
     assert_ne!(a, b, "两种帧率写出了同一份 BDN");
     assert!(a.contains("<FrameRate>25</FrameRate>"), "{a}");
     assert!(b.contains("<FrameRate>30</FrameRate>"), "{b}");
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// AT-BATCH-001：100 输入 × 3 profile 的容量验收，混入格式错误与既有输出冲突。
+/// 断言的是“单文件失败不阻塞其他”在真实体量下仍成立：逐 profile 结果可数、
+/// PartialSuccess 正确、成功产物齐全、失败项能定位到具体输入。
+#[test]
+fn at_batch_001_hundred_inputs_by_three_profiles_partial_failure_is_contained() {
+    let dir = workspace("capacity");
+    // 100 个输入：98 个合法 ASS + 2 个坏文件（非 UTF-8 字节，格式探测阶段就拒）
+    for i in 0..100 {
+        let name = format!("in{i:03}.ass");
+        write(&dir, &name, ASS);
+    }
+    std::fs::write(dir.join("zxbroken1.ass"), bad_bytes()).unwrap();
+    std::fs::write(dir.join("zxbroken2.ass"), bad_bytes()).unwrap();
+    // 既有输出冲突：先放一个同名产物，验证默认 rename 不覆盖它
+    std::fs::create_dir_all(dir.join("out")).unwrap();
+    std::fs::write(dir.join("out").join("in000.sub.srt"), "SENTINEL").unwrap();
+
+    let spec = write_spec(
+        &dir,
+        r#"{"id":"t-cap","roots":["."],"include":["*.ass"],
+  "profiles":[{"name":"sub","format":"srt"},
+               {"name":"ass","format":"ass","canvas":"1280x720","fps":"25"},
+               {"name":"ssa","format":"ssa"}],
+  "output":{"dir":"out","template":"{stem}.{profile}.{ext}"},"video_association":false}"#,
+    );
+    let out = run(&["batch", "--spec", spec.to_str().unwrap(), "--json"]);
+    // 2 个坏输入 → 部分成功，不能退 0（38 §2）
+    assert_eq!(out.status.code(), Some(1), "部分成功必须退 1：{out:?}");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    // 100 个输入 + 2 个坏文件
+    assert_eq!(v["data"]["inputs"], 102, "{v}");
+    assert_eq!(v["data"]["profiles"], 3, "{v}");
+    assert_eq!(v["data"]["outcome"], "partial-success", "{v}");
+
+    let details = v["data"]["report"]["details"].as_array().unwrap();
+    // detail 里 input 是含 `\\.\\` 的完整路径，按文件名判别
+    let is_bad = |d: &serde_json::Value| {
+        d["input"]
+            .as_str()
+            .unwrap_or("")
+            .replace('\\', "/")
+            .contains("/zxbroken")
+    };
+    let good: Vec<_> = details.iter().filter(|d| !is_bad(d)).collect();
+    let bad: Vec<_> = details.iter().filter(|d| is_bad(d)).collect();
+    assert_eq!(good.len(), 100 * 3, "98×3 合法输入应全部有逐 profile 记录");
+    assert_eq!(
+        bad.len(),
+        2 * 3,
+        "坏输入也要逐 profile 记录失败，而不是静默跳过"
+    );
+    assert!(
+        good.iter().all(|d| d["status"] == "verified"),
+        "合法输入里有一个没验证成功：{:?}",
+        good.iter()
+            .filter(|d| d["status"] != "verified")
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        bad.iter().all(|d| d["status"] == "failed"),
+        "坏输入应报 failed：{bad:?}"
+    );
+
+    // 失败项必须能定位到具体输入与原因，而不是只说“有一个失败了”
+    for d in &bad {
+        let input = d["input"].as_str().unwrap_or("");
+        assert!(input.contains("zxbroken"), "{d}");
+        assert!(
+            d["detail"].as_str().unwrap_or("").contains("STK-INP-"),
+            "失败记录必须带可定位的错误码与说明：{d}"
+        );
+    }
+
+    // 成功产物齐全且独立：抽查首尾合法输入的三份输出都在
+    for stem in ["in000", "in097"] {
+        for prof in ["sub", "ass", "ssa"] {
+            let ext = if prof == "sub" { "srt" } else { prof };
+            let p = dir.join("out").join(format!("{stem}.{prof}.{ext}"));
+            assert!(p.is_file(), "缺失产物：{}", p.display());
+        }
+    }
+    // 冲突的既有输出绝不被覆盖（默认 rename）
+    assert_eq!(
+        std::fs::read_to_string(dir.join("out").join("in000.sub.srt")).unwrap(),
+        "SENTINEL",
+        "默认 rename 不得覆盖既有输出"
+    );
     std::fs::remove_dir_all(&dir).ok();
 }

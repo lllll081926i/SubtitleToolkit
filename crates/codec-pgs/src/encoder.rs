@@ -31,6 +31,8 @@ use crate::segment::{Segment, SEG_END, SEG_ODS, SEG_PCS, SEG_PDS, SEG_WDS};
 pub const MAX_ODS_SEGMENT_PAYLOAD: usize = 65_519;
 /// 首片片头：object_id(2)+version(1)+sequence(1)+data_length(3)+width(2)+height(2)。
 pub const ODS_FIRST_HEADER: usize = 11;
+/// `data_length` 里那 4 个尺寸字节（宽 2 + 高 2）。写字段时必须加进去。
+pub const ODS_DIM_FIELDS: u32 = 4;
 /// 续片片头只有 object_id(2)+version(1)+sequence(1)。
 pub const ODS_NEXT_HEADER: usize = 4;
 
@@ -339,7 +341,11 @@ pub fn encode(frames: &[Frame], opts: &EncodeOptions) -> Result<(Vec<Segment>, E
                     payload.push(0); // object version
                     payload.push(if first { 0x80 } else { 0 } | if last { 0x40 } else { 0 });
                     if first {
-                        let total = rle.len() as u32;
+                        // 规格：data_length = RLE 字节数 + 4（宽高各 2 字节）。
+                        // 三个独立来源一致（ProofPGS PGS_FORMAT.md、libpgs OdsData）；
+                        // 初版漏了这 4 字节，与本项目自己的校验器“对错一致”，
+                        // 结果是真实播放器读到的长度比实际数据短 4。
+                        let total = rle.len() as u32 + ODS_DIM_FIELDS;
                         payload.push((total >> 16) as u8);
                         payload.push((total >> 8) as u8);
                         payload.push(total as u8);
@@ -489,7 +495,8 @@ mod tests {
         assert_eq!(head.size, Some((8, 2)));
         assert_eq!(
             head.declared_len as usize,
-            ods.payload[ODS_FIRST_HEADER..].len()
+            ods.payload[ODS_FIRST_HEADER..].len() + ODS_DIM_FIELDS as usize,
+            "data_length 必须含那 4 个宽高字节（规格：RLE 字节数 + 4）"
         );
         let (id, w, h, rle) =
             assemble_ods(segments.iter().filter(|s| s.seg_type == SEG_ODS)).unwrap();

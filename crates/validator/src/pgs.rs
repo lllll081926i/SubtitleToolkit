@@ -210,10 +210,10 @@ pub fn structure(segments: &[Segment]) -> ValidationReport {
                     "PGS.STR.06",
                     Severity::Error,
                     format!(
-                        "object {} 声明 data_length {declared}，实收 {actual} 字节",
+                        "object {} 声明 data_length {declared}，实收 RLE {actual} 字节（应差 {ODS_LENGTH_INCLUDES_DIMENSIONS}）",
                         obj.object_id
                     ),
-                    "首片的 3 字节字段必须等于分片前 RLE 总长",
+                    "首片的 3 字节字段 = RLE 字节数 + 4（宽高各 2 字节）",
                 );
                 f.display_set = Some(set.index);
                 f.segment_offset = obj.offset;
@@ -247,6 +247,23 @@ pub fn structure(segments: &[Segment]) -> ValidationReport {
 
 /// (object id, 有 first, 见到 last, 声明长度, 累计字节, pts, 首片偏移)
 type OdsAcc = (u16, bool, bool, Option<u32>, usize, i64, Option<usize>);
+
+/// ODS 首片的 `data_length` 字段包含 width+height 那 4 字节，不是纯 RLE 长度。
+///
+/// 规格依据（三个独立来源一致）：
+/// * ProofPGS `PGS_FORMAT.md`：“Object Data Length … **including** the 4 bytes for
+///   Width+Height”；“actual RLE data size is Object Data Length **minus 4**”；
+/// * `libpgs` 的 `OdsData::data_length` 注释：“includes 4 bytes for width+height”，
+///   其序列化器写作 `rle_data.len() + 4`。
+///
+/// 初版实现把 `data_length` 与纯 RLE 字节数直接比，真实字幕上每个 ODS 都差 4，
+/// 于是每份合法文件都被报成破损（典型假阳性）。
+const ODS_LENGTH_INCLUDES_DIMENSIONS: usize = 4;
+
+/// 声明长度是否与实收 RLE 字节数一致（按上面的规格把 4 字节尺寸算进去）。
+fn ods_length_matches(declared: u32, rle_bytes: usize) -> bool {
+    declared as usize == rle_bytes + ODS_LENGTH_INCLUDES_DIMENSIONS
+}
 
 struct OdsRun {
     object_id: u16,
@@ -289,10 +306,10 @@ fn ods_objects(segments: &[Segment], set: &DisplaySet) -> Vec<OdsRun> {
                     first,
                     last,
                     length_mismatch: declared.and_then(|d| {
-                        if d as usize != got {
-                            Some((d, got))
-                        } else {
+                        if ods_length_matches(d, got) {
                             None
+                        } else {
+                            Some((d, got))
                         }
                     }),
                     pts,
@@ -322,10 +339,10 @@ fn ods_objects(segments: &[Segment], set: &DisplaySet) -> Vec<OdsRun> {
             first,
             last,
             length_mismatch: declared.and_then(|d| {
-                if d as usize != got {
-                    Some((d, got))
-                } else {
+                if ods_length_matches(d, got) {
                     None
+                } else {
+                    Some((d, got))
                 }
             }),
             pts,
@@ -357,16 +374,41 @@ pub fn timeline(segments: &[Segment], grid: Option<Fps>) -> ValidationReport {
             f.pts = Some(set.pts);
         }
         leads.push(set.pts - set.dts);
-        // set 内所有段必须同一对时钟
+        // 一个 display set 内的段**各有** PTS/DTS，不是共享一对：
+        // FFmpeg 的 PGS 编码器按解码角色逐段推导（supenc：“Each segment gets its own
+        // PTS/DTS in the SUP header based on its role in the decode pipeline”），
+        // 真实商业字幕也是这个形状（PCS/WDS/PDS/ODS/END 的 PTS 各不相同）。
+        // 能校验的不变量是：每段自己得先解后显（DTS ≤ PTS），
+        // 而且不得晚于它所属集合的 PCS —— 晚于 PCS 就是在"已经显示之后才交上去"。
         let body = &segments[set.first_segment..=set.last_segment];
-        if body.iter().any(|s| s.pts != set.pts || s.dts != set.dts) {
-            let f = r.add(
-                "PGS.TML.02",
-                Severity::Error,
-                format!("display set {} 内各段时间戳不一致", set.index),
-                "同一显示集必须共享一个 PCS 时间戳",
-            );
-            f.display_set = Some(set.index);
+        for s in body {
+            if s.dts > s.pts {
+                let f = r.add(
+                    "PGS.TML.02",
+                    Severity::Error,
+                    format!(
+                        "display set {} 内类型 0x{:02X} 段的 DTS {} 晚于自身 PTS {}",
+                        set.index, s.seg_type, s.dts, s.pts
+                    ),
+                    "逐段推导 decode lead：每段先解后显（DTS ≤ PTS），不能机械置零",
+                );
+                f.display_set = Some(set.index);
+                f.segment_offset = s.offset;
+                f.pts = Some(s.pts);
+            } else if s.pts > set.pts {
+                let f = r.add(
+                    "PGS.TML.02",
+                    Severity::Error,
+                    format!(
+                        "display set {} 内类型 0x{:02X} 段的 PTS {} 晚于该集合的 PCS PTS {}",
+                        set.index, s.seg_type, s.pts, set.pts
+                    ),
+                    "段不得晚于它所属集合的 PCS：显示时那些数据必须已经在解码器里",
+                );
+                f.display_set = Some(set.index);
+                f.segment_offset = s.offset;
+                f.pts = Some(s.pts);
+            }
         }
         if let Some(p) = prev {
             if set.pts <= p.pts {
@@ -960,6 +1002,30 @@ mod tests {
         assert!(r.has_check("PGS.STR.06"), "{:?}", r.text_lines());
     }
 
+    /// 回归：真第三方 SUP 上曾把**每个** ODS 都报成 broken，因为把 `data_length`
+    /// 与纯 RLE 字节数直比。规格是 `data_length = RLE 字节数 + 4`（宽高各 2），
+    /// 三个独立来源一致（ProofPGS PGS_FORMAT.md、libpgs `OdsData`）。
+    /// 这条锁住“合法编码流不得报 STR.06”。
+    #[test]
+    fn spec_conformant_ods_length_is_not_flagged() {
+        let segs = stream();
+        let ods = segs.iter().find(|s| s.seg_type == SEG_ODS).expect("有 ODS");
+        // 我们自己的编码器写出来的首片：声明值必须等于 RLE + 4
+        let h = parse_ods_header(&ods.payload).unwrap();
+        let rle_bytes = ods.payload.len() - h.rle_start;
+        assert_eq!(
+            h.declared_len as usize,
+            rle_bytes + ODS_LENGTH_INCLUDES_DIMENSIONS,
+            "编码器与校验器必须用同一条规格：data_length 含 4 字节尺寸"
+        );
+        let r = structure(&segs);
+        assert!(
+            !r.has_check("PGS.STR.06"),
+            "自产的合法流被报成长度不符（假阳性）：{:?}",
+            r.text_lines()
+        );
+    }
+
     #[test]
     fn non_monotonic_pts_and_dts_after_pts_are_caught() {
         let segs = stream();
@@ -1140,24 +1206,58 @@ mod tests {
         );
     }
 
+    /// 回归：旧版 TML.02 要求"同一显示集内所有段共享一对时钟"，那是发明出来的约束。
+    /// FFmpeg 的 PGS 编码器逐段推导 PTS/DTS（PCS/WDS/PDS 用 base PTS，首个 ODS 的 PTS
+    /// 再加对象解码时间，末段沿用上一个 ODS 的 PTS），真实商业字幕同理 —— 段间时钟
+    /// 各不相同是**正常**的，不能报。
     #[test]
-    fn pgs_tml_02_fires_only_when_a_set_splits_its_own_clock() {
-        let clean = stream();
-        assert!(
-            !timeline(&clean, None).has_check("PGS.TML.02"),
-            "一个显示集内所有段共享同一对时钟时不该报"
-        );
-        let mut split = clean.clone();
-        // 只动第二个显示集内部非 PCS 的一段：集合内时间戳从此不一致
-        let second = split
+    fn pgs_tml_02_accepts_per_segment_timestamps() {
+        let mut segs = stream();
+        // 把第二个显示集里非 PCS 的段改成"各自不同的合法时钟"：
+        // DTS 仍在各自 PTS 之前、也都不晚于该集合的 PCS。
+        let second = segs
             .iter()
             .position(|s| s.seg_type == SEG_PCS && s.pts == 180_000)
             .expect("夹具应有第二个显示集");
-        split[second + 1].pts += 90;
-        let r = timeline(&split, None);
+        segs[second + 1].pts -= 45;
+        segs[second + 2].pts -= 90;
+        let r = timeline(&segs, None);
+        assert!(
+            !r.has_check("PGS.TML.02"),
+            "段间时钟不同是正常的（FFmpeg/真实字幕都这样），不该报：{}",
+            r.text_lines().join(" | ")
+        );
+    }
+
+    /// TML.02 真正该拦的两件事：段自己先显后解，或段晚于它所属集合的 PCS。
+    #[test]
+    fn pgs_tml_02_fires_on_out_of_order_or_late_segment_clocks() {
+        // 1) 段内 DTS 晚于自身 PTS
+        let mut self_bad = stream();
+        let second = self_bad
+            .iter()
+            .position(|s| s.seg_type == SEG_PCS && s.pts == 180_000)
+            .expect("夹具应有第二个显示集");
+        self_bad[second + 1].dts = self_bad[second + 1].pts + 1;
+        let r = timeline(&self_bad, None);
         assert!(
             r.has_check("PGS.TML.02"),
-            "集合内段时钟不一致必须报：{}",
+            "段内 DTS 晚于 PTS 必须报：{}",
+            r.text_lines().join(" | ")
+        );
+
+        // 2) 段晚于所属集合的 PCS
+        let mut late = stream();
+        let second = late
+            .iter()
+            .position(|s| s.seg_type == SEG_PCS && s.pts == 180_000)
+            .expect("夹具应有第二个显示集");
+        late[second + 1].pts = late[second].pts + 90;
+        late[second + 1].dts = late[second + 1].pts;
+        let r = timeline(&late, None);
+        assert!(
+            r.has_check("PGS.TML.02"),
+            "段晚于所属集合的 PCS 必须报：{}",
             r.text_lines().join(" | ")
         );
     }

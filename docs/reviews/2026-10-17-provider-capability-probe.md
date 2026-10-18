@@ -86,6 +86,26 @@ pub const CSRI_OPEN_VARIANTS: [&str; 2] = ["csri_open_file", "csri_open_mem"];
 把它判成不可用是**假阴性**。写成两个常量而不是塞进一个列表，
 是因为"两个都要"与"二选一"是不同语义。
 
+#### 一个差点又搞错的步骤（值得单独记）
+
+取回上游 `csri.h` 逐名核实之后，我一幽把 **`csri_request_fmt`** 也加进了必需集 ——
+它在头文件里确实存在，而旧式调用序列（设格式 → 画帧）要用它。
+
+**用例当场否掉了这个改动**：本机真实 `VSFilterMod.dll` 导出 20 个名字，
+其中有 `csri_query_ext` 而**没有** `csri_request_fmt`。原因正好对应
+12 §1B 那句"只有确实暴露标准 CSRI / `csri_stream_ext` 的 provider 才走这条链"——
+新式路径把"设格式"挪进扩展接口了。
+
+所以它归入 [`CSRI_OPTIONAL_EXPORTS`]。**教训**：
+
+> 能力集合不能从"头文件里有什么"推，要从"**真的 provider 导了什么**"反推。
+> 头文件描述接口全集，而实现会选其中一条路径。
+
+可选项现在单独报出来（`csri_optional_extensions` + `provider probe` 的
+`csri_optional_exports` 字段）：它们不参与可用性判定，
+但告诉用户**这个 provider 走哪条路径** ——
+尤其 `csri_query_ext` 是 12 §1B 点名的 `csri_stream_ext` 的入口。
+
 ### 3.2 `probe` **先加载再看符号** —— 恰好违反 12 §3
 
 原来：

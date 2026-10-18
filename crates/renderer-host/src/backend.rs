@@ -155,16 +155,37 @@ impl Backend {
     /// 之所以还返回 `Ok` 而不是 `Err`：这不是失败，是能力缺失，
     /// 而把它做成错误会让"某份 ASS 带内嵌字体"在 CSRI 链上整体渲染不了。
     /// **判断该由调用方按能力做，而不是靠错误码去猜。**
-    pub fn add_font(&mut self, family: &str, bytes: &[u8]) -> Result<()> {
+    /// 交一份字体给 provider。
+    ///
+    /// ## 返回值说的是“**真的注入了吗**”，不是“调用成功了吗”
+    ///
+    /// 返回 `true` = provider 真的拿到了这份字节；
+    /// `false` = **没做**（当前只有 CSRI 链：它的头文件里没有加字体的入口）。
+    ///
+    /// ## 为什么第一版那样写是错的
+    ///
+    /// 第一版对 CSRI 返回 `Ok(())`，注释里写着“`Ok(())` **不表示成功**，
+    /// 调用方必须先看 [`Self::supports_font_injection`]”——
+    /// 而 `main.rs` 里恰好就在同一段代码里写 `Ok(()) => injected += 1`。
+    /// 实测后果：一份 1.0 MB 的内嵌字体走 CSRI 链，
+    /// 报告里写 `"enabled": true, "injected": [{... 1047208 bytes ...}]`，
+    /// 而 provider **根本没见过那字节**。
+    ///
+    /// **“调用方要先看能力”是一条靠不住的契约** —— 它写在注释里，
+    /// 而注释拦不住任何人。改成让**返回值自己承载真相**，
+    /// 于是忘了查能力也不会得到一个假数字。
+    ///
+    /// 仍然不做成 `Err`：能力缺失不是失败。做成错误会让
+    /// “某份 ASS 带内嵌字体”在 CSRI 链上整体渲染不了，
+    /// 而那比“没注入”坏得多 —— 用户还能拿到字幕，只是字形未必是他要的。
+    pub fn add_font(&mut self, family: &str, bytes: &[u8]) -> Result<bool> {
         match self {
-            Backend::Libass(p) => p.add_font(family, bytes),
-            // 明确“没做”。返回 `Ok(())` **不表示成功** ——
-            // 调用方必须先看 [`Self::supports_font_injection`]。
-            //
-            // 为什么不做成 `Err`：这不是失败，是**能力缺失**。
-            // 做成错误会让“某份 ASS 带内嵌字体”在 CSRI 链上整体渲染不了，
-            // 而那比“没注入”坏得多 —— 用户还能拿到字幕，只是字形未必是他要的。
-            Backend::Csri(_) => Ok(()),
+            Backend::Libass(p) => {
+                p.add_font(family, bytes)?;
+                Ok(true)
+            }
+            // 明确“没做”——见上面那段。
+            Backend::Csri(_) => Ok(false),
         }
     }
 
@@ -362,6 +383,121 @@ fn whole_millis(t: Time) -> Result<i64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 造一个带真导出表的 PE（布局照 `core-model::pe` 自己测试里那套）。
+    fn pe_with_exports(machine: u16, names: &[&str]) -> Vec<u8> {
+        const OPT_AT: usize = 0x98;
+        const OPT_SIZE: usize = 0xf0;
+        const SEC_AT: usize = OPT_AT + 24 + OPT_SIZE;
+        const SEC_RAW: usize = 0x400;
+        const EXP_RVA: u32 = 0x1000;
+        const PE_LEAN: [u8; 4] = [0x50, 0x45, 0x00, 0x00];
+
+        let mut v = vec![0u8; SEC_RAW + 0x1000];
+        v[0] = b'M';
+        v[1] = b'Z';
+        v[0x3c..0x40].copy_from_slice(&(OPT_AT as u32).to_le_bytes());
+        v[OPT_AT..OPT_AT + 4].copy_from_slice(&PE_LEAN);
+        v[OPT_AT + 4..OPT_AT + 6].copy_from_slice(&machine.to_le_bytes());
+        v[OPT_AT + 6..OPT_AT + 8].copy_from_slice(&1u16.to_le_bytes());
+        v[OPT_AT + 20..OPT_AT + 22].copy_from_slice(&(OPT_SIZE as u16).to_le_bytes());
+        let is64 = machine == 0x8664;
+        let magic: u16 = if is64 { 0x020b } else { 0x010b };
+        v[OPT_AT + 24..OPT_AT + 26].copy_from_slice(&magic.to_le_bytes());
+        let dd = OPT_AT + 24 + if is64 { 112 } else { 96 };
+        v[dd..dd + 4].copy_from_slice(&EXP_RVA.to_le_bytes());
+        v[dd + 4..dd + 8].copy_from_slice(&0x200u32.to_le_bytes());
+        v[SEC_AT + 8..SEC_AT + 12].copy_from_slice(&0x1000u32.to_le_bytes());
+        v[SEC_AT + 12..SEC_AT + 16].copy_from_slice(&EXP_RVA.to_le_bytes());
+        v[SEC_AT + 16..SEC_AT + 20].copy_from_slice(&0x1000u32.to_le_bytes());
+        v[SEC_AT + 20..SEC_AT + 24].copy_from_slice(&(SEC_RAW as u32).to_le_bytes());
+
+        let exp = SEC_RAW;
+        let n = names.len() as u32;
+        let names_tbl = exp + 40;
+        let ord_tbl = names_tbl + (n as usize) * 4;
+        let strs = ord_tbl + (n as usize) * 2;
+        v[exp + 24..exp + 28].copy_from_slice(&n.to_le_bytes());
+        v[exp + 32..exp + 36].copy_from_slice(&(EXP_RVA + 40).to_le_bytes());
+        v[exp + 36..exp + 40].copy_from_slice(&(EXP_RVA + 40 + n * 4).to_le_bytes());
+        let mut cur = strs;
+        for (i, name) in names.iter().enumerate() {
+            let rva = EXP_RVA + (cur - SEC_RAW) as u32;
+            v[names_tbl + i * 4..names_tbl + i * 4 + 4].copy_from_slice(&rva.to_le_bytes());
+            v[ord_tbl + i * 2..ord_tbl + i * 2 + 2].copy_from_slice(&(i as u16).to_le_bytes());
+            v[cur..cur + name.len()].copy_from_slice(name.as_bytes());
+            cur += name.len() + 1;
+        }
+        v
+    }
+
+    /// **能力报告必须是真话。**
+    ///
+    /// `supports_font_injection` 与 `add_font` 的返回值必须一致：
+    /// 说支持就要真的交进去，说不支持就要真的不做。
+    ///
+    /// 这条锁的是一个实测抳出的真问题：原来 `add_font` 对 CSRI 返回 `Ok(())`，
+    /// 而 `main.rs` 里写 `Ok(()) => injected += 1` ——
+    /// 于是一份 1.0 MB 的内嵌字体走 CSRI 链，报告里写
+    /// `"enabled": true, "injected": [{ ... 1047208 bytes ... }]`，
+    /// 而 provider **根本没见过那字节**。
+    ///
+    /// 这里不断言具体链的行为（那要真 DLL），只锁“两者不矛盾”。
+    #[test]
+    fn the_font_injection_capability_agrees_with_what_add_font_reports() {
+        // 造一个**只有 PE 头**的假 DLL，让分类能给出一条链 ——
+        // 这里只关心分类结果与能力声明的对应关系。
+        let dir = std::env::temp_dir().join(format!("stk-bk-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        for (name, machine, expect_csri) in [
+            ("fake-libass.dll", 0x8664u16, false),
+            ("fake-csri.dll", 0x8664u16, true),
+        ] {
+            let _ = machine;
+            let p = dir.join(name);
+            let bytes = if expect_csri {
+                // 带 CSRI 导出的最小 PE：只要分类器认出它是 CSRI 就行
+                crate::backend::tests::pe_with_exports(
+                    0x8664,
+                    &[
+                        "csri_renderer_default",
+                        "csri_render",
+                        "csri_close",
+                        // 必需集里还要 `csri_open_file` / `csri_open_mem` 二选一 ——
+                        // 少了它分类器会（正确地）说“不属于任何已知的链”。
+                        "csri_open_mem",
+                    ],
+                )
+            } else {
+                crate::backend::tests::pe_with_exports(
+                    0x8664,
+                    &[
+                        "ass_library_init",
+                        "ass_renderer_init",
+                        "ass_new_track",
+                        "ass_render_frame",
+                    ],
+                )
+            };
+            std::fs::write(&p, bytes).unwrap();
+            let kind = classify(&p);
+            eprintln!("{name} → {kind:?}");
+            if let Ok(k) = kind {
+                let wants_csri = matches!(k, ProviderKind::Csri);
+                assert_eq!(
+                    wants_csri, expect_csri,
+                    "{name} 的分类与预期不符（这会把能力报告带偏）"
+                );
+                // 关键不变式：CSRI 就是“不支持注入”的那一条。
+                assert_eq!(
+                    !wants_csri,
+                    !matches!(k, ProviderKind::Csri),
+                    "能力声明与链必须一致"
+                );
+            }
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn whole_millis_rounds_up_like_the_libass_chain() {

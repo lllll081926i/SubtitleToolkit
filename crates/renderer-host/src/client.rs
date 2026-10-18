@@ -409,6 +409,55 @@ impl Host {
         }
     }
 
+    /// host 在运行期间自己打的日志（**成功路径也要能拿到**）。
+    ///
+    /// ## 为什么成功路径也要看 stderr
+    ///
+    /// 因为 host 会用它报一些**不影响退出码、但用户必须知道**的事。
+    /// 最典型的一条：CSRI 链不支持内存字体注入（17 §7）——
+    /// host 把这条警告打在 stderr 上。
+    ///
+    /// 而第一版只在**崩溃时**读 stderr（`HostFailure::Crashed.log_tail`）。
+    /// 于是实测出现这个场景：
+    ///
+    /// ```text
+    /// ASS 里嵌了 1 份字体（1.0 MB），拿 CSRI 链渲染 → ok=true，退出码 0
+    /// 输出里只有 "font_injection.enabled: false"
+    /// → 用户以为“我没要求注入”，而事实是“你要求的注入做不到”
+    /// ```
+    ///
+    /// 那是**静默地少做一件事**，也是那条警告存在的全部理由。
+    pub fn host_log(&self) -> String {
+        self.stderr
+            .lock()
+            .map(|b| String::from_utf8_lossy(&b).to_string())
+            .unwrap_or_default()
+    }
+
+    /// 从 host 日志里抽出**需要告诉用户的**那些行。
+    ///
+    /// 抽出来而不是把整个 stderr 扁给用户：里面有大量正常的进度噪声
+    /// （每次打开 provider、每个阶段都会打），把它整段丢进报告只会淹掉
+    /// 真正想看的那一行。
+    ///
+    /// 只认两条前缀：`警告：` 与 `[renderer-host] 警告：`。
+    /// 这是一个**狭窄的契约** —— host 想让人看到什么就写什么，
+    /// 其余的都是日志。
+    pub fn host_warnings(&self) -> Vec<String> {
+        self.host_log()
+            .lines()
+            .map(str::trim)
+            .filter(|l| l.contains("警告："))
+            .map(|l| {
+                // 去掉 `[renderer-host] ` 前缀：对用户而言“是谁说的”
+                // 从上下文已经很清楚，重复一遍只是噪声。
+                l.trim_start_matches("[renderer-host] ")
+                    .trim_start_matches("警告：")
+                    .to_string()
+            })
+            .collect()
+    }
+
     pub fn render(&mut self, pts_ms: i64) -> Result<Frame, HostFailure> {
         protocol::write_message(
             &mut self.stdin,

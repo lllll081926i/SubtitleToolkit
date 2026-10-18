@@ -203,6 +203,7 @@ pub(crate) fn injection_json(
     injected: &[render_libass::InjectedFont],
     plan: &[crate::front::InjectFace],
     enabled: bool,
+    skipped: usize,
 ) -> serde_json::Value {
     serde_json::json!({
         "enabled": enabled,
@@ -212,7 +213,17 @@ pub(crate) fn injection_json(
         "injected": injected.iter().map(|f| serde_json::json!({
             "name": f.name, "bytes": f.bytes, "sha256": f.sha256,
         })).collect::<Vec<_>>(),
-        "meaning": if enabled {
+        // 17 §7：链不支持而**没交给渲染器**的份数。
+        //
+        // 单独立一个字段而不是只靠 loss：`requested` 减 `injected.len()`
+        // 虽然能算出来，但要求用户知道该拿哪两个数相减。
+        // 而这一项的意义是“你看到的字形不是你给的那份字体” ——
+        // 那件事必须一眼看得到。
+        "skipped_by_chain": skipped,
+        "meaning": if skipped > 0 {
+            "**部分字体没有交给渲染器**：这条渲染链不支持内存字体注入，\
+             被跳过的那几份不会影响字形 —— 字形来自系统字体（17 §7）"
+        } else if enabled {
             "这些字节是本次直接交给 libass 的内存字体；渲染缓存 key 里的 face 哈希就是它们的哈希（17 §7）"
         } else {
             "未开启注入：libass 按系统字体选择渲染，key 里的哈希是我们按名字判断的字体环境身份"

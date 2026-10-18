@@ -304,7 +304,29 @@ fn serve() -> Result<(), String> {
                     continue;
                 }
                 pending_fonts.push((family, font));
-                reply(&mut writer, &Response::FontAdded { bytes }).map_err(|e| e.to_string())?;
+                // 17 §7：回给控制面的必须是“**真的注入了吗**”的预期，
+                // 而不是“我收到了多少字节”。
+                //
+                // ## 为什么要在这里先算一遍
+                //
+                // 真正的注入发生在 provider 打开之后（那段能拿到 `Backend`），
+                // 而**请求—应答是同步的**：控制面发一个 AddFont 就等一个回复，
+                // 不能“先收着、事后再说” —— 插一条它没在等的消息会让它把那条
+                // 当成下一个请求的回复，那是一个很难查的错位。
+                //
+                // 而这个循环里已经有 `dll_path`，分类（只读 PE 导出表、不加载）
+                // 是现成的。于是能当场回一个诚实的数。
+                //
+                // 实测抳出的问题：不这么做的话，一份 1.0 MB 的内嵌字体
+                // 走 CSRI 链，报告里写 `"enabled": true, "injected": [1047208 bytes]`，
+                // 而 provider **根本没见过那字节**。
+                let chain_takes_fonts = !matches!(
+                    renderer_host::backend::classify(&dll_path),
+                    Ok(render_api::capability::ProviderKind::Csri)
+                );
+                let acked = if chain_takes_fonts { bytes } else { 0 };
+                reply(&mut writer, &Response::FontAdded { bytes: acked })
+                    .map_err(|e| e.to_string())?;
             }
             Request::Render { .. } => {
                 reply_err(&mut writer, "STK-RND-0205", "LoadScript 之前不能渲染")
@@ -376,9 +398,15 @@ fn serve() -> Result<(), String> {
         );
     }
     let mut injected = 0usize;
+    let mut skipped = 0usize;
     for (family, font) in pending_fonts {
         match backend.add_font(&family, &font) {
-            Ok(()) => injected += 1,
+            // 返回值说的是“**真的注入了吗**”。
+            // 计一个“跳过”的计数器而不是把 `false` 当 `true` ——
+            // 第一版就是这么错的，实测报告里写了 `injected: [1047208 bytes]`
+            // 而 provider 根本没见过那字节（见 `Backend::add_font`）。
+            Ok(true) => injected += 1,
+            Ok(false) => skipped += 1,
             Err(e) => {
                 reply_err(&mut writer, &e.code_string(), &e.title).map_err(|reply_error| {
                     format!("字体注入失败：{}；发送错误响应失败：{reply_error}", e.title)
@@ -387,8 +415,23 @@ fn serve() -> Result<(), String> {
             }
         }
     }
-    // 支持注入而一份都没进：那是上游自己的事（它会报），这里不重复告警。
-    let _ = injected;
+    // 跳过了几份要**记下来**，而不只是打一行 stderr。
+    //
+    // stderr 只活在本次进程里：控制面拿不到它就不会写进报告，
+    // 而报告是用户唯一会看的东西。能力缺失这件事必须走到报告里。
+    //
+    // 怎么传：直接用 `AddFont` 的**既有回复**（`FontAdded { bytes }`）——
+    // 跳过时回 `bytes: 0`。
+    //
+    // ## 为什么不去新增一个消息类型
+    //
+    // 因为它们中间的通信是**请求—应答**式的：控制面发了 N 个 AddFont，
+    // 就等着 N 个回复。在中间插一条它没在等的消息会让它把那条当成
+    // 下一个请求的回复 —— 那是一个很难查的错位。
+    //
+    // 而“回 0 字节”不需要新消息：控制面本来就在核“发出去多少、回来多少”，
+    // 那条检查（`front.rs` 的 `count != bytes.len()`）现在会**真的报错**。
+    let _ = (injected, skipped);
 
     // libass 链要把脚本单独加载（两步）；CSRI 链在 `open` 时已经交过了。
     //

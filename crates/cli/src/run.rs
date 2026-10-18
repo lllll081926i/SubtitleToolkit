@@ -1182,6 +1182,7 @@ fn pgs_encode(
             &rendered.injected,
             plan.as_deref().unwrap_or(&[]),
             inv.inject_fonts,
+            rendered.skipped_fonts,
         ),
         "canvas": canvas.label(),
         "fps": fps.to_label(),

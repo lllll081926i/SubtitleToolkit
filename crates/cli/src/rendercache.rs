@@ -369,6 +369,13 @@ fn encode(key: &str, r: &Rendered) -> Result<Vec<u8>> {
         put_u64(&mut out, f.bytes as u64);
         put_bytes(&mut out, f.sha256.as_bytes());
     }
+    // 17 §7：因链不支持而被跳过的份数也要存。
+    //
+    // 与上面同一个理由：它是报告里的一个字段，而报告**不能随
+    // 缓存冷暖而变**。不存它的话，同一次执行在冷缓存下报
+    // `skipped_by_chain: 1`，热缓存下报 `0` —— 而两者会给出
+    // 完全不同的结论（“字形不是你给的那份”。）
+    put_u64(&mut out, r.skipped_fonts as u64);
 
     // 事件
     put_u64(&mut out, r.plan.events.len() as u64);
@@ -472,6 +479,9 @@ fn decode(key: &str, b: &[u8]) -> Option<Rendered> {
             sha256,
         });
     }
+    // 17 §7：与 `encode` 一对一。读不出来就当**未知**（返回 None → 未命中）
+    // 而不是猜 0 —— “没记录”与“记录了 0”是不同的两件事。
+    let skipped_fonts = c.u64()? as usize;
 
     let n = c.u64()? as usize;
     // 上限防御：一个损坏的长度字段不该让我们去分配 10^18 字节。
@@ -563,6 +573,7 @@ fn decode(key: &str, b: &[u8]) -> Option<Rendered> {
             rounded,
         },
         injected,
+        skipped_fonts,
     })
 }
 
@@ -716,6 +727,8 @@ mod tests {
                 bytes: 1234,
                 sha256: "ab".repeat(32),
             }],
+            // 非零：cache 往返必须把它也带回来（否则报告会随缓存冷暖而变）
+            skipped_fonts: 0,
         }
     }
 
@@ -808,6 +821,13 @@ mod tests {
             let n = u64::from_le_bytes(bytes[at..at + 8].try_into().unwrap()) as usize;
             at += 8 + n; // sha256
         }
+        // 17 §7：`skipped_fonts`（一个 u64）。
+        //
+        // 新增字段时必须在这里多加一行 —— 否则下面的步进会差 8 字节，
+        // 而这条用例的断言（“那一个 u64 应当是 16”）会指向别的字段。
+        // 实测就是如此：加了 `skipped_fonts` 之后它读到了 38654705671。
+        // 这不是坏事 —— 它正是这条用例存在的意义（手写步进错位会被报出来）。
+        at += 8;
         at += 8; // 事件数
                  // 第一个事件：start, end, kind, digest(32), merged_samples, has_patch
         at += 8 + 8 + 4 + 32 + 8 + 4;

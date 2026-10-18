@@ -49,8 +49,12 @@ pub struct RenderArgs<'a> {
 /// 一次 render 的中间产物：XML 字节 + 每个**存活事件**的 PNG 字节。
 /// PNG 与 XML 一起算出来，才谈得上"声明尺寸 == 实际尺寸"。
 struct Built {
-    /// 17 §7：这次真的交给 libass 的内存字体（`--inject-fonts` 关掉时是空的）
+    /// 17 §7：这次真的交给 libass 的内存字体（`--inject-fonts` 关掉时是空的）。
+    ///
+    /// **只是“真的进去了”的那些**。链不支持而被跳过的**不在**这里。
     injected: Vec<render_libass::InjectedFont>,
+    /// 因链不支持而没交给渲染器的份数（17 §7）。
+    skipped_fonts: usize,
     xml: Vec<u8>,
     pngs: PngMap,
     events: usize,
@@ -201,6 +205,7 @@ fn build(
     let (xml, pngs, events, loss) = assemble(frames, pngs, &opt, canvas)?;
     Ok(Built {
         injected,
+        skipped_fonts: rendered.skipped_fonts,
         xml,
         events,
         rendered: kept_frames,
@@ -377,7 +382,7 @@ pub(crate) fn run_render(
 
     let data = serde_json::json!({
         "font_env": crate::fontenv::env_json(&font_env, env_ms),
-        "font_injection": crate::fontenv::injection_json(&built.injected, plan.as_deref().unwrap_or(&[]), inv.inject_fonts),
+        "font_injection": crate::fontenv::injection_json(&built.injected, plan.as_deref().unwrap_or(&[]), inv.inject_fonts, built.skipped_fonts),
         "from": "ass",
         "to": "bdn",
         "canvas": canvas.label(),

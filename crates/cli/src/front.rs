@@ -81,8 +81,13 @@ pub(crate) struct Rendered {
     /// 采样点个数（报告用，也用来解释"为什么这么慢"）
     pub samples: usize,
     pub grid: run::Grid,
-    /// 真正交给 libass 的内存字体清单（`--inject-fonts` 关掉时是空的）
+    /// 真正交给 libass 的内存字体清单（`--inject-fonts` 关掉时是空的）。
+    ///
+    /// **只是“真的进去了”的那些**。链不支持而被跳过的**不在**这里 ——
+    /// 那正是第一版抳出真问题的地方：把“发出去了”当成“进去了”。
     pub injected: Vec<render_libass::InjectedFont>,
+    /// 因为链不支持而**没交给渲染器**的份数（17 §7）。
+    pub skipped_fonts: usize,
 }
 
 /// 真渲染 + 变化检测。单命令路径与批量路径都只调这一个函数，
@@ -128,6 +133,8 @@ pub(crate) fn render_to_plan(job: &RenderJob<'_>) -> Result<Rendered> {
     // 17 §7：把"我们解析到并读过的那份字节"直接交给 libass。
     // 顺序有讲究：注入必须在 load_script 之前，轨道建立时才会把内存字体算进选择结果。
     let mut injected = Vec::new();
+    // 因为链不支持而被跳过的份数。它不是错误 —— 但必须进报告。
+    let mut skipped_fonts = 0usize;
     if let Some(list) = job.inject {
         for f in list {
             // 内嵌字体用脚本里那份字节；库里的 face 才去读盘（两条路都汇到同一个核对）
@@ -158,6 +165,29 @@ pub(crate) fn render_to_plan(job: &RenderJob<'_>) -> Result<Rendered> {
                 .with_action("重跑 font scan 取得新身份，或去掉 --inject-fonts"));
             }
             let count = host.add_font(&f.family, bytes).map_err(render_host_error)?;
+            // host 回 0 = **这条链不支持内存注入**（17 §7），而不是“传输出错”。
+            //
+            // ## 为什么必须分开这两件事
+            //
+            // 第一版把两者合在一起：只要 `count != bytes.len()` 就报错误
+            // `STK-RND-0090`，整个渲染失败。而实测 CSRI 链就是这个场景 ——
+            // 于是一份带内嵌字体的 ASS 在 CSRI 链上**根本渲染不了**。
+            //
+            // 而那不是失败：用户还能拿到字幕，只是字形未必是他要的那份。
+            // 真正的错在**沉默**：报告里写 `injected: [1047208 bytes]`，
+            // 而 provider 根本没见过那字节。
+            //
+            // 所以：不回退、不报错，**如实记一笔并说出来**。
+            if count == 0 {
+                loss.user_attention(&format!(
+                    "这条渲染链不支持内存字体注入：{}（{} 字节）被跳过，\
+                     字形将来自系统字体而非你给的那份（17 §7）",
+                    f.family,
+                    bytes.len()
+                ));
+                skipped_fonts += 1;
+                continue;
+            }
             if count != bytes.len() {
                 return Err(StkError::simple(
                     Domain::Render,
@@ -198,14 +228,38 @@ pub(crate) fn render_to_plan(job: &RenderJob<'_>) -> Result<Rendered> {
         Frame::empty(job.canvas)?,
     ))?;
     sample_count += 1;
+    // 17 §7：host 报了警告就要传到用户面前。
+    //
+    // 实测场景：ASS 里嵌了 1 份字体，走 CSRI 链 → ok=true，
+    // 而输出里只有 `font_injection.enabled: false`，读起来像
+    // “我没要求注入”，而事实是“你要求的注入做不到”。
+    // host 把这条警告打在 stderr 上，而第一版只在**崩溃时**读 stderr。
+    let host_warnings = host.host_warnings();
     host.shutdown().map_err(render_host_error)?;
+    for w in &host_warnings {
+        // 进 LossReport 而不是只打一行 stderr：
+        // `loss` 会进 JSON 信封，于是 GUI、batch、重放都能看到它。
+        // 只打 stderr 会让它在下一次重放时消失。
+        loss.user_attention(w);
+    }
     let plan = builder.finish()?;
+    // 跳过的份数要**单独成字段**，不只是 loss 里一句话：
+    // `injected.len()` 与 `requested` 的差值已经能推出来，
+    // 但“能推出来”与“直接看得到”对用户的差别很大 ——
+    // 前者要求他知道该拿哪两个数相减。
+    if skipped_fonts > 0 {
+        loss.user_attention(&format!(
+            "本次有 {skipped_fonts} 份字体没有交给渲染器（链不支持）；\
+             这不是失败，但你看到的字形不是那几份字体"
+        ));
+    }
     Ok(Rendered {
         plan,
         loss,
         samples: sample_count,
         grid,
         injected,
+        skipped_fonts,
     })
 }
 

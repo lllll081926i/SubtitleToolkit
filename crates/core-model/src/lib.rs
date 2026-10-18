@@ -4,6 +4,7 @@ pub mod canvas;
 pub mod color;
 pub mod corrid;
 pub mod datadir;
+pub mod dllload;
 pub mod error;
 pub mod geometry;
 pub mod limits;

@@ -1,0 +1,13 @@
+[package]
+name = "render-csri"
+version.workspace = true
+edition.workspace = true
+rust-version = "1.85"
+license.workspace = true
+description = "CSRI provider 链（12 §1B）：运行时加载用户提供的 CSRI provider，ASS 脚本 → BGRA 帧。native 依赖运行时加载，不在编译期链接"
+
+[dependencies]
+core-model = { workspace = true }
+render-api = { workspace = true }
+image-core = { workspace = true }
+sha2 = { workspace = true }

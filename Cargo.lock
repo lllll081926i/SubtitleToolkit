@@ -3399,6 +3399,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "render-csri"
+version = "0.1.0"
+dependencies = [
+ "core-model",
+ "image-core",
+ "render-api",
+ "sha2",
+]
+
+[[package]]
 name = "render-libass"
 version = "0.1.0"
 dependencies = [

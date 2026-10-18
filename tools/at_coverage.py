@@ -45,15 +45,17 @@ COVERAGE = {
         "renderer-host/tests/host_isolation.rs + render-libass/tests/render_real.rs",
     ),
     "AT-RENDER-002": (
-        "uncovered",
-        "**CRSI 链已实现、已接进 `renderer-host`、已做崩溃隔离实测**（均用真实 "
-        "`third_party/VSFilterMod.dll`）：经完整 CLI 管道出帧结构一致（events=1, samples=50, "
-        "rendered_frames=1），握手报 provider=csri，主进程在 host abort 时存活并拿到 "
-        "`exit_code=3221226505` 与完整崩溃现场（阶段=render/序号=1/已运行=37ms/provider sha256），"
-        "重试能成（4233 个不透明像素），挂住会超时（waited_ms=2000）。\n"
-        "**但仍不验收**：规格要的是让**那个第三方 DLL 自己**崩，而那需要它的代码里有一个"
-        "可触发的缺陷或我们能控制的崩溃入口（两者都没有），“喂坏数据碰运气”不是可复现的测试。"
-        "本轮的注入点复现的是**同一个时序**，但**不是规格要求的那条证据**，所以不计作验收。",
+        "covered",
+        "**已验收（真第三方 provider 崩溃）**：`crates/renderer-host/tests/at_render_002.rs`。探针逐项试了 18 种违反 CSRI 契约的输入，"
+        "只有一种让 VSFilterMod 崩：`csri_open_mem` 的 `length` 大于真实缓冲时它不做上界检查，"
+        "越界读到 **0xC0000005 访问违例**。用例向它谎报长度（`STK_HOST_LIE_ABOUT_LENGTH`，"
+        "只能从启动环境来）逼出真崩溃，实测：主进程存活且 `contained=true`、退出码 3221225477、"
+        "崩溃现场带 provider sha256 与阶段并落盘、重试出帧 4233 个不透明像素。\n"
+        "顺带抳出两个真缺陷：① 硬故障下“失败时写现场”永远不会跑（内核直接掐进程，"
+        "不执行任何 Rust 返回路径）→ 改成在调 provider 前先写；"
+        "② WER 对话框会把整条管道挂住（host 在等对话框、客户端在等 host）"
+        "→ host 自己的进程里设 `SEM_NOGPFAULTERRORBOX`。\n"
+        "见 [裁决](../reviews/2026-10-17-at-render-002-real-crash.md)。",
     ),
     "AT-RENDER-003": (
         "uncovered",
@@ -166,3 +168,4 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
+

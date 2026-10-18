@@ -20,11 +20,11 @@ settings show → diagnose 出诊断包 → check-updates → batch 批量。
 
 **质量门禁**：`cargo fmt --check` 干净、`clippy -D warnings` 干净、
 **80 个测试目标 0 失败**、串行 doctest 通过、`build --release` 通过、
-`notices.py --check` 501 包 0 问题、AT 覆盖 **24/26**。
+`notices.py --check` 501 包 0 问题、AT 覆盖 **25/26**。
 
 **仍未完成（外部依赖或外部决策，非代码可解）**：
 Authenticode 签名（需证书）；Preset 的 TOML 依赖审批（ISSUES E4）；
-AT-RENDER-002（需真 VSFilterMod provider，涉及许可审计）；
+AT-RENDER-003（需真 x86 libass DLL，本机只有 x64）；
 AT-RENDER-003 的**x86 DLL 路由**（需真 x86 libass 样本）；
 第 7 层设备语料（需真机/播放器）；
 subset corpus 的 golden 图像比较（需固定语料字体，先撞许可审计）；
@@ -47,10 +47,15 @@ DirectWrite fallback 链（需 COM，ISSUES AG1）；真 minidump（把数据与
 - 2026-10-17 **交付 AT-BD-001 的 GUI 侧解释**（25 §AT-BD-001）：`gui/src/state/profile.rs` 新增 `problem()`/`is_runnable()`；`profiles_view.rs` 把一句**无条件说的假话**（“Basic PGS: 具备”无例外）换成按真实判定的“符合 09 §6 的硬规则 / 不合规：看下方说明”，并在展开卡片里给出原因 + 两条可选改法。
   **本条抳出一个真缺陷**：出厂默认的第二个 profile 是 `2160p 4K HDR SUP`，而 `pgs encode` 默认 `--level standard`、标准级 PGS 不允许 3840x2160 —— 实测报 `STK-PGS-0091`。即**用户装好、什么都不改、直接排队，第一个 profile 就失败**；而且失败发生在批量执行中途。已改成 `1080p HDR SUP`（HDR 映射 `ReferenceWhite(203)` 保留），回归用例 `the_default_sup_profile_is_not_4k` 钉住；实测新默认打通真 libass 并产出合法 SUP（`PG` 魔数、`no_blocking_findings: true`）。
   GUI **不重写判定**：直接调 `core_model::Canvas::within_bluray`（组件级单一事实源），有专门用例 `gui_agrees_with_the_core_rule_it_reuses` 锁住“GUI 不另立规则”。新增 9 个用例；`cargo test -p gui --lib` 35 passed。AT 覆盖 23/26 → **24/26**。裁决：[at-bd-001-gui](reviews/2026-10-17-at-bd-001-gui.md)。
+- 2026-10-17 **AT-RENDER-002 验收：用真第三方 provider 崩溃证明进程隔离**。我上一轮的推断（“没法让第三方 DLL 自己崩，所以不可达”）**被证伪了**。探针逐个在子进程里试了 18 种违反 CSRI 契约的输入，**18 中 1 崩**：`csri_open_mem(rdr, data, length, ...)` 的 `length` 若**大于真实缓冲**，VSFilterMod 不做上界检查，越界读到 **`0xC0000005` 访问违例**。其余 17 种（null 缓冲、截断数据、UTF-16、0x0/4G 画布、未知像素格式、null plane、非法 stride、NaN/1e300/负时间、16 字节缓冲、null ext 名…）都防御了或忽略了 —— 这个分布说明它**恰好缺一道检查**，所以那不是碰运气，是定向利用一个已知的单一缺失。
+  该缺陷在**正常路径上不可达**（host 先 `read_bounded` 校验长度，而那正是 provider 缺失的那道）→ 新增 `CsriProvider::open_with_declared_len(..., Option<usize>)` **显式谎报**，让读代码的人在签名上就看见这条路径；`STK_HOST_LIE_ABOUT_LENGTH` 只能从启动环境来。
+  实测（真 VSFilterMod.dll，无模拟）：主进程 **存活**且 `contained=true`、退出码 **3221225477 (0xC0000005)**、崩溃现场带 `provider sha256=87a9c3c1ab76…` 与阶段并**落盘**、**重试出帧 4233 个不透明像素**。规格三句逐条对上。AT 覆盖 **24/26 → 25/26**。
+  **抳出两个真缺陷**：① **硬故障下“失败时写现场”永远不会跑** —— 第一版实测 `crash_note: None`、崩溃目录空；因为访问违例是内核直接掐进程，**不执行任何 Rust 返回路径**，而一个没有现场的崩溃记录对用户几乎没用 → 改成在**调 provider 之前**先写；② **WER 对话框会把整条管道挂住** —— `renderer-host` 的存在前提就是第三方 DLL 会崩（12 §2），而那些崩溃绝大多数是访问违例，默认行为是弹模态对话框等一个不会来的人点；于是一个本该被隔离吞掉的崩溃变成用户面前的弹窗，而且 **host 在等对话框、客户端在等 host** → host 自己设 `SetErrorMode(SEM_NOGPFAULTERRORBOX)`（**关掉的是对话框不是崩溃**；不能靠父进程继承，发布形态里父进程是 explorer.exe）。
+  另：`crash_injection`（让 host 自己死）与 `lie_about_script_len`（让 provider 自己死）**拆成两个字段** —— 第一版撞在一起，host 直接报“未知的崩溃注入种类”退 78。新增 1 个测试目标（86 个 0 失败）。裁决：[at-render-002-real-crash](reviews/2026-10-17-at-render-002-real-crash.md)。
 - 2026-10-17 **把 CSRI 链接进 `renderer-host`，并把崩溃注入点移到 provider 调用处**：新增 `renderer-host/src/backend.rs`（按导出表分派到两条链之一）。**经完整 CLI 管道的实测**：`render --libass-dll VSFilterMod.dll` → `ok=true, events=1, samples=50, rendered_frames=1, pngs=1`，与 libass 链产出的 XML **同为 516 字节**（PNG 字节数不同 —— 两个渲染器栅格化必然不同）。经 host 的实测：握手报 `provider=csri`（改前恒为 libass）、2.0s 处 3105 个不透明像素、5.0s 起 0 个。
   **接的过程中抳出并修掉五个真问题**：① **CSRI 给的是“带不透明背景的合成位图”，与 libass 语义不同** —— 实测 CSRI 对同一输入产 3 帧、libass 只产 1 帧；而下游 `image_core::Frame::bbox` 是**按 alpha 判定可见内容**的，于是不透明背景被看成“整幅画布都有内容”，`front.rs` 末尾补的空白采样（全透明）与 CSRI 的“全不透明黑”不相等，产出长度为零的事件 → `STK-BDN-0059`。已在 backend 侧把背景剥成透明（判据“与角点同色且不透明”，敲掉多少记账）；② **客户端握手校验写死了 `provider == "libass"`**，把诚实的 `csri` 拒了，改成“认识的名字就放行”；③ `render_libass::Script<'a>` 借用 `Provider` 与“可变借用 backend”冲突 —— `Symbols` 加 `Copy`，`Script` 拷一份函数表；④ **三处错误码跨 crate 冲突**（唯一性测试报出）→ 98/99/100；⑤ 握手的 `version` 成了空串（两条链都要真打开才知道版本）—— **没有伪造**，把契约改清楚。
-  **崩溃隔离**：注入点从“host 启动时”移到“**真的要调 provider 的那一刻**”（新增 `render-abort`/`render-hang`）—— 原来那几个在 `serve()` 最早期跑，那时连 provider 都没打开，验的不是规格要的那件事。实测：主进程存活并拿到 `exit_code=3221226505` + 完整现场（`阶段=render；序号=1；已运行=37ms；provider sha256=87a9c3c1ab76…；原因=出帧中途 abort`）；重试成功（4233 个不透明像素）；挂住超时（`waited_ms=2000`）；现场落盘 `host-crash.json`。
-  **AT-RENDER-002 仍不验收**：规格要的是让**那个第三方 DLL 自己**崩，而那需要它的代码里有一个可触发的缺陷（没有）——“喂坏数据碰运气”不是可复现的测试。本轮注入复现的是**同一个时序**，**但不是规格要求的那条证据**。新增 2 个测试目标；全量门禁 85 个目标 0 失败。裁决：[csri-render-chain](reviews/2026-10-17-csri-render-chain.md)。
+  **崩溃隔离**：注入点从“host 启动时”移到“**真的要调 provider 的那一刻**”（新增 `render-abort`/`render-hang`）—— 原来那几个在 `serve()` 最早期跑，那时连 provider 都没打开，验的不是规格要的那件事。实测：主进程存活并拿到 `exit_code=3221226505` + 完整现场（`阶段=render；序号=1；已运行=37ms；provider sha256=87a9c3c1ab76…；原因=出帧中途 abort`）；重试成功（4233 个不透明像素）；挂住超时（`waited_ms=2000`）；现场落盘。
+  **当时记为不验收**（后来在同日被证伪并验收 —— 见下一条）。新增 2 个测试目标；全量门禁 85 个目标 0 失败。裁决：[csri-render-chain](reviews/2026-10-17-csri-render-chain.md)。
 - 2026-10-17 **交付 CSRI 渲染链（12 §1B）—— 真实 provider 实测跑通**：新增 `crates/render-csri`（`ffi`/`frame`/`provider`/`codes`）+ `core-model::dllload`（共用的运行时加载器）。
   实测本机真 `third_party/VSFilterMod.dll`：识别为 `vsfiltermod_textsub` 2.39；640x480 @2.0s 输出 **1882 个白像素（字幕）+ 303907 黑底**；**时刻敏感**（0–4.9s 有字幕，5.0s 起 0 个）；libass-9.dll 被正确拒为 `STK-RND-0096`。
   **抳出四个真问题（每一个都会导致静默错结果）**：① `PixFmt::BgrUnderscore` 写成 0x101，而头文件里 0x102 才是它（那组从 0x100 逐项递增，中间没显式写值）—— 抳出它的是一次“逐个试真 provider 接受哪种格式”的探针；
@@ -58,7 +63,7 @@ DirectWrite fallback 链（需 COM，ISSUES AG1）；真 minidump（把数据与
   ③ 两处错误码一号两义（`Render/80`、`Render/83`），跨 crate 唯一性测试当场报出，新增 `codes.rs` 集中定义；
   ④ **CSRI provider 不是线程安全的** —— 并行跑同一输入会得到不同像素数（有时 1882、有时 0），串行永远 1882；用例加进程内锁，而 `renderer-host` 本来就是“一个宿主进程一次渲染”。
   **另一个差点被“绿”骗过的地方**：真 provider 用例第一版**全部静默跳过**而 `test result: ok` —— 用“从 exe 往上退 4 层”找仓库根，而本仓 `CARGO_TARGET_DIR` 在**另一个盘**，永远退不到。改成 `CARGO_MANIFEST_DIR`，并把“缺素材”从跳过改成**失败**。
-  **未做完**：未接进 `renderer-host`（仍硬编码 libass；三处待改，其中“字体注入”在 CSRI 链上是**语义差异**——头文件没那个入口，只能报告不支持）；**AT-RENDER-002 仍不验收**（探测 ≠ 渲染 ≠ 隔离证据）；`VSFilterMod.dll` 不随包发（21 §1，GPL-3.0）。裁决：[csri-render-chain](reviews/2026-10-17-csri-render-chain.md)。
+  **当时未做完**（后已补齐）：~~未接进 `renderer-host`~~（已于同日接进，改动包括“字体注入”在 CSRI 链上是**语义差异**——头文件没那个入口，只能报告不支持）；~~AT-RENDER-002 仍不验收~~（已于同日用真第三方崩溃验收）；`VSFilterMod.dll` 仍不随包发（21 §1，GPL-3.0）。裁决：[csri-render-chain](reviews/2026-10-17-csri-render-chain.md)。
 - 2026-10-17 **provider 能力探测（12 §1/§4）与两处真缺陷**：新增 CLI `provider probe <dll>…`；新增 `core-model::pe` 的 **PE 导出表解析**（此前只有位数，没有任何代码读导出名）；把孤儿的 `render-api::capability` 接进生产路径。
   **两处真缺陷**：① `CSRI_REQUIRED_EXPORTS` 原来是 `[csri_open, csri_close, csri_render, csri_get_renderer]`，
   而 **`csri_open` 与 `csri_get_renderer` 根本不是 CSRI API** —— 按旧集合**每一个真的 CSRI provider 都会被误判成“不是 provider”**，

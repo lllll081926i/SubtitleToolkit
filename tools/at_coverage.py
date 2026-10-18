@@ -51,7 +51,12 @@ COVERAGE = {
     ),
     "AT-RENDER-003": (
         "uncovered",
-        "需要 x86 renderer host 产物；当前只构建 x64（28 §2 列为可选组件）",
+        "x86 host **已能构建**（`cargo build -p renderer-host --target i686-pc-windows-msvc`；"
+        "产物真 32 位，与 x64 在真 libass 下输出逐字节一致 —— 见 x86-host-and-cache-key 裁决）。"
+        "但规格要的是**x86 DLL 路由**的证据，而那需要一只真的 x86 libass DLL"
+        "（本机只有 x64 那份，机器类型 0x8664）。已验到的是“x86 host 正确**拒绝** x64 DLL”"
+        "（STK-RND-0091）—— 那是反面证据（证明校验在位），**不是**路由可用的证据，"
+        "所以不列作已覆盖。另：x86 host 尚未随包分发（前提是 x86 DLL 的许可审计，21 §6）。",
     ),
     "AT-PGS-001": (
         "covered",

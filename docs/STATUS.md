@@ -20,7 +20,13 @@ settings show → diagnose 出诊断包 → check-updates → batch 批量。
 
 **质量门禁**：`cargo fmt --check` 干净、`clippy -D warnings` 干净、
 **88 个测试目标 0 失败**、串行 doctest 通过、`build --release` 通过、
-`notices.py --check` 506 包 0 问题、安装器 11/11 通过、AT 覆盖 **25/26**。
+`notices.py --check` 506 包 0 问题、安装器 11/11 通过、AT 覆盖 **25/26**、
+校验规则双向覆盖 **未覆盖 0 / 双向 37**。
+
+**端到端实测**（本次发布候选，真 libass）：`doctor`（not_built=0、
+带 `STK_LIBASS_DLL` 时 render_host 握手 `available=true`）→ convert →
+pgs encode → pgs validate(standard) → render 出 BDN（XML + PNG）→
+preset example/validate，全部 `ok`。
 
 **本轮之后新交付的**（均带真实验证与裁决）：
 AT-RENDER-002 用**真第三方 provider 崩溃**验收（0xC0000005，主进程存活、

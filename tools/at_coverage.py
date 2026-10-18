@@ -46,13 +46,14 @@ COVERAGE = {
     ),
     "AT-RENDER-002": (
         "uncovered",
-        "**前置条件本轮被修正**：不是“缺真实 provider 素材”——"
-        "工作区已有 `third_party/VSFilterMod.dll` 且已在 SOURCE_AUDIT_LOCK 登记（GPL-3.0）。"
-        "真正缺的是 **CSRI 渲染链**：`renderer-host` 当前只有 libass 一条链。"
-        "本轮新增 `provider probe`（12 §1）已能**认出**它是 CSRI provider（真 DLL 实测），"
-        "但“探测 ≠ 渲染”——规格要的是“证明它的崩溃只终止 renderer-host，GUI 可重试”，"
-        "而那需要先有 CSRI 链 + 一次真的崩溃注入。所以仍不验收。"
-        "另：21 §1 下它（GPL-3.0）**不得**进安装包；探测它是“读文件”不是“分发”。",
+        "**本轮把前置条件推到了只剩最后一步。** CSRI **渲染链已实现**（`crates/render-csri`），"
+        "并用真实 `third_party/VSFilterMod.dll` 实测跑通（识别为 vsfiltermod_textsub 2.39；"
+        "640x480 @2.0s 输出 1882 个白像素字幕 + 303907 黑底；时刻敏感 —— 5.0s 起 0 个）。"
+        "但规格要的是“**证明它的崩溃只终止 renderer-host，GUI 可重试**”，"
+        "而那需要先把它接进 `renderer-host`（当前仍硬编码 libass）加一次真的崩溃注入。"
+        "**探测 ≠ 渲染 ≠ 隔离证据**，三者不能互相代替，所以仍不验收。"
+        "接进 host 的阻碍里有一条是语义差异不是机械重构：CSRI 头文件没有加字体的入口，"
+        "所以“注入字体”在那条链上只能报告不支持。见 csri-render-chain 裁决。",
     ),
     "AT-RENDER-003": (
         "uncovered",

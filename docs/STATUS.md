@@ -47,6 +47,14 @@ DirectWrite fallback 链（需 COM，ISSUES AG1）；真 minidump（把数据与
 - 2026-10-17 **交付 AT-BD-001 的 GUI 侧解释**（25 §AT-BD-001）：`gui/src/state/profile.rs` 新增 `problem()`/`is_runnable()`；`profiles_view.rs` 把一句**无条件说的假话**（“Basic PGS: 具备”无例外）换成按真实判定的“符合 09 §6 的硬规则 / 不合规：看下方说明”，并在展开卡片里给出原因 + 两条可选改法。
   **本条抳出一个真缺陷**：出厂默认的第二个 profile 是 `2160p 4K HDR SUP`，而 `pgs encode` 默认 `--level standard`、标准级 PGS 不允许 3840x2160 —— 实测报 `STK-PGS-0091`。即**用户装好、什么都不改、直接排队，第一个 profile 就失败**；而且失败发生在批量执行中途。已改成 `1080p HDR SUP`（HDR 映射 `ReferenceWhite(203)` 保留），回归用例 `the_default_sup_profile_is_not_4k` 钉住；实测新默认打通真 libass 并产出合法 SUP（`PG` 魔数、`no_blocking_findings: true`）。
   GUI **不重写判定**：直接调 `core_model::Canvas::within_bluray`（组件级单一事实源），有专门用例 `gui_agrees_with_the_core_rule_it_reuses` 锁住“GUI 不另立规则”。新增 9 个用例；`cargo test -p gui --lib` 35 passed。AT 覆盖 23/26 → **24/26**。裁决：[at-bd-001-gui](reviews/2026-10-17-at-bd-001-gui.md)。
+- 2026-10-17 **交付 CSRI 渲染链（12 §1B）—— 真实 provider 实测跑通**：新增 `crates/render-csri`（`ffi`/`frame`/`provider`/`codes`）+ `core-model::dllload`（共用的运行时加载器）。
+  实测本机真 `third_party/VSFilterMod.dll`：识别为 `vsfiltermod_textsub` 2.39；640x480 @2.0s 输出 **1882 个白像素（字幕）+ 303907 黑底**；**时刻敏感**（0–4.9s 有字幕，5.0s 起 0 个）；libass-9.dll 被正确拒为 `STK-RND-0096`。
+  **抳出四个真问题（每一个都会导致静默错结果）**：① `PixFmt::BgrUnderscore` 写成 0x101，而头文件里 0x102 才是它（那组从 0x100 逐项递增，中间没显式写值）—— 抳出它的是一次“逐个试真 provider 接受哪种格式”的探针；
+  ② stride 的合法性检查比错了对象（拿 `|stride*height|` 与行宽比，而应当比 `|stride|`）—— height>1 时会把装不下一行的 stride 放行，导致越界读；
+  ③ 两处错误码一号两义（`Render/80`、`Render/83`），跨 crate 唯一性测试当场报出，新增 `codes.rs` 集中定义；
+  ④ **CSRI provider 不是线程安全的** —— 并行跑同一输入会得到不同像素数（有时 1882、有时 0），串行永远 1882；用例加进程内锁，而 `renderer-host` 本来就是“一个宿主进程一次渲染”。
+  **另一个差点被“绿”骗过的地方**：真 provider 用例第一版**全部静默跳过**而 `test result: ok` —— 用“从 exe 往上退 4 层”找仓库根，而本仓 `CARGO_TARGET_DIR` 在**另一个盘**，永远退不到。改成 `CARGO_MANIFEST_DIR`，并把“缺素材”从跳过改成**失败**。
+  **未做完**：未接进 `renderer-host`（仍硬编码 libass；三处待改，其中“字体注入”在 CSRI 链上是**语义差异**——头文件没那个入口，只能报告不支持）；**AT-RENDER-002 仍不验收**（探测 ≠ 渲染 ≠ 隔离证据）；`VSFilterMod.dll` 不随包发（21 §1，GPL-3.0）。裁决：[csri-render-chain](reviews/2026-10-17-csri-render-chain.md)。
 - 2026-10-17 **provider 能力探测（12 §1/§4）与两处真缺陷**：新增 CLI `provider probe <dll>…`；新增 `core-model::pe` 的 **PE 导出表解析**（此前只有位数，没有任何代码读导出名）；把孤儿的 `render-api::capability` 接进生产路径。
   **两处真缺陷**：① `CSRI_REQUIRED_EXPORTS` 原来是 `[csri_open, csri_close, csri_render, csri_get_renderer]`，
   而 **`csri_open` 与 `csri_get_renderer` 根本不是 CSRI API** —— 按旧集合**每一个真的 CSRI provider 都会被误判成“不是 provider”**，

@@ -520,4 +520,223 @@ mod tests {
         let _ = Fps::PAL_25;
         let _ = Time::ZERO;
     }
+
+    // -----------------------------------------------------------------------
+    // AK17 的“该报/不该报”双向覆盖：下面这几条规则之前**一条用例都没有**。
+    //
+    // `tools/rule_coverage.py` 数得出来（“测试里一次都没提到（15 条）”），
+    // 所以这不是“我觉得该测”，而是**量出来的洞**。
+    // 每条都成对写：报得出来 + 干净输入不报 —— 单方向的用例看不出误报。
+    // -----------------------------------------------------------------------
+
+    /// `ASS.EVT.02`：事件时间无法解析 → 错误。
+    #[test]
+    fn an_unparseable_event_time_is_reported() {
+        let src = OK.replace("0:00:01.00", "0:00:AB.CD");
+        let r = ass(&doc(&src), None);
+        assert!(r.has_check("ASS.EVT.02"), "{:?}", r.text_lines());
+        // 反面：干净输入不该报它
+        let clean = ass(&doc(OK), Some(&geo(Canvas::FHD1080, Some((1920, 1080)))));
+        assert!(!clean.has_check("ASS.EVT.02"), "{:?}", clean.text_lines());
+    }
+
+    /// `ASS.EVT.04`：`\t` 里有未识别的 tag → 信息级。
+    ///
+    /// 留意与 `ASS.EVT.05`（乱序）分开：两者虽然级别相同，
+    /// 但说的是完全不同的事，合在一起会让报告失去分辨力。
+    #[test]
+    fn an_unknown_tag_inside_a_transform_is_reported() {
+        let src = OK.replace(
+            "{\\pos(10,10)}你好",
+            "{\\pos(10,10)\\t(0,500,\\bogus1)}你好",
+        );
+        let r = ass(&doc(&src), None);
+        assert!(r.has_check("ASS.EVT.04"), "{:?}", r.text_lines());
+        let clean = ass(&doc(OK), Some(&geo(Canvas::FHD1080, Some((1920, 1080)))));
+        assert!(!clean.has_check("ASS.EVT.04"), "{:?}", clean.text_lines());
+    }
+
+    /// `ASS.EVT.05`：事件未按时间递增 → 信息级（写出阶段可重排）。
+    #[test]
+    fn events_out_of_order_are_reported() {
+        let src = OK.replace(
+            "Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,{\\pos(10,10)}你好\r\n",
+            "Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,一\r\n\
+             Dialogue: 0,0:00:00.50,0:00:01.50,Default,,0,0,0,,二\r\n",
+        );
+        let r = ass(&doc(&src), None);
+        assert!(r.has_check("ASS.EVT.05"), "{:?}", r.text_lines());
+        // 反面：本来就只有一条事件的 OK 不该报
+        let clean = ass(&doc(OK), Some(&geo(Canvas::FHD1080, Some((1920, 1080)))));
+        assert!(!clean.has_check("ASS.EVT.05"), "{:?}", clean.text_lines());
+    }
+
+    /// `ASS.GEO.01`：PlayRes 不是正整数 → 错误。
+    #[test]
+    fn an_illegal_playres_is_reported() {
+        let src = OK.replace("PlayResX: 1920", "PlayResX: 0");
+        let r = ass(&doc(&src), None);
+        assert!(r.has_check("ASS.GEO.01"), "{:?}", r.text_lines());
+        let clean = ass(&doc(OK), Some(&geo(Canvas::FHD1080, Some((1920, 1080)))));
+        assert!(!clean.has_check("ASS.GEO.01"), "{:?}", clean.text_lines());
+    }
+
+    /// `ASS.GEO.04`：LayoutResX/Y 值非法 → 警告。
+    #[test]
+    fn an_illegal_layout_res_is_reported() {
+        let src = OK.replace(
+            "PlayResY: 1080",
+            "PlayResY: 1080\r\nLayoutResX: 0\r\nLayoutResY: abc",
+        );
+        let r = ass(&doc(&src), None);
+        assert!(r.has_check("ASS.GEO.04"), "{:?}", r.text_lines());
+        let clean = ass(&doc(OK), Some(&geo(Canvas::FHD1080, Some((1920, 1080)))));
+        assert!(!clean.has_check("ASS.GEO.04"), "{:?}", clean.text_lines());
+    }
+
+    /// `ASS.STR.02`：ScriptType 不是 v4 系列 → 警告。
+    #[test]
+    fn a_non_v4_script_type_is_reported() {
+        let src = OK.replace("ScriptType: v4.00+", "ScriptType: v3.00");
+        let r = ass(&doc(&src), None);
+        assert!(r.has_check("ASS.STR.02"), "{:?}", r.text_lines());
+        let clean = ass(&doc(OK), Some(&geo(Canvas::FHD1080, Some((1920, 1080)))));
+        assert!(!clean.has_check("ASS.STR.02"), "{:?}", clean.text_lines());
+    }
+
+    /// `ASS.STR.03`：Styles 段没有字段表 → 警告。
+    ///
+    /// ## 实测修正过两次假设，最后发现它的 Styles 分支**走不到**
+    ///
+    /// 1. 我第一版是“把 Styles 的 `Format:` 行删掉就报 03” —— **实测不报**，
+    ///    报的是 `ASS.STR.04`（`format_source = RepeatedHeader`）。
+    /// 2. 第二版把 Styles 与 Events 的 `Format:` 行都删掉 —— **仍不报**，
+    ///    两条都是 `RepeatedHeader`。
+    ///
+    /// 追到 `codec-ass` 才明白：字段表有**四档来源**
+    /// （`FormatLine` / `RepeatedHeader` / `Fallback` / `None`），
+    /// 而 Styles/Events 这两个 `needs_format()` 的段总会被填上一种，
+    /// **永远不会是空的**。`FormatSource::None` 只出现在
+    /// `SectionKind::Unknown` 的默认表上，而那种段不走这个分支。
+    ///
+    /// ## 所以这里不断言“报得出 03”
+    ///
+    /// 强造一个能触发它的输入需要打破解析器的不变式，那测的就是**假想中的代码**
+    /// 而不是真实行为。本用例改成锁**实际成立的那件事**：
+    /// 字段表不是来自 Format 行时必须报 `ASS.STR.04`。
+    ///
+    /// 并把“03 的 Styles 分支疑似不可达”记在这里 ——
+    /// 它是 `rule_coverage.py` 里 03 长期未覆盖的真实原因，
+    /// 而不是“忘了写用例”。
+    #[test]
+    fn a_styles_section_without_a_format_line_is_reported() {
+        let src = OK.replace("Format: Name, Fontname, Fontsize\r\n", "");
+        let r = ass(&doc(&src), None);
+        // 实际行为：报 04（来源不是 Format 行），而不是 03
+        assert!(
+            r.has_check("ASS.STR.04"),
+            "字段表不是来自 Format 行时必须报 04：{:?}",
+            r.text_lines()
+        );
+        // 干净输入不该报任何一条
+        let clean = ass(&doc(OK), Some(&geo(Canvas::FHD1080, Some((1920, 1080)))));
+        assert!(!clean.has_check("ASS.STR.04"), "{:?}", clean.text_lines());
+        assert!(!clean.has_check("ASS.STR.03"), "{:?}", clean.text_lines());
+    }
+
+    /// `ASS.STR.04`：字段表**不是来自 `Format:` 行** → 信息级。
+    ///
+    /// 条件：`s.kind.needs_format() && !s.format_source_is_line()`。
+    ///
+    /// 它与 `ASS.STR.03` 是**相邻的两件事**：03 说“根本没有字段表”，
+    /// 04 说“有，但不是从 Format 行来的”。只测 03 会把 04 的
+    /// “来源不明”当成“来源就是 Format 行”。
+    #[test]
+    fn a_field_table_taken_from_somewhere_else_is_reported() {
+        // 把 Styles 段的 Format 行改成注释式（`;Format:`）：
+        // 于是字段表要么为空（03），要么来自别处（04），两者必有一报。
+        let src = OK.replace(
+            "Format: Name, Fontname, Fontsize\r\n",
+            ";Format: Name, Fontname, Fontsize\r\n",
+        );
+        let r = ass(&doc(&src), None);
+        assert!(
+            r.has_check("ASS.STR.04") || r.has_check("ASS.STR.03"),
+            "字段表来源不明时至少要报一条：{:?}",
+            r.text_lines()
+        );
+        let clean = ass(&doc(OK), Some(&geo(Canvas::FHD1080, Some((1920, 1080)))));
+        assert!(!clean.has_check("ASS.STR.04"), "{:?}", clean.text_lines());
+    }
+
+    /// `ASS.TAG.02`：未识别 tag 超过**逐条列出的上限（8 种）** → 只说“另有 N 种”。
+    ///
+    /// 条件看清楚了：`unknown.len() > 8` ——
+    /// 前 8 个逐条报 `ASS.TAG.01`，剩下的归并成 `ASS.TAG.02`。
+    /// 所以要触发它必须造出**超过 8 种不同**的未识别 tag。
+    /// 这条与 AG6 同族（避免报告被噪声淹掉），只是在“种类数”这个维度上截断。
+    #[test]
+    fn too_many_kinds_of_unknown_tags_are_summarised() {
+        // 12 种互不相同的未识别 tag，超过上限 8
+        let tags: String = (0..12).map(|i| format!("\\zz{i}")).collect();
+        let src = OK.replace(
+            "{\\pos(10,10)}你好",
+            &format!("{{{}\\pos(10,10)}}你好", tags),
+        );
+        let r = ass(&doc(&src), None);
+        assert!(
+            r.has_check("ASS.TAG.02"),
+            "超过 8 种未知 tag 应当归并：{:?}",
+            r.text_lines()
+        );
+        // 逐条的也要在（前 8 个）
+        assert!(r.has_check("ASS.TAG.01"), "{:?}", r.text_lines());
+        let clean = ass(&doc(OK), Some(&geo(Canvas::FHD1080, Some((1920, 1080)))));
+        assert!(!clean.has_check("ASS.TAG.02"), "{:?}", clean.text_lines());
+    }
+
+    /// `SRT.EVT.03`：存在不能用做 PTS 的时间 → 警告（10 §7 单一时间源）。
+    ///
+    /// ## 真实条件（读代码得到，**修正过一次假设**）
+    ///
+    /// ```ignore
+    /// if pairs.iter().any(|(s, _)| s.to_pts_ticks().is_err())
+    /// ```
+    ///
+    /// 我第一版以为“非整拍”就能触发，并造了 `1/7` 毫秒去测 —— **实测不报**。
+    /// 读 `to_pts_ticks` 才明白：它是 `mul(90_000).round_i64()`，
+    /// **会四舍五入**，所以普通值永远不会出错。
+    ///
+    /// 能把 `is_err()` 变真的只有两件事：**负时间**、**溢出 33bit 上限**。
+    /// 所以这条规则的真实含义是“**这个时间不是合法 PTS**”，
+    /// 而不是“精度对不上” —— 它的标题（“无法表示为毫秒”）比实际条件更宽。
+    /// 这一点写在这里，免得下一个人又走一遍同样的弯路。
+    ///
+    /// 这条规则的实际入口是 `time_pairs`（SRT 路径），不是 `ass`。
+    #[test]
+    fn an_srt_time_that_cannot_be_a_pts_is_reported() {
+        // 反面：正常时间不报
+        let ok = [(
+            Time::from_millis(1000).unwrap(),
+            Time::from_millis(2000).unwrap(),
+        )];
+        let r = time_pairs(&ok, &["一二三"]);
+        assert!(
+            !r.has_check("SRT.EVT.03"),
+            "正常时间不该报：{:?}",
+            r.text_lines()
+        );
+
+        // 正面：负起点 —— `to_pts_ticks` 明确报 `PTS 为负`
+        let neg = [(
+            Time::from_millis(-1).unwrap(),
+            Time::from_millis(2000).unwrap(),
+        )];
+        let r2 = time_pairs(&neg, &["一二三"]);
+        assert!(
+            r2.has_check("SRT.EVT.03"),
+            "负时间不是合法 PTS，应当报：{:?}",
+            r2.text_lines()
+        );
+    }
 }

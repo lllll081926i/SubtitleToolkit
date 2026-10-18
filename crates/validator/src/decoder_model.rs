@@ -642,4 +642,172 @@ mod tests {
             assert!(bad.is_empty(), "真实骨架「{name}」不该报错：{bad:?}");
         }
     }
+
+    // -----------------------------------------------------------------------
+    // AK17：`PGS.DEC.01`…`05` 这五条不变式原来**一条用例都没有**
+    // （`tools/rule_coverage.py` 数出来的，不是“我觉得该测”）。
+    //
+    // 每条都成对：弄坏那一个条件 → 必须报；干净的骨架 → 不报。
+    // 单方向的用例看不出误报，而这五条都是**必要条件**
+    // （不满足一定有问题），所以“不报”那一半同样要锁。
+    // -----------------------------------------------------------------------
+
+    /// 一份干净显示集，供下面五条反例作基底。
+    ///
+    /// 形状照本模块已有的 `clean_set(base)`：
+    /// PCS 带**本集的呈现时刻**（最高），其余段的 PTS ≤ 它；
+    /// PDS 与 END 没有解码耗时（`pts == dts`）。
+    /// 第一版我自己凭直觉拼了一个，结果它一上来就报 `PGS.DEC.01` ——
+    /// 正好说明这五条不变式为什么值得写用例。
+    fn inv_clean() -> Vec<Segment> {
+        let dts = 500; // base - 500
+        vec![
+            seg(1000, dts, SEG_PCS),
+            seg(900, dts, SEG_WDS),
+            seg(dts, dts, SEG_PDS),
+            seg(dts + 91, dts, SEG_ODS),
+            seg(dts + 91, dts + 91, SEG_END),
+        ]
+    }
+
+    fn rules_of(segs: &[Segment]) -> Vec<&'static str> {
+        let (r, checked) = decoder_model(segs);
+        assert!(checked, "这段应当被当成“跑过”");
+        r.findings
+            .iter()
+            .filter(|f| f.severity >= Severity::Warning)
+            .map(|f| f.check)
+            .collect()
+    }
+
+    /// 跑一遍解码器模型，拿到**报告本身**。
+    ///
+    /// ## 为什么不包装成 `has_check(&segs, id) -> bool`
+    ///
+    /// 我第一版就是那么写的，断言完全正确 —— 但
+    /// `tools/rule_coverage.py` 扫的是 `<报告>.has_check("<id>")`
+    /// 这个**方法调用**写法，于是这五条在盘点表上一直写着“一次都没提到”，
+    /// 而实际上已经有用例了。下一个人会照着过期的事实重复劳动。
+    ///
+    /// 返回报告本身，调用方就能用工具认得、也本就是报告自带 API 的写法。
+    fn report_of(segs: &[Segment]) -> ValidationReport {
+        let (r, checked) = decoder_model(segs);
+        assert!(checked, "这段应当被当成“跑过”");
+        r
+    }
+
+    #[test]
+    fn a_clean_set_reports_none_of_the_decoder_invariants() {
+        let got = rules_of(&inv_clean());
+        assert!(got.is_empty(), "干净骨架不该报任何东西：{got:?}");
+    }
+
+    /// `PGS.DEC.01`：段的 PTS **晚于**该集 PCS 的 PTS。
+    ///
+    /// 条件（读代码得到）：`s.pts > pcs_pts`。
+    /// 我第一版写反了方向（把 WDS 标到 PCS 之前）—— **实测不报**，
+    /// 因为 PCS 带的本来就是本集的最高呈现时刻。改成**后来的段**才对。
+    #[test]
+    fn a_segment_later_than_its_own_pcs_is_reported() {
+        let mut s = inv_clean();
+        // WDS 标得比 PCS（1000）还晚
+        s[1].pts = 1500;
+        s[1].dts = 500;
+        assert!(
+            report_of(&s).has_check("PGS.DEC.01"),
+            "晚于 PCS 的段应当报：{:?}",
+            rules_of(&s)
+        );
+        assert!(!report_of(&inv_clean()).has_check("PGS.DEC.01"));
+    }
+
+    /// `PGS.DEC.02`：`DTS > PTS` —— 解码时间晚于显示时间，物理上不成立。
+    #[test]
+    fn a_segment_decoded_after_it_is_presented_is_reported() {
+        let mut s = inv_clean();
+        s[3].pts = 500;
+        s[3].dts = 600; // 反了
+        assert!(
+            report_of(&s).has_check("PGS.DEC.02"),
+            "DTS > PTS 应当报：{:?}",
+            rules_of(&s)
+        );
+        assert!(!report_of(&inv_clean()).has_check("PGS.DEC.02"));
+    }
+
+    /// `PGS.DEC.03`：`END` 的 PTS **不等于**最后一个 `ODS` 的 PTS。
+    ///
+    /// 两者相等才说明“这一集完整解完了”。不相等意味着中途被截。
+    #[test]
+    fn an_end_not_matching_the_last_ods_is_reported() {
+        let mut s = inv_clean();
+        s[4].pts = 1200; // END 与最后一个 ODS（591）对不上
+        s[4].dts = 1200;
+        assert!(
+            report_of(&s).has_check("PGS.DEC.03"),
+            "END 与末个 ODS 不一致应当报：{:?}",
+            rules_of(&s)
+        );
+        assert!(!report_of(&inv_clean()).has_check("PGS.DEC.03"));
+    }
+
+    /// `PGS.DEC.04`：`PDS` / `END` 的 `DTS != PTS`。
+    ///
+    /// 这两类段没有解码耗时，真实流 100% 满足等号。
+    /// 这条正是那个曾抳出我们**自己编码器两个真缺陷**的不变式
+    /// （见 `docs/reviews/2026-10-17-decoder-model-layer5.md`）。
+    #[test]
+    fn a_pds_or_end_with_a_decode_delay_is_reported() {
+        let mut s = inv_clean();
+        s[2].dts = 400; // PDS 有“解码耗时”
+        assert!(
+            report_of(&s).has_check("PGS.DEC.04"),
+            "PDS 有解码耗时应当报：{:?}",
+            rules_of(&s)
+        );
+
+        let mut t = inv_clean();
+        t[4].dts = 500; // END 有“解码耗时”
+        assert!(
+            report_of(&t).has_check("PGS.DEC.04"),
+            "END 有解码耗时应当报：{:?}",
+            rules_of(&t)
+        );
+
+        assert!(!report_of(&inv_clean()).has_check("PGS.DEC.04"));
+    }
+
+    /// `PGS.DEC.05`：**流的 DTS 倒退了**（后被解出的段反而更早）。
+    ///
+    /// ## 实测修正过假设
+    ///
+    /// 我第一版以为它管“段类型顺序”（把 ODS 摆到 PCS 前面）—— **实测不报**。
+    /// 读代码才看清：它扫的是 `segments[i].dts < segments[i-1].dts`，
+    /// 即**整个流上 DTS 必须单调不减**。
+    /// 段类型顺序是另一回事（结构层管）。
+    ///
+    /// 名字里的“顺序”指的是**时间上的顺序**，不是类型顺序 ——
+    /// 这一点写在这里，免得下一个人又按字面去造反例。
+    #[test]
+    fn a_stream_with_a_backwards_dts_is_reported() {
+        // 第二集的 DTS 比第一集还早
+        let mut a = inv_clean();
+        let mut b = inv_clean();
+        // 把整集往后推，但让第二集的 DTS 反而更小
+        for s in &mut a {
+            s.pts += 5000;
+            s.dts += 5000;
+        }
+        for s in &mut b {
+            s.pts += 4000;
+            s.dts = 500; // 比第一集的末个 DTS（591）还小
+        }
+        let bad: Vec<Segment> = a.into_iter().chain(b).collect();
+        assert!(
+            report_of(&bad).has_check("PGS.DEC.05"),
+            "DTS 倒退应当报：{:?}",
+            rules_of(&bad)
+        );
+        assert!(!report_of(&inv_clean()).has_check("PGS.DEC.05"));
+    }
 }

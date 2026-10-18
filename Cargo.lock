@@ -597,6 +597,7 @@ dependencies = [
  "image-core",
  "media-probe",
  "pgs-author",
+ "render-api",
  "render-libass",
  "renderer-host",
  "serde",
@@ -3403,6 +3404,7 @@ version = "0.1.0"
 dependencies = [
  "core-model",
  "image-core",
+ "render-api",
  "sha2",
 ]
 

@@ -59,6 +59,11 @@ type FnRenderFrame =
 /// libass 自己复制数据（内存字体存进 fontselect），所以不要求调用方保活 `data`。
 type FnAddFont = unsafe extern "C" fn(*mut c_void, *const c_char, *const c_char, c_int);
 
+/// 函数表。
+///
+/// `Clone, Copy`：它只是一堆函数指针，而 `Script` 需要**拷一份**而不是借用
+/// （见 `load_script` 里的说明）。
+#[derive(Clone, Copy)]
 struct Symbols {
     library_init: FnLibraryInit,
     library_done: FnLibraryDone,
@@ -296,7 +301,7 @@ impl Provider {
     }
 
     /// 载入脚本（内存，UTF-8）。
-    pub fn load_script(&self, ass: &[u8]) -> Result<Script<'_>> {
+    pub fn load_script(&self, ass: &[u8]) -> Result<Script> {
         let mut buffer: Vec<c_char> = ass.iter().map(|b| *b as c_char).collect();
         buffer.push(0);
         let codepage = c"UTF-8";
@@ -316,7 +321,15 @@ impl Provider {
         }
         Ok(Script {
             renderer: self.renderer,
-            symbols: &self.symbols,
+            // **拷贝一份**函数表，而不是借用 `&self.symbols`。
+            //
+            // 借用会让 `Script` 自始至终持有 `Provider` 的不可变借用，
+            // 于是调用方**无法**在渲染时同时可变借用 provider ——
+            // 而那正是 renderer-host 要做的事（它要在两条链之间分派）。
+            //
+            // `Symbols` 只是一堆函数指针（`Copy`），拷贝的代价是几十字节，
+            // 换来的是“脚本句柄可以独立于 provider 传递”。
+            symbols: self.symbols,
             track,
             _buffer: buffer,
         })
@@ -333,15 +346,18 @@ impl Drop for Provider {
 }
 
 /// 一份已载入的脚本 + 它的 renderer 绑定。
-pub struct Script<'a> {
+///
+/// **不借用 `Provider`**：`symbols` 是拷贝的（见 `load_script` 里的说明）。
+/// 于是调用方可以在持有脚本的同时可变借用 provider。
+pub struct Script {
     renderer: *mut c_void,
-    symbols: &'a Symbols,
+    symbols: Symbols,
     track: *mut c_void,
     /// 与 track 同生命周期：libass 解析期间引用它
     _buffer: Vec<c_char>,
 }
 
-impl Drop for Script<'_> {
+impl Drop for Script {
     fn drop(&mut self) {
         unsafe { (self.symbols.free_track)(self.track) }
     }
@@ -363,7 +379,7 @@ fn whole_millis(t: Time) -> Result<i64> {
 }
 
 /// 渲染一帧：`now` 是输出时间轴上的毫秒，走 `ass_render_frame` + 合成。
-pub fn render(script: &Script<'_>, now: Time, output: Canvas) -> Result<Rendered> {
+pub fn render(script: &Script, now: Time, output: Canvas) -> Result<Rendered> {
     let mut detect: c_int = 0;
     let ms = whole_millis(now)?;
     let head = unsafe {

@@ -101,9 +101,19 @@ fn at_render_001_the_host_hands_back_the_same_pixels_as_an_in_process_render() {
     assert_eq!(hs.pixel_format, "RGBA8", "{hs:?}");
     assert_eq!(hs.host_arch, "x64", "{hs:?}");
     assert_eq!(hs.provider_arch, "x64", "{hs:?}");
+    // 版本**不在握手时报**：两条链都要真的打开 provider 才知道版本
+    // （libass 要 `ass_library_version`，CSRI 要 `csri_renderer_info`），
+    // 而握手发生在脚本到达之前 —— 那时还没有 provider 实例。
+    //
+    // 原来这里断言 `version` 以 `0x` 开头，而 host 那时确实**先开了**
+    // libass 只为了问版本。改为按链分派后那一步没了（两条链不可能
+    // 都用同一个“提前打开”），所以这个断言跟着改成“空即未报”。
+    //
+    // 真实的 provider 身份靠 `provider_binary_sha256`（下面那条）与
+    // `provider probe` 命令，不靠这个字段。
     assert!(
-        hs.version.starts_with("0x"),
-        "版本要按 libass 的数字版本报：{hs:?}"
+        hs.version.is_empty(),
+        "握手时不该报版本（还没打开 provider）：{hs:?}"
     );
     assert_eq!(hs.provider_binary_sha256.len(), 64, "{hs:?}");
     // 12 §4：身份是哈希。两侧各算一次，对不上就是看的不是同一个文件

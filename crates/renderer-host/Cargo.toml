@@ -12,8 +12,11 @@ path = "src/main.rs"
 [dependencies]
 core-model = { workspace = true }
 image-core = { workspace = true }
+render-csri = { workspace = true }
+render-api = { workspace = true }
 render-libass = { workspace = true }
 win-job = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
+

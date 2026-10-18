@@ -11,6 +11,7 @@
 //!
 //! 分帧协议见 [`protocol`]：`1 字节标签 + u32 长度 + 负载`，标签 1 是 JSON、2 是原始字节。
 
+pub mod backend;
 pub mod client;
 pub mod crash;
 // 12 §3 / 23 §DLL 的 PE 头读取在 `core-model`：主程序与 host 都要在加载 DLL

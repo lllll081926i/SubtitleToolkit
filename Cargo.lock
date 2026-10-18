@@ -3430,6 +3430,8 @@ version = "0.1.0"
 dependencies = [
  "core-model",
  "image-core",
+ "render-api",
+ "render-csri",
  "render-libass",
  "serde",
  "serde_json",

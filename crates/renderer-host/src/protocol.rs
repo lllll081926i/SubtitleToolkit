@@ -39,7 +39,11 @@ pub const FRAME_CHUNK_BYTES: usize = 16 * 1024 * 1024;
 /// 握手结果：12 §2 要求逐项交代 provider 类型、名字、版本、PE 位数、API 版本、像素格式。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Handshake {
-    /// "libass"（12 §1 的 renderer 家族名，不按文件名猜）
+    /// 12 §1 的 renderer 家族名：当前是 `libass` 或 `csri`。
+    ///
+    /// 它是**按导出表判出来的**，不按文件名猜（那正是 12 §1 的要求）。
+    /// 客户端要拒绝的是“我不认识的名字”，而不是“不是 libass”——
+    /// 后者会把 CSRI 链当成协议不符。
     pub provider: String,
     /// DLL 的文件名，仅供人读；身份以哈希为准
     pub name: String,

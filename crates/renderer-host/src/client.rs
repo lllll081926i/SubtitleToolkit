@@ -311,10 +311,23 @@ impl Host {
                 h.pixel_format
             )));
         }
-        if h.provider != "libass" {
+        // provider 名字要认**两条链**。
+        //
+        // 原来这里写的是 `h.provider != "libass"` —— 那时 host 只会开 libass。
+        // 现在 host 会按导出表分流（12 §1），而两条链走的**是同一个协议**
+        // （同一个 `Response::Frame`、同一套分块、同一个 pixel_format）。
+        //
+        // 所以这里应当拒绝的是“我不认识的 provider”，而不是“不是 libass”：
+        // 后者会把我们**自己刚实现**的 CSRI 链当成协议不符。
+        //
+        // 真正的“这条链能不能用”由调用方按能力判断（例如
+        // `supports_font_injection`），而不是靠一个字符串相等。
+        const KNOWN: [&str; 2] = ["libass", "csri"];
+        if !KNOWN.contains(&h.provider.as_str()) {
             return Err(HostFailure::Protocol(format!(
-                "这个 host 只会讲 libass 协议，收到 provider {}",
-                h.provider
+                "host 报了一个本客户端不认识的 provider {:?}（已知：{}）",
+                h.provider,
+                KNOWN.join("、")
             )));
         }
         Ok(())

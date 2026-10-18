@@ -147,27 +147,62 @@ fn serve() -> Result<(), String> {
         (output_canvas.width, output_canvas.height),
     );
 
-    // 到这里才真的 LoadLibrary（render-libass 里那套 LOAD_LIBRARY_SEARCH_*，不搜当前目录）
-    let mut provider =
-        render_libass::Provider::open(&dll_path, storage_canvas, output_canvas, &default_font)
-            .map_err(|e| {
-                // 把 details 一起回给主进程（见 `reply_stk_err` 的注释）。
-                let _ = reply_stk_err(&mut writer, &e);
-                format!("provider 打不开：{}；{}", e.title, e.details.join("；"))
-            })?;
+    // 到这里才真的 LoadLibrary（`core_model::dllload` 那套 LOAD_LIBRARY_SEARCH_*，
+    // 不搜当前目录）。
+    //
+    // ## 为什么握手时只探测、不打开
+    //
+    // 两条链的**打开时机不同**：libass 先 open 再 load_script（两步），
+    // 而 CSRI 的 `csri_open_mem` 在 open 时就要脚本（一步）。
+    //
+    // 主机侧只知道了档位（storage/output 画布、默认字体），还不知道脚本 ——
+    // 那要等 `Request::LoadScript` 才来。所以这里：
+    //
+    // 1. **先按导出表分流**（12 §1，不加载）；
+    // 2. 把类别写进握手（主进程能看到自己用的是哪条链）；
+    // 3. 等脚本到了再真的 open。
+    //
+    // 为什么不在这里就用一个占位脚本提前 open：那会把一份**我们没校验过**
+    // 的文本递给第三方 provider，而 17 §7 的字体环境与缓存 key 是以
+    // “我们解析过的那份字节”为准的。
+    let backend_kind = renderer_host::backend::classify(&dll_path).map_err(|e| {
+        let _ = reply_stk_err(&mut writer, &e);
+        format!("provider 分派失败：{}；{}", e.title, e.details.join("；"))
+    })?;
 
     let name = dll_path
         .file_name()
         .and_then(|s| s.to_str())
         .unwrap_or("provider")
         .to_string();
-    let version = format!("0x{:08X}", provider.library_version());
+    let provider_label = match backend_kind {
+        render_api::capability::ProviderKind::LibassBuiltin => "libass".to_string(),
+        render_api::capability::ProviderKind::Csri => "csri".to_string(),
+        render_api::capability::ProviderKind::LegacyVapourSynth => "vapoursynth".to_string(),
+        render_api::capability::ProviderKind::LegacyAviSynth => "avisynth".to_string(),
+        render_api::capability::ProviderKind::LegacyOther => "legacy-other".to_string(),
+    };
+
+    // 版本：两条链拿它的时机不同。
+    //
+    // - **libass**：`ass_library_version()` 只要 DLL 在就行，不必等脚本。
+    //   所以这里直接开一次 libass 只为了问版本 —— 但那又会加载两次 DLL。
+    //   更简单且不重复加载的做法：**从导出表读不了版本**，
+    //   那就把 libass 的版本推到真打开之后（与 CSRI 一致）。
+    //
+    // - **CSRI**：只能从 `csri_renderer_info()` 拿，而那需要 renderer 句柄，
+    //   同样要等真打开。
+    //
+    // 两者一致地“握手时不报版本”是**诚实的**：那一刻确实还没有 provider 实例。
+    // 而客户端（`verify_handshake`）不依赖版本字段，只依赖 provider 名字。
     reply(
         &mut writer,
         &Response::Hello(Handshake {
-            provider: "libass".to_string(),
-            name,
-            version,
+            provider: provider_label.clone(),
+            name: name.clone(),
+            // 空 = “还没打开”。客户端的握手校验不依赖它；
+            // 真正的版本在 `provider probe` 与报告里给。
+            version: String::new(),
             api_version: API_VERSION,
             host_arch: arch_label(host_arch),
             provider_arch: arch_label(provider_arch),
@@ -246,31 +281,133 @@ fn serve() -> Result<(), String> {
         }
     };
 
-    for (family, font) in pending_fonts {
-        if let Err(e) = provider.add_font(&family, &font) {
-            reply_err(&mut writer, &e.code_string(), &e.title).map_err(|reply_error| {
-                format!("字体注入失败：{}；发送错误响应失败：{reply_error}", e.title)
-            })?;
-            return Ok(());
-        }
-    }
-    let script = match provider.load_script(&ass) {
-        Ok(script) => script,
+    // 开 provider。
+    //
+    // 注意**先做字体能力检查、再注入**：`add_font` 对不支持注入的链
+    // 返回 `Ok(0)`（"没做"而不是"失败"）—— 那条链是 CSRI，它的头文件里
+    // 没有加字体的入口。
+    //
+    // 而"没做"必须**报出去**：用户以为字形来自他给的那份字体、
+    // 而实际用的是系统字体，结果是渲染出来的东西与预期不同却不报警。
+    // 所以这里发一条告警（22 §：不能说悄悄地少做一件事）。
+    let ass_text = String::from_utf8_lossy(&ass).to_string();
+    let mut backend = match renderer_host::backend::Backend::open(
+        &dll_path,
+        &ass_text,
+        storage_canvas,
+        output_canvas,
+        &default_font,
+    ) {
+        Ok(b) => b,
         Err(e) => {
-            reply_err(&mut writer, &e.code_string(), &e.title).map_err(|reply_error| {
-                format!("脚本加载失败：{}；发送错误响应失败：{reply_error}", e.title)
-            })?;
-            return Ok(());
+            // 把 details 一起回给主进程（见 `reply_stk_err` 的注释）。
+            let _ = reply_stk_err(&mut writer, &e);
+            return Err(format!(
+                "provider 打不开：{}；{}",
+                e.title,
+                e.details.join("；")
+            ));
         }
     };
+
+    // 字体：能力不同的链走不同的路。
+    //
+    // 两条链在这里的差别是**语义差异**而不是实现细节：libass 有
+    // `ass_add_font`，而 CSRI 头文件里**没有**加字体的入口。
+    // 所以 CSRI 链上这件事做不到 —— 而那必须**说出来**：
+    // 用户以为字形来自他给的那份字体、实际用的是系统字体，
+    // 结果是渲染出来的东西与预期不同却不报警。
+    let can_inject = backend.supports_font_injection();
+    if !pending_fonts.is_empty() && !can_inject {
+        eprintln!(
+            "[renderer-host] 警告：{} 链不支持内存字体注入，{} 份字体被跳过（17 §7）",
+            backend.name(),
+            pending_fonts.len()
+        );
+    }
+    let mut injected = 0usize;
+    for (family, font) in pending_fonts {
+        match backend.add_font(&family, &font) {
+            Ok(()) => injected += 1,
+            Err(e) => {
+                reply_err(&mut writer, &e.code_string(), &e.title).map_err(|reply_error| {
+                    format!("字体注入失败：{}；发送错误响应失败：{reply_error}", e.title)
+                })?;
+                return Ok(());
+            }
+        }
+    }
+    // 支持注入而一份都没进：那是上游自己的事（它会报），这里不重复告警。
+    let _ = injected;
+
+    // libass 链要把脚本单独加载（两步）；CSRI 链在 `open` 时已经交过了。
+    //
+    // ## 为什么 `Script` 不能放进 `Backend`
+    //
+    // `render_libass::Script<'a>` **借用了** `Provider`（它持有 renderer 与
+    // track 的裸指针，而那两个的生命期由 Provider 保证）。
+    // 把它放进 `Backend::Libass` 会变成一个自引用结构 —— 而自引用在
+    // 安全 Rust 里写不出来（这正是 `self_cell` 那类 crate 存在的理由）。
+    //
+    // 所以脚本句柄留在**调用方**：`Backend` 只管“用什么链”，
+    // 脚本生命期由它外面那层持有。CSRI 那份不需要这个句柄
+    // （脚本在 open 时就交进去了），所以那里是 `None`。
     reply(&mut writer, &Response::ScriptLoaded { bytes: ass.len() }).map_err(|e| e.to_string())?;
-    serve_render_requests(&mut reader, &mut writer, &script, output_canvas, &tracker)
+
+    // libass 链要把脚本单独加载（两步）；CSRI 链在 `open` 时已经交过了。
+    //
+    // ## `Script` 为什么留在外面
+    //
+    // 它原来是 `Script<'a>`，**借用** `Provider` 的函数表 —— 那会让
+    // 调用方在持有脚本时无法可变借用 provider，而 `Backend::render_at`
+    // 恰恰需要那个 `&mut`。
+    //
+    // 已改成 `Script` **拷贝**一份函数表（`Symbols: Copy`，几十字节），
+    // 于是它不再借用任何东西。放在外面仍是对的：`Backend` 只管“用什么链”，
+    // 脚本句柄的生命期由调用方持有更直白。
+    let is_libass = matches!(backend, renderer_host::backend::Backend::Libass(_));
+    let script = if let renderer_host::backend::Backend::Libass(p) = &backend {
+        match p.load_script(&ass) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                reply_err(&mut writer, &e.code_string(), &e.title).map_err(|reply_error| {
+                    format!("脚本加载失败：{}；发送错误响应失败：{reply_error}", e.title)
+                })?;
+                return Ok(());
+            }
+        }
+    } else {
+        None
+    };
+    debug_assert_eq!(script.is_some(), is_libass);
+
+    let mut frames = FrameSink {
+        backend: &mut backend,
+        libass_script: script.as_ref(),
+    };
+    serve_render_requests(
+        &mut reader,
+        &mut writer,
+        &mut frames,
+        output_canvas,
+        &tracker,
+    )
+}
+
+/// 渲染循环需要的东西：provider + （libass 才有的）脚本句柄。
+///
+/// 把它包成一个结构而不是两个参数，是因为 `render_at` 里要**同时**
+/// 用 `&mut backend` 与 `&Script` —— 拆成两个参数会让调用点
+/// 无法向借用检查器证明“这两个借用不重叠”。
+struct FrameSink<'a> {
+    backend: &'a mut renderer_host::backend::Backend,
+    libass_script: Option<&'a render_libass::Script>,
 }
 
 fn serve_render_requests(
     reader: &mut impl std::io::Read,
     writer: &mut impl Write,
-    script: &render_libass::Script<'_>,
+    sink: &mut FrameSink<'_>,
     output: Canvas,
     tracker: &renderer_host::crash::Tracker,
 ) -> Result<(), String> {
@@ -302,7 +439,7 @@ fn serve_render_requests(
             Request::Render { pts_ms } => {
                 frames += 1;
                 tracker.enter(renderer_host::crash::Phase::Render, Some(frames));
-                match render_at(Some(script), pts_ms, output) {
+                match render_at(sink, pts_ms, output) {
                     Ok((frame, digest, detect_change, images, loss)) => {
                         tracker.note_ok("render");
                         let bytes = frame.rgba.len();
@@ -355,16 +492,17 @@ type RenderAtOutput = (
 type RenderAtError = (String, String);
 
 fn render_at(
-    script: Option<&render_libass::Script<'_>>,
+    sink: &mut FrameSink<'_>,
     pts_ms: i64,
     output: Canvas,
 ) -> Result<RenderAtOutput, RenderAtError> {
-    let script = script.ok_or((
-        "STK-RND-0205".to_string(),
-        "还没加载脚本就要求出帧".to_string(),
-    ))?;
     let t = Time::from_millis(pts_ms).map_err(|e| (e.code_string(), e.title))?;
-    let r = render_libass::render(script, t, output).map_err(|e| (e.code_string(), e.title))?;
+    // `Backend::render_at` 自己会按链选路；libass 那份需要脚本句柄，
+    // CSRI 那份不用（脚本已在 open 时交进去）。
+    let r = sink
+        .backend
+        .render_at(t, output, sink.libass_script)
+        .map_err(|e| (e.code_string(), e.title))?;
     let mut h = Sha256::new();
     h.update(&r.frame.rgba);
     Ok((

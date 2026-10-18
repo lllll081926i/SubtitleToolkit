@@ -48,6 +48,50 @@
 - 可选 legacy renderer support；
 - 卸载保留用户 presets/logs 由用户选择。
 
+**已实现（2026-10-17）**：`tools/subtitletool.iss` + `tools/make_installer.ps1`；
+验证脚本 `tools/verify_installer.ps1`。产物 `SubtitleToolkit-<版本>-setup.exe`。
+
+用 ISCC 的**真实版本是 6.7.3**（不是本段推荐的 7）。用到的语言特性
+（`CreateInputOptionPage`、`RegDeleteKeyIfEmpty`、`PrivilegesRequiredOverridesAllowed`、
+`WizardIsTaskSelected`）在 6 里都有，编译与实跑均通过。
+
+五条要求各自的落法：
+
+| 要求 | 落法 | 验证 |
+| --- | --- | --- |
+| per-user 默认 | `DefaultDirName={autopf}\SubtitleToolkit` + `PrivilegesRequired=lowest` | 静默安装（不弹 UAC）退 0 |
+| 可选 all-users | `PrivilegesRequiredOverridesAllowed=dialog` | **仅静态核对**，未做实机 UAC |
+| 关联 opt-in | 五类扩展名各一个 `Flags: unchecked` 任务项 | `/TASKS=assoc\ass` 时只写 `.ass` |
+| legacy 可选 | `legacy` 任务项默认不勾；文件不在则显式告警 | 默认未装 x86 宿主 |
+| 卸载选择 | 选择写 `HKCU\Software\{AppId}` 供**卸载器进程**读；**读不到就当保留** | 保留/删除两条分支都验过 |
+
+### 卸载选择为什么必须落盘
+
+选择**不能**存在 Pascal 变量里：安装页的 `InitializeWizard` 跑在**安装器进程**，
+而 `CurUninstallStepChanged` 跑在**卸载器进程** —— 变量在那边是未初始化的 `False`，
+于是卸载**总是删数据**（第一版实测确实如此）。
+
+用 `HKCU` 而不是 `HKA`：卸载时不知道当初装成了 per-user 还是 all-users。
+写在 `ssPostInstall`：安装已成功，不会因中途失败留下一个「删数据」的选择。
+
+### 花括号陷阱
+
+`{#AppId}` 里那对双花括号是 **`[Setup] AppId` 的转义约定**（`{{` = 字面 `{`），
+而 **Pascal 字符串里不转义**。用 `'Software\{#AppId}'` 会拼出
+`Software\{{7E3A…}}` —— 一个与 `[Setup]` 无关的键。
+
+该错法**自洽**（写与读在同一错位置，能读回来），所以只有拿**安装器写的那个键**
+去比对才看得出。Pascal 侧改用单独的 `{#AppIdRaw}`（单花括号）。
+
+### 关联卸载要清干净
+
+扩展名键用 `uninsdeletekey`（不是 `uninsdeletevalue`），且 **progid 键
+（`Software\Classes\SubtitleToolkit.ass`）要单独再写一条 `uninsdeletekey`** ——
+只删值会把空壳 progid 留下，用户卸载后「打开方式」列表里仍有一个指向已删程序的条目。
+
+裁决与完整验证记录：[windows-installer](../reviews/2026-10-17-windows-installer.md)。
+**未完成**：Authenticode 签名（见 §5）；x86 宿主未构建；all-users 模式未实机验证。
+
 ## 4. Portable
 
 **已实现**：`tools/make_portable.ps1`（用法见 [tools/README](../tools/README.md)）。所有程序文件放同目录，并带 `SHA256SUMS.txt` 与许可正文。

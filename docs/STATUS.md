@@ -3,6 +3,34 @@
 核对日期：2026-10-17。本文描述当前工作区源码和实际执行的验证，不引用历史门阶结果充当本轮通过证据。
 
 同日后续更新：
+
+## 产品完成度快照（2026-10-17 收盘）
+
+**交付形态全部就位**（均在 `D:\rust\target\`）：CLI `subtitletool-cli.exe`、
+渲染宿主 `subtitletool-render-host.exe`、GUI `subtitletoolkit-gui.exe`、
+安装器 `installer\SubtitleToolkit-0.1.0-setup.exe`、便携包 `portable\*.zip`。
+
+**自检无缺口**：`doctor --json` 报 `not_built: []`（没有“声称有但未实现”的命令）、
+`render_host.available=true`（真 libass 握手成功，`libass 0.17.5`）、ffprobe 已定位。
+
+**端到端工作流实测通过**（15 步，真 libass）：probe → font scan → convert →
+time 偏移 → render 出 BDN（XML + PNG）→ pgs encode 出 SUP → pgs validate →
+font subset → tool-defaults 设偏好 → 重跑确认设置生效 → cache stat →
+settings show → diagnose 出诊断包 → check-updates → batch 批量。
+
+**质量门禁**：`cargo fmt --check` 干净、`clippy -D warnings` 干净、
+**80 个测试目标 0 失败**、串行 doctest 通过、`build --release` 通过、
+`notices.py --check` 501 包 0 问题、AT 覆盖 **24/26**。
+
+**仍未完成（外部依赖或外部决策，非代码可解）**：
+Authenticode 签名（需证书）；Preset 的 TOML 依赖审批（ISSUES E4）；
+AT-RENDER-002（需真 VSFilterMod provider，涉及许可审计）；
+AT-RENDER-003 的**x86 DLL 路由**（需真 x86 libass 样本）；
+第 7 层设备语料（需真机/播放器）；
+subset corpus 的 golden 图像比较（需固定语料字体，先撞许可审计）；
+DirectWrite fallback 链（需 COM，ISSUES AG1）；真 minidump（把数据与可靠性权衡，见裁决）。
+
+
 - 维护文档已按[38 项建议采纳记录](planning/AUDIT_ADOPTION_20261008.md)优化。新增用户提供的 libass 运行库与真实验证见[追加记录](reviews/2026-10-08-docs.md)。
 - 2026-10-09 完成了全项目深度审查、测试过度防御修复与纯 Rust 前端规格重构，详见[2026-10-09 审查报告](reviews/2026-10-09-code-audit-defense.md)。
 - 2026-10-16 落地了该审查的四项代码建议（IPC 自残后门、字体缓存坏就用坏即弃、Strict 不再被未实现层阻断、XML 加固幅述校正），证据与未做项见[审查报告第五节](reviews/2026-10-09-code-audit-defense.md)。新增 GUI crate（`crates/gui`，Iced 工作台）。

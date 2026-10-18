@@ -37,12 +37,27 @@
 保留、原子写、schema 高于本程序只读不写——这些都一样；但两份文件是两个
 独立的 schema，抽公共部分会把它们绑在一起。
 
-**仍未做（关键）**：CLI 命令**尚未**在“用户没给参数时”去查 ToolDefaults。
-本模块提供的是存储与求值；**接入**需要把各命令的参数字段改成 `Option<T>`
-再按 `用户值 → ToolDefaults → 编译期默认` 求值，那是一次跨多个命令的改动。
-分开做的理由：存储层独立可验（已完成），而接入层每一处都要单独验证
-“不写参数时确实变了、写了参数时确实没变”。详见
-[tool-defaults 裁决](../reviews/2026-10-17-tool-defaults.md)。
+**已接入命令（2026-10-17）**：`pgs encode`（fps/canvas/level/default_font）、
+`render`（fps/canvas/default_font/min_axis）、`mkv`（tools_dir）、
+`font subset`（subset_dir/fallback_full）。
+
+求值顺序是 `用户值 → ToolDefaults → 编译期默认`（`crates/cli/src/defaults.rs`）。
+两个关键实现选择：
+
+- **解析阶段只记“用户给了什么”**：`pgs encode`/`render` 的那几个字段是
+  `Option<T>`。在解析阶段就填成具体默认值会让执行阶段看不出“用户到底给没给”，
+  而那正是“用用户的值”与“用默认值”的分界。
+- **报告新增 `resolved_from`**：逐项报出“命令行 / tool-defaults / 内置默认”。
+  用户问的是“我设的生效了吗”，而只有取值不回答那个问题。
+
+**`batch` 明确不接**：spec 里的值是已解析的确定值，spec 自己就是完整的参数快照
+（36 §1 的 JobSnapshot 层）。让它查用户设置会让同一份 spec 在不同机器上跑出
+不同结果，而“可重放”正是 spec 的用途。
+
+**开关不进 ToolDefaults**（exact_colors / embed_fonts / snap_pts）：
+开关的语义是“这次要不要做”，而不是“过去我偏好什么”。
+
+详见 [接入层裁决](../reviews/2026-10-17-tool-defaults-wiring.md)。
 
 ### AppSettings 的实现与边界（2026-10-17）
 

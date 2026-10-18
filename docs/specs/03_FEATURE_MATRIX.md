@@ -14,7 +14,7 @@
 | BDN XML+PNG | P0/P1 | CLI 已实现 | XML、PNG 尺寸和时间码互相核对 |
 | PGS parser/Fast Path | P1 | 已实现基础路径 | 外部 `.sup` 语料与解码器互操作仍需扩充 |
 | PGS Basic Encoder | P1 | 已实现 | Basic 结构校验不等于 Strict Blu-ray 合规 |
-| CSRI/VSFilterMod host | P1（待裁定） | **探测 + 渲染链都已实现**（12 §1/§1B）：`provider probe` + `crates/render-csri`；真实 `third_party/VSFilterMod.dll` 实测渲染出字幕（1882 白像素 @640x480） | **未接进 `renderer-host`**（仍硬编码 libass）；AT-RENDER-002 的崩溃隔离证据仍缺；该 DLL 为 GPL-3.0，21 §1 下不得进安装包 |
+| CSRI/VSFilterMod host | P1（待裁定） | **全链已实现**（12 §1/§1B）：`provider probe` + `crates/render-csri` + **已接进 `renderer-host` 按导出表分派**；真 VSFilterMod.dll 经完整 CLI 管道出帧（XML 与 libass 同为 516 字节）；崩溃隔离已实测（主进程存活、拿到现场、重试能成、挂住超时） | AT-RENDER-002 **仍不验收**（规格要“让那个 DLL 自己崩”，而现有注入只是同一时序）；CSRI 链不支持内存字体注入（头文件没那个入口，已如实报能力）；该 DLL 为 GPL-3.0，21 §1 下不进安装包 |
 | VapourSynth/AviSynth adapter | 可选 | 未实现 | legacy 可选项，不阻塞 libass |
 | Font health | P1 | 基础扫描与报告已实现 | DirectWrite 权威、完整字体环境和外部渲染仍需核验 |
 | Font subset | 后续 | 已实现（`font subset`） | `allsorts` 子集 + cmap 级等价检查 + 真 libass 逐像素 RGBA 对照；复杂脚本一律回退整份 |

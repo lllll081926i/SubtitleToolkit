@@ -134,36 +134,68 @@ CSRI_F__BGR,      // 0x103
 与字幕画没画无关（实测两帧都是 76800/76800）。改成核**颜色**
 （白像素 = 字幕、黑像素 = 底）。
 
-## 6 本次**不**做的事（说清楚，免得被当成已做）
+## 6 本次做到了哪一步（后续更新）
 
-### 6.1 没接进 `renderer-host`
+### 6.1 CSRI 链**已接进 `renderer-host`**（同日）
 
-链本身通了，但 host 仍**硬编码** `render_libass::Provider`。要接进去得：
+新增 `crates/renderer-host/src/backend.rs`：按导出表分派到两条链之一。
+实测（真 VSFilterMod.dll，经完整 CLI 管道）：
 
-1. 把 `serve_render_requests` 的 `script: &render_libass::Script` 换成
-   一个 provider 无关的脚本句柄；
-2. `provider.render_frame(...)` 返回的 libass 图像链要抽象成
-   "一帧 RGBA"（CSRI 那条直接给像素，两条形状不同）；
-3. `provider.add_font(...)` 对 CSRI 没有对应 API（那条链不支持内存字体注入）。
+```
+命令：subtitletool-cli render x.ass --libass-dll VSFilterMod.dll
+结果：ok=true, events=1, samples=50, rendered_frames=1, pngs=1
+     两条链产出的 XML 都是 516 字节
+     （PNG 字节数不同：两个不同渲染器栅格化必然不同，那不是错误）
+```
 
-**第 3 条是语义差异，不是机械重构**：CSRI 头文件里没有加字体的入口，
-所以"注入字体"在 CSRI 链上只能**报告不支持**，不能假装做了。
+接的过程中抳出并修掉五个真问题：
 
-**不允许的实现**："先试 libass，失败再试 CSRI" —— 那会在进程里留下
-半初始化状态，而这正是 `renderer-host` 要用进程隔离避免的东西。
-分派必须**先看导出表**（12 §1），然后只走一条链。
+1. **CSRI 给的是“带不透明背景的合成位图”，与 libass 的语义不同。**
+   实测：CSRI 对同一输入产 3 帧（10493/10730/10493），libass 只产 1 帧。
+   下游 `image_core::Frame::bbox` 是**按 alpha 判定可见内容**的，
+   于是不透明背景被看成“整幅画布都有内容”。`front.rs` 末尾补的空白采样
+   （`Frame::empty`，全透明）与 CSRI 的“全不透明黑”不相等，
+   产出长度为零的事件 → `STK-BDN-0059 事件结束不晚于开始`。
+   修法：在 backend 侧把背景剥成透明（判据“与角点同色且不透明”，
+   敲掉多少记账）。**判据不完美，所以它只做一件事且可观察**。
+2. **客户端握手校验写死了 `provider == "libass"`** —— 把诚实的 `csri` 拒了。
+   改成“认识的名字就放行”，真正要拒的是“我不认识的 provider”。
+3. **`render_libass::Script<'a>` 借用 `Provider`**，与“可变借用 backend”冲突。
+   `Symbols` 加 `Copy`，`Script` 拷一份函数表而不再借用。
+4. **三处错误码跨 crate 冲突**（唯一性测试报出）：改为 98/99/100。
+5. **握手的 `version` 成了空串** —— 两条链都要真打开才知道版本，
+   而握手发生在脚本到达之前。**没有去伪造**，而是把契约改清楚。
 
-### 6.2 AT-RENDER-002 仍不验收
+### 6.2 AT-RENDER-002：做到了哪一步，没做到哪一步
 
-规格要的是"**证明它的崩溃只终止 renderer-host，GUI 可重试**"。
-那需要先接进 host + 一次真的崩溃注入。本轮的产出是**那条链本身**，
-不是那条验收。探测 ≠ 渲染 ≠ 隔离证据，三者不能互相代替。
+注入点已移到**真的要调 provider 的那一刻**（`render-abort` / `render-hang`），
+因为原来那几个都在 `serve()` 最早期跑，那时连 provider 都没打开 ——
+它们验的是“host 启动阶段死了会怎样”，不是规格要的那件事。
 
-### 6.3 其他
+实测（真 CSRI provider）：
+
+```
+主进程活着：Crashed { exit_code: 3221226505 (0xC0000409) }
+崩溃现场：阶段=render；序号=1；已运行=37ms；provider=x64；
+         provider sha256=87a9c3c1ab76…；原因=出帧中途 abort
+重试成功：4233 个不透明像素
+挂住时超时：Timeout { waited_ms: 2000 }
+现场落盘：crash_dir/host-crash.json
+```
+
+**仍不验收。** 规格要的是让**那个第三方 DLL 自己**崩。
+那需要它的代码里有一个可触发的缺陷或我们能控制的崩溃入口（两者都没有），
+而“喂坏数据碰运气”不是可复现的测试。
+本轮的注入复现的是**同一个时序**，而隔离机制要对付的正是那个时序 ——
+**但这不是规格要求的那条证据**。
+
+### 6.3 其他仍未做
 
 - `VSFilterMod.dll` 不进任何发行物（21 §1，GPL-3.0）。
-- VapourSynth / AviSynth 两条 legacy 链未做（12 §1C）—— 它们与 CSRI 独立，
-  各自需要一套宿主接口。
+- VapourSynth / AviSynth 两条 legacy 链未做（12 §1C）。
+- **CSRI 链不支持内存字体注入**（头文件没那个入口）。
+  `backend` 暴露 `supports_font_injection()`，host 不支持时打明确警告 ——
+  静默不注入会让用户以为字形来自他给的那份字体。
 - `render-libass` 里还留着自己那份 `LibHandle`。
 
 ## 7 验证记录

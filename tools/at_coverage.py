@@ -46,14 +46,14 @@ COVERAGE = {
     ),
     "AT-RENDER-002": (
         "uncovered",
-        "**本轮把前置条件推到了只剩最后一步。** CSRI **渲染链已实现**（`crates/render-csri`），"
-        "并用真实 `third_party/VSFilterMod.dll` 实测跑通（识别为 vsfiltermod_textsub 2.39；"
-        "640x480 @2.0s 输出 1882 个白像素字幕 + 303907 黑底；时刻敏感 —— 5.0s 起 0 个）。"
-        "但规格要的是“**证明它的崩溃只终止 renderer-host，GUI 可重试**”，"
-        "而那需要先把它接进 `renderer-host`（当前仍硬编码 libass）加一次真的崩溃注入。"
-        "**探测 ≠ 渲染 ≠ 隔离证据**，三者不能互相代替，所以仍不验收。"
-        "接进 host 的阻碍里有一条是语义差异不是机械重构：CSRI 头文件没有加字体的入口，"
-        "所以“注入字体”在那条链上只能报告不支持。见 csri-render-chain 裁决。",
+        "**CRSI 链已实现、已接进 `renderer-host`、已做崩溃隔离实测**（均用真实 "
+        "`third_party/VSFilterMod.dll`）：经完整 CLI 管道出帧结构一致（events=1, samples=50, "
+        "rendered_frames=1），握手报 provider=csri，主进程在 host abort 时存活并拿到 "
+        "`exit_code=3221226505` 与完整崩溃现场（阶段=render/序号=1/已运行=37ms/provider sha256），"
+        "重试能成（4233 个不透明像素），挂住会超时（waited_ms=2000）。\n"
+        "**但仍不验收**：规格要的是让**那个第三方 DLL 自己**崩，而那需要它的代码里有一个"
+        "可触发的缺陷或我们能控制的崩溃入口（两者都没有），“喂坏数据碰运气”不是可复现的测试。"
+        "本轮的注入点复现的是**同一个时序**，但**不是规格要求的那条证据**，所以不计作验收。",
     ),
     "AT-RENDER-003": (
         "uncovered",

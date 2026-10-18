@@ -85,17 +85,32 @@ libass-9.dll 被正确拒绝：STK-RND-0096
 而 21 §1 说"进程边界不自动解决分发许可义务"，所以**GPL 的 DLL 不随包发** ——
 两件事独立。
 
-**仍未接进 `renderer-host`**（仍硬编码 libass）。接它要改三处，
-而其中一处是**语义差异**而不是机械重构：CSRI 头文件里没有加字体的入口，
-所以"注入字体"在那条链上只能**报告不支持**。
-**不允许"先试 libass 失败再试 CSRI"** —— 那会在进程里留下半初始化状态，
+**已接进 `renderer-host`**（同日）：新增 `renderer-host/src/backend.rs`，
+按导出表分派到两条链之一。实测经完整 CLI 管道：
+
+```
+subtitletool-cli render x.ass --libass-dll VSFilterMod.dll
+→ ok=true, events=1, samples=50, rendered_frames=1, pngs=1
+   两条链产出的 XML 都是 516 字节
+```
+
+接的过程中抳出五个真问题（详见裁决），其中最要紧的一个是：
+**CSRI 给的是“带不透明背景的合成位图”，与 libass 的语义不同** —— 
+下游按 alpha 判定可见内容，于是不透明背景被看成整幅画布都有内容，
+产出一个长度为零的事件（`STK-BDN-0059`）。已在 backend 侧把背景剥成透明。
+
+**不允许“先试 libass 失败再试 CSRI”** —— 那会在进程里留下半初始化状态，
 而分派必须**先看导出表**再只走一条链。
 
-**AT-RENDER-002 仍不验收**：规格要的是"证明它的崩溃只终止 renderer-host"，
-而那需要先接进 host 加一次真的崩溃注入。探测 ≠ 渲染 ≠ 隔离证据。
+**AT-RENDER-002 仍不验收**：注入点已移到“真的要调 provider 的那一刻”
+（`render-abort` / `render-hang`），实测主进程活着、拿到
+`exit_code=3221226505` 与完整崩溃现场（阶段/序号/已运行/provider sha256/原因），
+重试能成（4233 个不透明像素），挂住会超时。
+但规格要的是让**那个第三方 DLL 自己**崩，而那需要它的代码里有一个
+可触发的缺陷（我们没有）——“喂坏数据碰运气”不是可复现的测试。
+本轮的注入复现的是**同一个时序**，**但不是规格要求的那条证据**。
 
 详见 [CSRI 渲染链裁决](../reviews/2026-10-17-csri-render-chain.md)。
-
 - 2026 xy-VSFilter 的 release 说明表明其 external CSRI backend 使用标准 `csri_stream_ext` + `CSRI_F_BGRA`，并指出 Masaiki 的 VSFilterMod r5.3.0 可作为兼容 provider；这证明“特定 VSFilterMod build 可以是 CSRI provider”，不是证明所有历史 VSFilterMod.dll 都可以。
 - 当前工作区的 `third_party/VSFilterMod.dll` 静态导出表含 `csri_*` 符号，但来源提交未核实。导出名存在不等于 ABI 或输出行为兼容；该文件尚未由本项目加载或通过真实画面对照。
 

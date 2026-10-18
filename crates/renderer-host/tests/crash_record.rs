@@ -182,6 +182,7 @@ fn a_stale_note_is_not_reported_as_this_run_crash() {
         // 短超时：握手会失败（a.ass 不存在），但我们关心的是清理
         timeout: std::time::Duration::from_secs(3),
         crash_injection: None,
+        lie_about_script_len: false,
         crash_dir: Some(&crash_dir),
     };
     match Host::start(&spec) {

@@ -73,6 +73,7 @@ fn start_with_crash(
         default_font: "Arial",
         timeout,
         crash_injection: crash,
+        lie_about_script_len: false,
         crash_dir: None,
     })
 }
@@ -257,6 +258,7 @@ fn at_render_003_an_x86_provider_is_never_handed_to_the_x64_host() {
             default_font: "Arial",
             timeout: Duration::from_secs(5),
             crash_injection: None,
+            lie_about_script_len: false,
             crash_dir: None,
         })
         .expect_err("x86 provider 交给 x64 host 必须被拒绝");
@@ -283,6 +285,7 @@ fn at_render_003_an_x86_provider_is_never_handed_to_the_x64_host() {
         default_font: "Arial",
         timeout: Duration::from_secs(5),
         crash_injection: None,
+        lie_about_script_len: false,
         crash_dir: None,
     })
     .expect_err("非 PE 文件必须被拒");

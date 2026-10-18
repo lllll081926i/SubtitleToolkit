@@ -272,6 +272,8 @@ async fn render_script(
             default_font: "Arial",
             timeout: std::time::Duration::from_secs(5),
             crash_injection: None,
+            // 生产路径不谎报长度：那个开关只服务于 AT-RENDER-002 的注入用例。
+            lie_about_script_len: false,
             crash_dir: crash.as_deref(),
         };
 

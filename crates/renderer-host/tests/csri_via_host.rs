@@ -104,6 +104,7 @@ fn start_csri() -> Result<
         default_font: "Arial",
         timeout: Duration::from_secs(30),
         crash_injection: None,
+        lie_about_script_len: false,
         crash_dir: None,
     };
     let mut host = renderer_host::client::Host::start(&spec)?;
@@ -205,6 +206,7 @@ fn a_libass_dll_is_dispatched_to_the_libass_chain_not_csri() {
         default_font: "Arial",
         timeout: Duration::from_secs(30),
         crash_injection: None,
+        lie_about_script_len: false,
         crash_dir: None,
     };
     let host = renderer_host::client::Host::start(&spec).expect("libass host 应当起得来");

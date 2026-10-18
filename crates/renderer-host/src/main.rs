@@ -21,12 +21,49 @@ use renderer_host::pe::{self, PeArch};
 use renderer_host::protocol::{self, Handshake, Message, Request, Response, API_VERSION};
 
 fn main() -> ExitCode {
+    suppress_crash_dialog();
     match serve() {
         Ok(()) => ExitCode::SUCCESS,
         // 任何非零退出码在主进程侧都会被当成"host 没了"，所以这里必须是干净的失败
         Err(reason) => {
             eprintln!("[renderer-host] {reason}");
             ExitCode::from(4)
+        }
+    }
+}
+
+/// 关掉 Windows 的“程序已停止工作”对话框。
+///
+/// ## 为什么这是**产品**行为而不是测试便利
+///
+/// `renderer-host` 的整个存在前提就是**第三方 DLL 会崩**（12 §2 的进程隔离）。
+/// 而那些崩溃绝大多数是访问违例 —— 默认行为是弹一个模态对话框，
+/// 等一个不会来的人去点“关闭”。
+///
+/// 于是一个应该被隔离机制吞掉的 provider 崩溃，变成了**用户面前的一个弹窗**，
+/// 而且它会**挂住整条管道**：host 在等对话框，客户端在等 host。
+///
+/// 这正是 AT-RENDER-002 要防的事，所以在 host 自己的进程里设。
+/// **关掉的是对话框，不是崩溃** —— 进程照样死、退出码照样是 0xC0000005，
+/// 而错误卡里照样有现场。
+///
+/// 注：在子进程里设而不是依赖父进程传递。`SEM_NOGPFAULTERRORBOX` 会随
+/// `CreateProcess` 继承，但那只在父进程也设了的情况下成立 ——
+/// 发布形态里父进程是 explorer.exe，它不会设。
+fn suppress_crash_dialog() {
+    #[cfg(windows)]
+    {
+        // SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX
+        const SEM_FAILCRITICALERRORS: u32 = 0x0001;
+        const SEM_NOGPFAULTERRORBOX: u32 = 0x0002;
+        const SEM_NOOPENFILEERRORBOX: u32 = 0x8000;
+        unsafe extern "system" {
+            fn SetErrorMode(mode: u32) -> u32;
+        }
+        // 这是启动时的一次性调用，不涉及并发，也不看返回值 ——
+        // 设不上只会多一个对话框，不该把 host 变成启动失败。
+        unsafe {
+            SetErrorMode(SEM_FAILCRITICALERRORS | SEM_NOGPFAULTERRORBOX | SEM_NOOPENFILEERRORBOX);
         }
     }
 }
@@ -291,6 +328,19 @@ fn serve() -> Result<(), String> {
     // 而实际用的是系统字体，结果是渲染出来的东西与预期不同却不报警。
     // 所以这里发一条告警（22 §：不能说悄悄地少做一件事）。
     let ass_text = String::from_utf8_lossy(&ass).to_string();
+    // 22 §6 / AT-RENDER-002：**在调 provider 之前先把现场写下去**。
+    //
+    // 为什么必须在这里而不是等失败时再写：真实的 provider 崩溃是**硬故障**
+    // （访问违例 0xC0000005、栈溢出），进程直接被内核掐掉，
+    // 根本不执行任何 Rust 的返回路径 —— “失败时写现场”在那里永远不会跑。
+    // 实测就是如此：不先写的话，主进程拿到的 `crash_note` 是 `None`，
+    // 而一个没有现场的崩溃记录对用户几乎没用。
+    //
+    // 代价是每次打开 provider 都写一次盘。为了把它压到最小，
+    // 写入放在 `Backend::open` **之前**而不是之后 ——
+    // 那时的记录已经是完整的（provider 路径/哈希/位数/画布都在 tracker 里），
+    // 唯一缺的是“刚才那一步结果如何”，而硬故障之下那个本来也拿不到。
+    let _ = tracker.write("打开 provider 前（AT-RENDER-002：真故障不执行返回路径）");
     let mut backend = match renderer_host::backend::Backend::open(
         &dll_path,
         &ass_text,

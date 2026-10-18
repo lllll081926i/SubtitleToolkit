@@ -114,12 +114,42 @@ impl CsriProvider {
     /// 脚本**从内存给**（`csri_open_mem`）优先：宿主已经把脚本读进来并校验过，
     /// 再让 provider 去读一次盘会把"我们校验过的那份"与"它读的那份"
     /// 变成两个可能不同的东西。只有在 provider 不支持内存入口时才回退到文件。
+    ///
+    /// ## `declared_script_len`：为什么要把一个参数写成这样的名字
+    ///
+    /// 正常调用传 `None`，长度就是 `script.len()`。
+    /// 传 `Some(n)` 会向 provider **谎报**长度 —— 而这个参数存在的唯一理由
+    /// 是 AT-RENDER-002：
+    ///
+    /// > 证明其崩溃只终止 renderer-host
+    ///
+    /// 那个"其"是**第三方 DLL 自己**，不能用注入/poison 代替。
+    /// 而已知的真崩溃点就在这里：`csri_open_mem` 的 `length` 若大于真实缓冲，
+    /// VSFilterMod **不做上界检查**，越界读到访问违例（实测 0xC0000005）。
+    ///
+    /// 把它写成显式参数而不是"从环境变量里读"，是因为这样**看得见**：
+    /// 读代码的人在这个签名上就知道存在一条能谎报长度的路径，
+    /// 而不会以为 `script.len()` 是唯一的真相。调用方只有 `renderer-host`，
+    /// 而它只在 `STK_HOST_LIE_ABOUT_LENGTH` 被显式设上时才传 `Some`。
     pub fn open(
         path: &Path,
         script: &str,
         script_path_for_open_file: Option<&Path>,
         width: u32,
         height: u32,
+    ) -> Result<CsriProvider> {
+        Self::open_with_declared_len(path, script, script_path_for_open_file, width, height, None)
+    }
+
+    /// 见 [`Self::open`] 的 `declared_script_len` 说明。
+    /// 谎报长度是一件需要被看见的事，所以它单独有一个入口。
+    pub fn open_with_declared_len(
+        path: &Path,
+        script: &str,
+        script_path_for_open_file: Option<&Path>,
+        width: u32,
+        height: u32,
+        declared_script_len: Option<usize>,
     ) -> Result<CsriProvider> {
         // ---- ① 位数（12 §3）----
         let arch = core_model::pe::arch_of_file(path).map_err(|e| {
@@ -201,12 +231,18 @@ impl CsriProvider {
         let mut script_c = script.as_bytes().to_vec();
         script_c.push(0);
         let inst = if let Some(open_mem) = api.open_mem {
+            // 正常路径下 declared 就是真长度；只有 AT-RENDER-002 的用例会谎报，
+            // 用来逼出 provider 自己的越界读（它不是我们的输入校验问题，
+            // 而是 provider 缺了那道校验）。
+            let declared = declared_script_len.unwrap_or(script.len());
             // SAFETY：缓冲以 0 结尾且在这次调用期间有效。
+            // `declared` 如果被谎报大了，从这里越界读**是故意的** ——
+            // 那种情况下本调用会访问违例，而 host 本来就是为了装住它才存在的。
             unsafe {
                 open_mem(
                     renderer,
                     script_c.as_ptr() as *const c_void,
-                    script.len(),
+                    declared,
                     std::ptr::null_mut(),
                 )
             }

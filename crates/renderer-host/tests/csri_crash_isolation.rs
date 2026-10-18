@@ -19,9 +19,13 @@
 //! 或一个我们能控制的崩溃入口 —— 两者我们都没有，而"故意喂坏数据让它崩"
 //! 不是可复现的测试，是碰运气。
 //!
-//! 所以这里的注入点**在 provider 调用的前一刻**：它复现的是**同一个时序**
+//! 所以这类用例的注入点**在 provider 调用的前一刻**：它复现的是**同一个时序**
 //! （控制面在等回复、而对面已经死了），而隔离机制要对付的正是那个时序。
-//! **但这不是规格要求的那条证据**，所以 AT-RENDER-002 **仍记为未验收**。
+//!
+//! **真正的“让第三方 DLL 自己崩”在 `at_render_002.rs`**：那条用例向
+//! `csri_open_mem` 谎报脚本长度，逼出 VSFilterMod 自己的越界读（实测 0xC0000005）。
+//! 两个文件分开，是因为它们验的**不是同一件事** ——
+//! 这里验“宿主自己死了会怎样”，那边验“provider 死了会怎样”。
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -101,6 +105,9 @@ fn spec<'a>(
         timeout: Duration::from_secs(20),
         crash_injection,
         crash_dir,
+        // 这套用例走的是“host 自己死”而不是“provider 自己死”，
+        // 后者在 at_render_002.rs 里。
+        lie_about_script_len: false,
     }
 }
 

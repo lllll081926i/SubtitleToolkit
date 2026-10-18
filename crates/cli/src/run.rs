@@ -2008,6 +2008,8 @@ fn render_host_report() -> serde_json::Value {
         default_font: "Arial",
         timeout: std::time::Duration::from_secs(10),
         crash_injection: None,
+        // 生产路径不谎报长度：那个开关只服务于 AT-RENDER-002 的注入用例。
+        lie_about_script_len: false,
         // doctor 的握手演练也用同一个目录：它跑的就是真 host，
         // 而一旦它在启动时就崩，那份现场正是诊断最需要的东西。
         crash_dir: crash.as_deref(),

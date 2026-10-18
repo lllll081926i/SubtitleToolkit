@@ -34,6 +34,33 @@ pub const CRASH_ENV: &str = "STK_HOST_CRASH";
 /// 与 `CRASH_ENV` 同一类（**启动环境**而不是控制面）：客户端无法在运行时
 /// 把它改到别处，也就不存在"让 host 往任意目录写文件"这条路径。
 pub const CRASH_DIR_ENV: &str = "STK_HOST_CRASH_DIR";
+
+/// AT-RENDER-002：**故意谎报脚本长度**，逼真 provider 自己崩。
+///
+/// ## 为什么需要它
+///
+/// 规格要求“证明其崩溃只终止 renderer-host”，而“其”指的是**第三方 DLL 自己**。
+/// 不能用注入/poison 代替。找到的真崩溃点是：
+///
+/// ```text
+/// csri_open_mem(rdr, data, length, ...) 的 length 大于真实缓冲
+///   → VSFilterMod 不做上界检查 → 越界读 → 0xC0000005
+/// ```
+///
+/// 而 host 的**正常**路径会先 `read_bounded` 校验长度（23 §输入上限），
+/// 所以这道缺陷在正常路径上碰不到 —— 要复现它必须**绕过那道校验**。
+///
+/// ## 为什么用显式开关而不是“让 host 偶尔不校验”
+///
+/// 开关的名字本身说明了它在造什么。静默地偶尔不校验会让这条用例
+/// 变成一个**碰运气**的 flake，而且看代码的人不知道那里为什么少一道检查。
+///
+/// ## 它进不了发行物
+///
+/// 与 `CRASH_ENV` 同一类：只能由宿主进程的**启动环境**开启，
+/// 控制面协议里没有任何字段能触发它 —— 客户端无法让 host 去谎报长度。
+pub const LIE_ABOUT_LENGTH_ENV: &str = "STK_HOST_LIE_ABOUT_LENGTH";
+
 pub const FRAME_CHUNK_BYTES: usize = 16 * 1024 * 1024;
 
 /// 握手结果：12 §2 要求逐项交代 provider 类型、名字、版本、PE 位数、API 版本、像素格式。

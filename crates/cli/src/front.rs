@@ -118,6 +118,8 @@ pub(crate) fn render_to_plan(job: &RenderJob<'_>) -> Result<Rendered> {
         default_font: job.default_font,
         timeout: std::time::Duration::from_secs(30),
         crash_injection: None,
+        // 生产路径不谎报长度：那个开关只服务于 AT-RENDER-002 的注入用例。
+        lie_about_script_len: false,
         // 22 §6：崩溃现场写到数据目录下的 host-crashes/。
         // 走 `DataDir` 于是便携包里自动落在包内，不需另外一套目录规则。
         crash_dir: crash.as_deref(),

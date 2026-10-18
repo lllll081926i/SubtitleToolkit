@@ -30,8 +30,31 @@ use core_model::error::Result;
 use core_model::time::Time;
 use render_api::capability::ProviderKind;
 
-/// 一次渲染的产物（provider 无关）。
+/// AT-RENDER-002：若 `STK_HOST_LIE_ABOUT_LENGTH` 被设上，返回一个**大于真实长度**的
+/// 长度，交给 `csri_open_mem`。正常路径返回 `None`（用真长度）。
 ///
+/// ## 这个函数在造什么
+///
+/// 它造的是一个**provider 自己的缺陷**：`csri_open_mem` 的 `length` 大于真实缓冲时，
+/// VSFilterMod 不做上界检查，越界读到访问违例（实测 0xC0000005）。
+/// 规格要求"证明其崩溃只终止 renderer-host"，而那个"其"就是它。
+///
+/// ## 为什么不是“挑个畸形输入碰运气”
+///
+/// 它是**定向**的：我们确切知道 provider 缺的是哪一道检查，
+/// 于是只去绕那一道。其余 17 种违反 CSRI 契约的输入都不让它崩
+/// （探针逐项验过，见 `docs/reviews/2026-10-17-at-render-002-real-crash.md`）——
+/// 也就是说它确实没防御，只是只有这一条走到了越界读。
+///
+/// ## 它进不了发行物
+///
+/// 只能由宿主进程的启动环境开启；控制面协议里没有任何字段能触发它。
+fn lying_script_len(script: &str) -> Option<usize> {
+    let on = std::env::var_os(crate::protocol::LIE_ABOUT_LENGTH_ENV).is_some();
+    on.then(|| script.len() + (1 << 24))
+}
+
+/// 一次渲染的产物（provider 无关）。
 /// 与 `render_libass::Rendered` 的差别：这里只有**像素与元数据**，
 /// 没有 libass 特有的图像链。两条链都要能填出这个结构。
 pub struct RawFrame {
@@ -74,12 +97,16 @@ impl Backend {
                 // "它读的那份"变成两个可能不同的东西。
                 // 只在 provider 不支持内存入口时才会用到路径 —— 那种
                 // 情况下它会明确报 STK-RND-0092，而不是默默读盘。
-                let p = render_csri::CsriProvider::open(
+                let p = render_csri::CsriProvider::open_with_declared_len(
                     dll,
                     script,
                     None,
                     output.width,
                     output.height,
+                    // AT-RENDER-002：只有在显式开关下才向 provider 谎报长度。
+                    // 正常路径永远传 None —— 那个开关只能从**启动环境**来，
+                    // 控制面协议里没有任何字段能触发它。
+                    lying_script_len(script),
                 )?;
                 Ok(Backend::Csri(Box::new(p)))
             }

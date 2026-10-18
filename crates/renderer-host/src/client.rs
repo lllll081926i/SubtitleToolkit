@@ -45,6 +45,19 @@ pub struct HostSpec<'a> {
     /// 由调用方指定而不是硬编码：部署形态不同（便携包、安装版、测试）
     /// 应该落在不同的目录里，而那是调用方知道的事。
     pub crash_dir: Option<&'a Path>,
+    /// AT-RENDER-002 的第二条通路：让宿主向 CSRI provider **谎报脚本长度**，
+    /// 逼它自己越界读。
+    ///
+    /// ## 为什么它与 `crash_injection` 是两个字段
+    ///
+    /// `crash_injection` 让宿主**自己死**（`abort`/`exit`/`panic`/`hang`）——
+    /// 那验的是“宿主启动阶段没了会怎样”。
+    /// 而规格要的是“**第三方 DLL 自己**崩” —— 那只能从 provider 的代码里发生。
+    /// 把两者揉成一个字段会让人以为它们是一回事。
+    ///
+    /// 它是**启动环境**而不是控制面：传 `true` 就是设上 `STK_HOST_LIE_ABOUT_LENGTH`，
+    /// 发布二进制没有可远程触发的路径。
+    pub lie_about_script_len: bool,
 }
 
 /// 把 host 回传的 details 拼成一句可读的尾巴。
@@ -185,6 +198,11 @@ impl Host {
         let mut command = Command::new(spec.host_exe);
         if let Some(how) = spec.crash_injection {
             command.env(protocol::CRASH_ENV, how);
+        }
+        // AT-RENDER-002：让 host 向 provider 谎报长度（见该字段的说明）。
+        // 与上面那一行是**两件事**：上面让 host 自己死，这里让 provider 自己死。
+        if spec.lie_about_script_len {
+            command.env(protocol::LIE_ABOUT_LENGTH_ENV, "1");
         }
         // 22 §6：崩溃现场写到哪儿。与 `STK_HOST_CRASH` 同一类：
         // 启动环境而不是控制面，客户端无法在运行时改它。

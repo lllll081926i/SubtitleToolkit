@@ -18,6 +18,7 @@
 | VapourSynth/AviSynth adapter | 可选 | 未实现 | legacy 可选项，不阻塞 libass |
 | Font health | P1 | 基础扫描与报告已实现 | DirectWrite 权威、完整字体环境和外部渲染仍需核验 |
 | Font subset | 后续 | 已实现（`font subset`） | `allsorts` 子集 + cmap 级等价检查 + 真 libass 逐像素 RGBA 对照；复杂脚本一律回退整份 |
+| 17 §7 字体注入报告 | 已交付 | 真 libass 与 CSRI **两条链对照实测**：libass 报 2 份真注入（字节数+sha256），CSRI 报 `injected: []` + `skipped_by_chain: 2` 并说明“字形来自系统字体”；不再出现“发出去了”被当成“进去了” | 无 `user_action` 指向可行替代（如改用 libass 链）；`batch` 侧字段无专属用例 |
 | MKV helper | 后续 | 已实现（`mkv identify\|extract\|remux`） | 调用外部 MKVToolNix；原文件不改，产物重读逐轨校验（AT-MKV-001 已执行通过；无 EBML 自实现） |
 | Media probe | P1 | ffprobe adapter 已实现 | 真实工具与视频样本验证；只提供建议，不自动改速度 |
 | Smart sync | 可选 | 已实现确定性执行（`time --piecewise`） | `PiecewiseMap` 多段线性映射，控制点由调用方显式给出；**不做**剪辑点自动检测（需要内容比对，另一条研究线）。RL01 的自动对齐仍未做 |
@@ -26,9 +27,8 @@
 | Windows GUI | P0 产品目标 | 已接通（Iced 工作台 + 真 batch 通路）；AT-UI-001 已**实测**（最慢 18.5µs / 预算 8ms）；A/B 分屏对比已接真变换 | 真人交互/IME/DPI 实测未做；A/B 不演示时间轴变换 |
 | Installer、portable、签名与更新 | 发布阶段 | portable 包已实现（checksums + SBOM + notices 三件套）；**安装器**已交付（`tools/make_installer.ps1` + `verify_installer.ps1`，28 §3 五条逐项验过）；**更新器**第一版已交付（`check-updates`，只做版本比对、不出网） | **Authenticode 签名未做**；all-users 模式只核对静态声明；x86 host **可构建但未随包分发**（前提是 x86 DLL 许可审计，21 §6）；更新器默认 URL 不是真实地址 |
 | 36 §1 AppSettings | 已交付 | `settings show\|init\|set`；未知字段保留、坏文件不阻塞、原子写 | — |
-| 36 §1 ToolDefaults | 已交付 | `tool-defaults show\|init\|set`；只登记白名单键、拼错写入前就拒、`show` 报实际生效取值 | `batch` 明确不接（保可重放） |
+| 36 §1 ToolDefaults | 已交付 | `tool-defaults show\|init\|set`；只登记白名单键、拼错写入前就拒、`show` 报实际生效取值；`pgs encode`/`render`/`mkv`/`font subset` 在用户没给参数时真的查它；报告里 `resolved_from` 报出每一项来源；非法值报 `STK-INP-0219` 不静默退回 | `batch` **有意不接**（spec 是 JobSnapshot 层，接了会破坏“可重放”）；GUI 无入口 |
 | 36 §1 **Preset（TOML）** | 已交付 | `core_model::preset` + `preset show\|validate\|example`；真 TOML、未知字段往返保留、schema 向前迁移判定、后缀碰撞检查 | `batch --preset` 直接接入未做（与已冻结 JobSnapshot 的“可重放”语义相冲）；第五层 Plan 未实现 |
-| 36 §1 ToolDefaults | 已交付 | `tool-defaults show\|init\|set`；`pgs encode`/`render`/`mkv`/`font subset` 在用户没给参数时真的查它；报告里 `resolved_from` 报出每一项来源；非法值报 `STK-INP-0219` 不静默退回 | `batch` **有意不接**（spec 是 JobSnapshot 层）；GUI 无入口 |
 | 17 §5 subset equivalence corpus | 已交付 | `font-service/tests/subset_corpus.rs`（9 用例）逐项回答规格列的 11 项；字符级必回退、字体级能做就做且等价、Latin ligatures 必须真做 | **缺 golden 图像比较**（规格要的 rendered RGBA；需固定语料与参考图，先撞许可审计 21 §6）；variable 的**轴保真未证明** |
 | 37 §2 渲染缓存 | 已交付 | 内存共享 + 磁盘（配额、清理、损坏自愈、跨运行复用） | 内存那级不是容量受限 LRU；benchmark 阈值（37 §6）未做 |
 | 05 §4.1 A/B 分屏对比 | 已交付 | 左原版/右变换（HDR 调光 + 等比缩放），用 `transform_hdr`/`transform_resolution` 同一份实现；恒等映射会说明原因 | 分隔线不可拖；时间轴变换不参与 |

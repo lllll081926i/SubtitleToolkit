@@ -69,6 +69,10 @@ libass-9.dll     → None           导出 50 个名字，看着像 libass = tru
 
 **仍未做**：CSRI **渲染链**（探测能认出 CSRI provider，但 `renderer-host`
 仍只有 libass 一条链）。所以 AT-RENDER-002 仍不验收。
+设计与许可边界已写成待办：[CSRI 渲染链](CSRI_RENDER_CHAIN_NEXT.md)（`docs/planning/`）。
+要点：**loader 可以写**（21 §6 说它就是"用户提供/可选外部 renderer provider
+通过 renderer-host/CSRI 调用"），而**GPL 的 DLL 不能随包发**——
+两件事互相独立，且 21 §1 明说"进程边界不自动解决分发许可义务"。
 详见 [provider 能力探测裁决](../reviews/2026-10-17-provider-capability-probe.md)。
 - 2026 xy-VSFilter 的 release 说明表明其 external CSRI backend 使用标准 `csri_stream_ext` + `CSRI_F_BGRA`，并指出 Masaiki 的 VSFilterMod r5.3.0 可作为兼容 provider；这证明“特定 VSFilterMod build 可以是 CSRI provider”，不是证明所有历史 VSFilterMod.dll 都可以。
 - 当前工作区的 `third_party/VSFilterMod.dll` 静态导出表含 `csri_*` 符号，但来源提交未核实。导出名存在不等于 ABI 或输出行为兼容；该文件尚未由本项目加载或通过真实画面对照。

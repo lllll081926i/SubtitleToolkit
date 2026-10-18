@@ -79,8 +79,25 @@ pub struct SpecOutput {
     pub overwrite: Option<String>,
 }
 
+/// 默认命名模板。
+///
+/// 与 15 §5 逐字一致：`{stem}.{profile}.{width}x{height}.{fps}.{hdr}.{ext}`。
+///
+/// ## 为什么不能只写 `{stem}.{profile}.{ext}`
+///
+/// 那是第一版的写法，实用上有一个坑：**只要用户把 profile 名起得与格式同形**
+/// （叫 `srt`、`sup`、`ass`——这是最自然的起法），产物就会变成
+/// `demo.srt.srt`、`demo.sup.sup`。实测过：给一个名为 `srt` 的 profile，
+/// 产物就是 `demo.srt.srt`。
+///
+/// 名字里带上尺寸/帧率/HDR 之后，即使 profile 名为 `SRT`，产物也是
+/// `demo.SRT.1920x1080.25.sdr.srt` —— 仍是多余的，但**信息量是完整的**，
+/// 而且与规格写的一致。
+///
+/// 注意这**不是**在替用户防呆：用户显式给了 `template` 就完全按他的来。
+/// 这里只管默认值。
 fn default_template() -> String {
-    "{stem}.{profile}.{ext}".to_string()
+    "{stem}.{profile}.{width}x{height}.{fps}.{hdr}.{ext}".to_string()
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

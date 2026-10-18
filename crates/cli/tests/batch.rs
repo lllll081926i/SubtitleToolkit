@@ -136,7 +136,7 @@ fn batch_dry_run_writes_nothing_and_no_jobstate() {
     let spec = write_spec(
         &dir,
         r#"{"id":"t-dry","roots":["."],"include":["*.ass"],
-          "profiles":[{"name":"sub","format":"srt"}],"output":{"dir":"out"},
+          "profiles":[{"name":"sub","format":"srt"}],"output":{"dir":"out","template":"{stem}.{profile}.{ext}"},
           "video_association":false}"#,
     );
     let out = run(&[
@@ -173,7 +173,7 @@ fn batch_partial_success_keeps_the_good_outputs_and_names_the_bad_one() {
     let spec = write_spec(
         &dir,
         r#"{"id":"t-partial","roots":["."],"include":["*.ass","*.sup"],
-          "profiles":[{"name":"sub","format":"srt"}],"output":{"dir":"out"},
+          "profiles":[{"name":"sub","format":"srt"}],"output":{"dir":"out","template":"{stem}.{profile}.{ext}"},
           "video_association":false}"#,
     );
     let out = run(&["batch", "--spec", spec.to_str().unwrap(), "--json"]);
@@ -206,7 +206,7 @@ fn batch_reuses_only_artifacts_that_still_hash_right() {
         // 而默认 rename 会写到兄弟文件名上（那是 15 §6 的正确行为，见 skip 测试）
         r#"{"id":"t-reuse","roots":["."],"include":["*.ass"],
           "profiles":[{"name":"sub","format":"srt"}],
-          "output":{"dir":"out","overwrite":"replace"},
+          "output":{"dir":"out","overwrite":"replace","template":"{stem}.{profile}.{ext}"},
           "video_association":false}"#,
     );
     let first = run(&["batch", "--spec", spec.to_str().unwrap(), "--json"]);
@@ -247,7 +247,7 @@ fn batch_skip_policy_never_touches_an_existing_output_and_says_so() {
         &dir,
         r#"{"id":"t-skip","roots":["."],"include":["*.ass"],
           "profiles":[{"name":"sub","format":"srt"}],
-          "output":{"dir":"out","overwrite":"skip"},"video_association":false}"#,
+          "output":{"dir":"out","overwrite":"skip","template":"{stem}.{profile}.{ext}"},"video_association":false}"#,
     );
     let out = run(&["batch", "--spec", spec.to_str().unwrap(), "--json"]);
     assert!(
@@ -315,7 +315,7 @@ fn batch_text_only_job_does_not_need_libass() {
     let spec = write_spec(
         &dir,
         r#"{"id":"t-nodll","roots":["."],"include":["*.ass"],
-          "profiles":[{"name":"sub","format":"srt"}],"output":{"dir":"out"},
+          "profiles":[{"name":"sub","format":"srt"}],"output":{"dir":"out","template":"{stem}.{profile}.{ext}"},
           "video_association":false}"#,
     );
     let exe = env!("CARGO_BIN_EXE_subtitletool-cli");
@@ -343,8 +343,7 @@ fn batch_with_render_profile_reports_the_renderer_identity() {
     let spec = write_spec(
         &dir,
         r#"{"id":"t-render","roots":["."],"include":["*.ass"],
-          "profiles":[{"name":"pgs","format":"pgs","canvas":"1920x1080","fps":"25"}],
-          "output":{"dir":"out"},"video_association":false}"#,
+          "profiles":[{"name":"pgs","format":"pgs","canvas":"1920x1080","fps":"25"}],"output":{"dir":"out","template":"{stem}.{profile}.{ext}"},"video_association":false}"#,
     );
     // 这个 spec 不给 dll 路径也没有 STK_LIBASS_DLL 时必须明确失败，而不是瞎找一个 DLL：
     // 先断言"没渲染器就报错"，再用 spec 的 libass_dll 字段跑通
@@ -355,7 +354,7 @@ fn batch_with_render_profile_reports_the_renderer_identity() {
         format!(
             r#"{{"id":"t-render","roots":["."],"include":["*.ass"],
   "profiles":[{{"name":"sup","format":"pgs","canvas":"1920x1080","fps":"25"}}],
-  "output":{{"dir":"out2"}},"libass_dll":"{}","video_association":false}}"#,
+  "output":{{"dir":"out2","template":"{{stem}}.{{profile}}.{{ext}}"}},"libass_dll":"{}","video_association":false}}"#,
             dll.display().to_string().replace('\\', "\\\\")
         ),
     )
@@ -406,7 +405,7 @@ fn batch_bdn_profile_is_a_directory_artifact_whole_directory_must_match_to_reuse
             r#"{{"id":"t-bdn","roots":["."],"include":["*.ass"],
   "profiles":[{{"name":"bdn","format":"bdn","canvas":"1920x1080","fps":"25"}},
                {{"name":"sub","format":"srt"}}],
-  "output":{{"dir":"out"}},"libass_dll":"{}","video_association":false}}"#,
+  "output":{{"dir":"out","template":"{{stem}}.{{profile}}.{{ext}}"}},"libass_dll":"{}","video_association":false}}"#,
             spec_dll(&dll)
         ),
     )
@@ -502,7 +501,7 @@ fn batch_bdn_profile_is_a_directory_artifact_whole_directory_must_match_to_reuse
         format!(
             r#"{{"id":"t-bdn","roots":["."],"include":["*.ass"],
   "profiles":[{{"name":"bdn","format":"bdn","canvas":"1920x1080","fps":"25","min_axis":300}}],
-  "output":{{"dir":"out"}},"libass_dll":"{}","video_association":false}}"#,
+  "output":{{"dir":"out","template":"{{stem}}.{{profile}}.{{ext}}"}},"libass_dll":"{}","video_association":false}}"#,
             spec_dll(&dll)
         ),
     )
@@ -543,7 +542,7 @@ fn batch_shares_one_render_between_sup_and_bdn_profiles() {
                {{"name":"sub","format":"srt"}},
                {{"name":"ass1080","format":"ass","canvas":"1920x1080","fps":"25"}},
                {{"name":"ass2160","format":"ass","canvas":"3840x2160","fps":"25"}}],
-  "output":{{"dir":"out"}},"libass_dll":"{}","video_association":false}}"#,
+  "output":{{"dir":"out","template":"{{stem}}.{{profile}}.{{ext}}"}},"libass_dll":"{}","video_association":false}}"#,
             spec_dll(&dll)
         ),
     );
@@ -603,7 +602,7 @@ fn batch_does_not_share_renders_across_different_frame_rates() {
             r#"{{"id":"t-notshared","roots":["."],"include":["*.ass"],
   "profiles":[{{"name":"bdn25","format":"bdn","canvas":"1920x1080","fps":"25"}},
                {{"name":"bdn30","format":"bdn","canvas":"1920x1080","fps":"30"}}],
-  "output":{{"dir":"out"}},"libass_dll":"{}","video_association":false}}"#,
+  "output":{{"dir":"out","template":"{{stem}}.{{profile}}.{{ext}}"}},"libass_dll":"{}","video_association":false}}"#,
             spec_dll(&dll)
         ),
     );
@@ -720,5 +719,47 @@ fn at_batch_001_hundred_inputs_by_three_profiles_partial_failure_is_contained() 
         "SENTINEL",
         "默认 rename 不得覆盖既有输出"
     );
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// 默认命名模板必须与 15 §5 逐字一致。
+///
+/// 回归用例：第一版的默认模板是 `{stem}.{profile}.{ext}`，
+/// 于是一个名为 `srt` 的 profile（最自然的起法）会产出 `demo.srt.srt`。
+/// 实测过。现在写上尺寸/帧率/HDR，名字虽然仍冗长但**信息是完整的**。
+///
+/// 这里不写死完整文件名，而是断言**它包含了规格要求的每个 token 的产物**：
+/// 写死文件名会把用例变成“改模板就红”，而它要钉的是“模板包含哪些字段”。
+#[test]
+fn the_default_output_name_carries_every_spec_field() {
+    let dir = workspace("defaultname");
+    write(&dir, "demo.ass", ASS);
+    let spec = write_spec(
+        &dir,
+        r#"{"id":"t-defaultname","roots":["."],"include":["*.ass"],
+          "profiles":[{"name":"sub","format":"srt"}],"output":{"dir":"out"},
+          "video_association":false}"#,
+    );
+    let out = run(&["batch", "--spec", spec.to_str().unwrap(), "--json"]);
+    assert!(
+        out.status.success(),
+        "batch 应成功：{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let produced: Vec<String> = std::fs::read_dir(dir.join("out"))
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().to_string_lossy().to_string())
+        .filter(|n| n.ends_with(".srt"))
+        .collect();
+    assert_eq!(produced.len(), 1, "应当只有一个 srt 产物：{produced:?}");
+    let name = &produced[0];
+    // 5 个 token 的取值都要在名字里：stem / profile / WxH / fps / hdr / ext
+    for part in ["demo", "sub", "1920x1080", "25", "sdr", "srt"] {
+        assert!(
+            name.contains(part),
+            "默认模板的产物名 {name:?} 缺少 {part:?}（15 §5 要求带尺寸/帧率/HDR）"
+        );
+    }
     std::fs::remove_dir_all(&dir).ok();
 }

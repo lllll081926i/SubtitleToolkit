@@ -148,6 +148,36 @@ x86 host **已能构建**且与 x64 输出逐字节一致，但**尚未随包分
 ## 6. Updates
 第一版可只“检查更新并打开 release 页面”；成熟后做 signed manifest + staged download。不要在早期自写高权限 auto-updater。
 
+**已实现（2026-10-17，第一版且比第一版更保守）**：`subtitletool-cli check-updates`
+（`crates/cli/src/update.rs`）。
+
+| 规格允许 | 实现 |
+| --- | --- |
+| 检查更新 | ✅ 版本比对（严格 `MAJOR.MINOR.PATCH`） |
+| 打开 release 页面 | ❌ **只打印 URL**（起浏览器要 `ShellExecuteW`，在无桌面会话里行为不定） |
+| signed manifest + download | ❌ 不做（规格说等“成熟后”） |
+| 自写 auto-updater | ❌ 不做（规格禁止） |
+
+三条设计决定：
+
+1. **不出网**。不引 HTTP 客户端；清单由调用方经 `--manifest FILE` 提供。
+   更新检查是本项目**唯一**会主动出网的功能，把它做成一条独立可审计的路径，
+   比把 TLS 栈拖进依赖树（连带许可审计）小得多；它也是供应链攻击的经典入口，
+   而一个**不下载任何东西**的检查把攻击面限在“解析一个 JSON”。
+2. **不假装检查过了**。没有 `--manifest` 就报 `verdict=unknown` 并说明“无法判断”。
+   **一条静默报“已是最新”的更新检查比没有这个功能更坏。**
+3. **解析不了就 `Unknown`**，并说清是哪个字符串。宽松解析会把清单的格式错误
+   变成看似成功的比较；而“假阳性”（读错字段却说有新版）比“假阴性”更坏——
+   前者会让用户去下载一个错的东西。
+
+清单形状：`{"version":"0.2.0","url":"..."}`。`--release-url` 或清单里的 `url`
+覆盖内置默认值。
+
+**未完成**：不是自动更新（无网络获取/下载/安装）；默认 URL
+（`DEFAULT_RELEASE_URL`）**不是真实地址**（仓库尚无公开 release 站点，
+**不编一个看起来像真的**）；GUI 无入口。
+详见 [更新检查裁决](../reviews/2026-10-17-update-check.md)。
+
 ## 7. CI
 Windows x64 runner：fmt/clippy/test/nextest/fuzz smoke/build/E2E。x86 helper 单独 job。Nightly corpus test 可较重。
 

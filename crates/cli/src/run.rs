@@ -51,6 +51,10 @@ pub(crate) fn execute_ctx(
     };
     let outcome = match &inv.command {
         Command::Probe { input } => probe(input, cmd),
+        Command::CheckUpdates {
+            manifest,
+            release_url,
+        } => check_updates(manifest.as_deref(), release_url.as_deref(), cmd),
         Command::Convert {
             input,
             to,
@@ -226,6 +230,50 @@ fn suggestion_row(it: &media_probe::Suggestion) -> serde_json::Value {
         "auto_checked": it.auto_checked(),
         "evidence": it.evidence,
     })
+}
+
+/// 28 §6 的更新检查（第一版）。
+///
+/// **只读、不出网、不下载、不安装。** 版本清单由调用方提供（--manifest）。
+/// 没有清单时给出 `Unknown` + 一个可以自己打开的地方 ——
+/// **不假装检查过了**（静默报“已是最新”比没有这个功能更坏）。
+fn check_updates(
+    manifest: Option<&Path>,
+    release_url: Option<&str>,
+    cmd: &str,
+) -> Result<Envelope> {
+    let text = match manifest {
+        Some(p) => Some(crate::pipeline::read_bounded(
+            p,
+            crate::pipeline::MAX_TEXT_BYTES,
+            "版本清单",
+        )?),
+        None => None,
+    };
+    let text = text
+        .as_deref()
+        .map(|b| String::from_utf8_lossy(b).to_string());
+    let r = crate::update::report(env!("CARGO_PKG_VERSION"), text.as_deref(), release_url)?;
+    Ok(Envelope::ok(
+        cmd,
+        serde_json::json!({
+            "local": r.local,
+            "remote": r.remote,
+            "verdict": match r.verdict {
+                crate::update::Verdict::Newer => "newer",
+                crate::update::Verdict::Same => "same",
+                crate::update::Verdict::Older => "older",
+                crate::update::Verdict::Unknown => "unknown",
+            },
+            "verdict_label": r.verdict.label(),
+            "detail": r.detail,
+            "release_url": r.release_url,
+            // 把“本程序到底做了什么”写进结果里，而不是写在文档里等人去读。
+            "downloaded": false,
+            "installed": false,
+            "meaning": "只做了版本比对，没有访问网络、没有下载、没有安装任何文件",
+        }),
+    ))
 }
 
 fn probe(path: &Path, cmd: &str) -> Result<Envelope> {

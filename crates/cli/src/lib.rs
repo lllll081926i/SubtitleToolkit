@@ -20,6 +20,7 @@ pub mod render;
 pub(crate) mod rendercache;
 pub mod run;
 pub mod subset;
+pub mod update;
 
 use std::io::Write;
 

@@ -22,6 +22,10 @@ usage: subtitletool-cli <command> [options] [--out PATH] [--json] [--dry-run]
 
 commands:
   probe        <file>                探测格式/编码；视频文件读帧率候选（需要 ffprobe）
+  check-updates [--manifest FILE.json] [--release-url URL]
+                     28 §6：只做**版本比对**。不访问网络、不下载、不安装。
+                     没有 --manifest 就报 unknown 并给出可以自己打开的地址（不假装检查过了）
+                     清单形状：{\"version\":\"0.2.0\",\"url\":\"...\"}
   convert      <file> --to srt|ass|ssa
                      [--canvas WxH] [--script-policy preserve|rewrite]
                      [--layout-policy keep-as-is|scale-with-script|drop]
@@ -182,6 +186,13 @@ pub enum Command {
         canvas: Option<Canvas>,
         script_policy: ScriptResolutionPolicy,
         layout_policy: LayoutResPolicy,
+    },
+    /// 28 §6 的更新检查（第一版：**只查看，不下载不安装**）。
+    CheckUpdates {
+        /// 版本清单 JSON（`{"version":"…","url":"…"}`）；不给就是 `Unknown`。
+        manifest: Option<PathBuf>,
+        /// 发布页地址；不给用内置默认值。
+        release_url: Option<String>,
     },
     Time {
         input: PathBuf,
@@ -379,6 +390,7 @@ impl Command {
     pub fn name(&self) -> &'static str {
         match self {
             Command::Probe { .. } => "probe",
+            Command::CheckUpdates { .. } => "check-updates",
             Command::Convert { .. } => "convert",
             Command::Time { .. } => "time",
             Command::Hdr { .. } => "hdr",
@@ -568,6 +580,40 @@ pub fn parse(argv: &[String]) -> Result<Invocation, ArgError> {
         "probe" => Command::Probe {
             input: one_input(rest)?,
         },
+        // 28 §6 的更新检查。刻意做成一个**独立子命令**而不是任何命令上的开关：
+        // 它的语义与“跑一个字幕任务”无关，混进别的命令会让人误以为
+        // 那次跑会顺带检查更新。
+        //
+        // 注意**不能用 `scan()`**：它的签名要求返回一个位置输入文件，
+        // 而本命令没有输入文件 —— 调它会在空参数时报“缺少输入文件”，
+        // 看起来像命令根本没被识别。无位置参数的命令（如 `diagnose`）都是
+        // 自己遍历 `rest` 的。
+        "check-updates" => {
+            let mut manifest: Option<PathBuf> = None;
+            let mut release_url: Option<String> = None;
+            let mut it = rest.iter();
+            while let Some(a) = it.next() {
+                match a.as_str() {
+                    "--manifest" => match it.next() {
+                        Some(v) => manifest = Some(PathBuf::from(v)),
+                        None => return Err(ArgError::usage("--manifest 后面要跟一个文件路径")),
+                    },
+                    "--release-url" => match it.next() {
+                        Some(v) => release_url = Some(v.to_string()),
+                        None => return Err(ArgError::usage("--release-url 后面要跟一个地址")),
+                    },
+                    other => {
+                        return Err(ArgError::usage(format!(
+                            "check-updates 不认识参数 {other:?}（可用：--manifest FILE、--release-url URL）"
+                        )))
+                    }
+                }
+            }
+            Command::CheckUpdates {
+                manifest,
+                release_url,
+            }
+        }
         "convert" => {
             let mut to: Option<FormatKind> = None;
             let mut canvas: Option<Canvas> = None;

@@ -61,8 +61,17 @@ COVERAGE = {
     "AT-PGS-003": ("covered", "cli/tests/cli.rs 的 palette 用例（只改 PDS）"),
     "AT-PGS-004": ("covered", "pgs-author/tests/{author,pipeline}.rs 的 Basic 编码用例"),
     "AT-BD-001": (
-        "shared",
-        "已实现 CLI 侧拒绝（2160p + Strict）；GUI 禁用解释留到 GUI 阶段，见规格原文",
+        "covered",
+        "两侧都有专属用例（以前记为 `shared`，是错的）。"
+        "拒绝层：`codec-pgs/src/encoder.rs` 的 `invalid_inputs_are_rejected_before_any_segment_is_written`"
+        "（3840 宽 → `STK-PGS-0091`，且断言**写任何段之前**就拒）；"
+        "另 `core-model/src/profile.rs::validate`（`STK-VAL-0002`）与 `canvas.rs` 的"
+        " `bluray_bounds_reject_2160_pgs`。GUI 解释层：`gui/src/state/profile.rs` 的"
+        "`problem()`/`is_runnable()` 与 9 个用例。"
+        "**并且抳出一个真缺陷**：出厂默认的 `2160p 4K HDR SUP` 自己跑不起来"
+        "（`pgs encode` 默认 `--level standard`）—— 已改成 `1080p HDR SUP`，"
+        "由 `the_default_sup_profile_is_not_4k` 钉住。"
+        "GUI 不重写判定，直接用 `core_model::Canvas::within_bluray`（单一事实源）。",
     ),
     "AT-BDN-001": ("covered", "codec-bdn/tests/png_consistency.rs + timecode.rs"),
     "AT-FONT-001": ("covered", "font-service/tests/real_fonts.rs 的缺字报告用例"),

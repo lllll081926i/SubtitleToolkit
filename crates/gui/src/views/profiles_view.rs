@@ -102,10 +102,13 @@ pub fn view<'a>(state: &'a ProfilesState) -> Element<'a, Message> {
                 .align_y(Alignment::Center),
                 row![
                     text("合规指示:").size(11).width(Length::Fixed(70.0)),
-                    text(if profile.target_format == TargetFormat::Pgs {
-                        "Basic PGS: 具备 (自适应量化)"
-                    } else {
-                        "标准交换格式 (无合规锁死)"
+                    // 原来是两句写死的话（“Basic PGS: 具备（自适应量化）” 等），
+                    // 它们会无条件这么说——包括 2160p + 严格蓝光的那个组合，
+                    // 而那正是 AT-BD-001 要求必须**明确解释**被拒原因的情形。
+                    // 现在按 `problem()` 的真实判定显示。
+                    text(match profile.problem() {
+                        None => "符合 09 §6 的硬规则",
+                        Some(_) => "不合规：看下方说明",
                     })
                     .size(11),
                 ]
@@ -114,6 +117,23 @@ pub fn view<'a>(state: &'a ProfilesState) -> Element<'a, Message> {
             .spacing(6);
 
             card_content = card_content.push(options_col);
+        }
+
+        // AT-BD-001：“UI 明确解释”——而不是只把选项置灰或只说声“无效”。
+        // 用户得知道**为什么**不行、以及可以怎么改。
+        //
+        // 只在展开编辑时显示：收起状态下卡片应当只报一个事实
+        // （“不合规”），展开才需要完整的理由与改法。
+        if let Some(why) = profile.problem() {
+            let warn =
+                column![text("⚠ 这个 Profile 跑不了").size(12), text(why).size(11),].spacing(4);
+
+            card_content = card_content.push(
+                container(warn)
+                    .padding(8)
+                    .width(Length::Fill)
+                    .style(container::bordered_box),
+            );
         }
 
         let boxed_card = container(card_content).padding(10).width(Length::Fill);

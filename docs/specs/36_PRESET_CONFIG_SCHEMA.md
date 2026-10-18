@@ -5,9 +5,70 @@
 ## 1. 配置分层
 - AppSettings：全局偏好；**已实现**（见下）；
 - ToolDefaults：每个工具默认；**已实现（2026-10-17）**（见下）；
-- Preset：用户可命名、导入导出；**未实现**（TOML 依赖未获批，见 ISSUES E4）；
+- Preset：用户可命名、导入导出；**已实现（2026-10-17）**（见下）；
 - JobSnapshot：一次执行的完整冻结参数；**已实现**（JSON batch spec + `jobstate`）；
 - Plan：Planner 解析后的实际 stage DAG；**已实现**。
+
+### Preset 的实现与边界（2026-10-17）
+
+`core_model::preset`（`crates/core-model/src/preset.rs`）+ CLI `preset show|validate|example`。
+格式是 **TOML**（规格 §2 的示例形式）。
+
+解除 ISSUES E4：新增 `toml` 依赖。已在 crates.io 官方记录核实其许可为
+**`MIT OR Apache-2.0`**（v0.9.12）—— 正是 21 §1 明确允许的宽松家族，
+且与本项目自身许可相同。E4 当时写的就是“建议批准”，阻塞只是"依赖表里没有它"
+这个**行政手续**，不是政策冲突。
+
+#### “可搬运”决定了这个模块的大部分设计
+
+因为一条 preset 会离开它被写下的那台机器。所以：
+
+- **不存绝对 DLL 路径与哈希作为硬要求**（§4）：store provider **偏好**
+  （`libass`/`csri`/`auto`），实际路径与哈希交给 JobSnapshot 记。
+  把 `D:\某人的机器\x64\libass.dll` 写进 preset，收件人一定用不了。
+- **未知字段保留**（§3）：旧版读新版写的 preset 再写回，不能把它读不懂的
+  字段吃掉。
+- **schema 高于自己时拒绝执行**（§6 第 1 条）：不猜含义。
+
+#### 与 batch spec 的**相反**策略，以及为什么两者都对
+
+batch spec 用 `deny_unknown_fields`：拼错字段**必须拒**，因为它会跑错任务。
+preset 保留未知字段：陌生字段只说明它来自别的版本，**必须留**。
+
+这不是不一致，而是**失败代价不同**：spec 猜错会产出错误的成品，
+preset 猜错只会让下一次写回丢字段。
+
+#### 三个动作各自回答一个问题
+
+| 动作 | 回答 | 典型调用者 |
+| --- | --- | --- |
+| `show` | 里面是什么？ | 想知道这份配置会产出什么的人 |
+| `validate` | 能不能用？ | CI / 提交前检查（只要退出码） |
+| `example` | 我该照什么写？ | 第一次写 preset 的人 |
+
+合一个 `show` 会让 CI 被迫解析人的输出。
+
+#### 两处实测抳出的真问题
+
+1. **`hdr.mode` 不是扁平键。** 第一版把 `HdrTarget` 写成 `#[serde(flatten)]`，
+   而规格示例里的 `hdr.mode = "off"` 在 TOML 里是**嵌套表的语法糖**
+   （等价于 `[outputs.hdr]` + `mode = "off"`），flatten 根本看不到它。
+   实测报 `unknown field hdr`。另外 serde 的 `deny_unknown_fields`
+   与 `flatten` 本来也不能共存。改成嵌套表后两边都对。
+2. **`preset example` 存出来的文件自己读不了。**
+   第一版除了样板还打了一份 JSON 信封，于是
+   `preset example > my.toml` 存出来的前半是 TOML、后半是 JSON，
+   再拿回来 `validate` 报“第 20 行 key 没有值”。
+   而 `example` 的**全部用途**就是“原样拿走存成文件”。
+   修法：给 `Envelope` 加一个显式 `raw_stdout` 标记（而不是在 `emit` 里
+   按命令名特判 —— 特判会让看 `emit` 的人不知道哪几个命令是特例）。
+
+#### 下一步（仍未做）
+
+- **`batch --preset` 的直接接入。** §6 的合成顺序是“默认 → preset → 用户显式值”，
+  而 `batch` 的 JobSnapshot 是**已冻结**的一批任务 —— 把 preset 塞进去要么
+  改写已冻结的字段（破坏“可重放”），要么只说“我读过了”（等于没接）。
+  所以本模块把 preset **解析成一组 `OutputTarget`**，由调用方决定怎么用。
 
 ### ToolDefaults 的实现与边界（2026-10-17）
 

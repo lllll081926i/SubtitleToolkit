@@ -25,7 +25,9 @@
 | OCR SUP→SRT | 可选 | 未实现 | 独立研究线，不进入 CLI MVP 前置条件 |
 | Windows GUI | P0 产品目标 | 已接通（Iced 工作台 + 真 batch 通路）；AT-UI-001 已**实测**（最慢 18.5µs / 预算 8ms）；A/B 分屏对比已接真变换 | 真人交互/IME/DPI 实测未做；A/B 不演示时间轴变换 |
 | Installer、portable、签名与更新 | 发布阶段 | portable 包已实现（checksums + SBOM + notices 三件套）；**安装器**已交付（`tools/make_installer.ps1` + `verify_installer.ps1`，28 §3 五条逐项验过）；**更新器**第一版已交付（`check-updates`，只做版本比对、不出网） | **Authenticode 签名未做**；all-users 模式只核对静态声明；x86 host **可构建但未随包分发**（前提是 x86 DLL 许可审计，21 §6）；更新器默认 URL 不是真实地址 |
-| 36 §1 AppSettings | 已交付 | `settings show\|init\|set`；未知字段保留、坏文件不阻塞、原子写 | Preset 未做（TOML 依赖未获批，ISSUES E4，外部决策） |
+| 36 §1 AppSettings | 已交付 | `settings show\|init\|set`；未知字段保留、坏文件不阻塞、原子写 | — |
+| 36 §1 ToolDefaults | 已交付 | `tool-defaults show\|init\|set`；只登记白名单键、拼错写入前就拒、`show` 报实际生效取值 | `batch` 明确不接（保可重放） |
+| 36 §1 **Preset（TOML）** | 已交付 | `core_model::preset` + `preset show\|validate\|example`；真 TOML、未知字段往返保留、schema 向前迁移判定、后缀碰撞检查 | `batch --preset` 直接接入未做（与已冻结 JobSnapshot 的“可重放”语义相冲）；第五层 Plan 未实现 |
 | 36 §1 ToolDefaults | 已交付 | `tool-defaults show\|init\|set`；`pgs encode`/`render`/`mkv`/`font subset` 在用户没给参数时真的查它；报告里 `resolved_from` 报出每一项来源；非法值报 `STK-INP-0219` 不静默退回 | `batch` **有意不接**（spec 是 JobSnapshot 层）；GUI 无入口 |
 | 17 §5 subset equivalence corpus | 已交付 | `font-service/tests/subset_corpus.rs`（9 用例）逐项回答规格列的 11 项；字符级必回退、字体级能做就做且等价、Latin ligatures 必须真做 | **缺 golden 图像比较**（规格要的 rendered RGBA；需固定语料与参考图，先撞许可审计 21 §6）；variable 的**轴保真未证明** |
 | 37 §2 渲染缓存 | 已交付 | 内存共享 + 磁盘（配额、清理、损坏自愈、跨运行复用） | 内存那级不是容量受限 LRU；benchmark 阈值（37 §6）未做 |

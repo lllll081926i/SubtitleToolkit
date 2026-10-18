@@ -11,6 +11,8 @@ pub mod limits;
 pub mod logging;
 pub mod loss;
 pub mod pe;
+/// 36 §1 第三层：用户可命名、导入导出的 preset（TOML）。
+pub mod preset;
 pub mod profile;
 pub mod settings;
 pub mod time;

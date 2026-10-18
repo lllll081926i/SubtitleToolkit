@@ -23,8 +23,7 @@ settings show → diagnose 出诊断包 → check-updates → batch 批量。
 `notices.py --check` 501 包 0 问题、AT 覆盖 **25/26**。
 
 **仍未完成（外部依赖或外部决策，非代码可解）**：
-Authenticode 签名（需证书）；Preset 的 TOML 依赖审批（ISSUES E4）；
-AT-RENDER-003（需真 x86 libass DLL，本机只有 x64）；
+Authenticode 签名（需证书，用户 2026-10-17 明确暂缓）；
 AT-RENDER-003 的**x86 DLL 路由**（需真 x86 libass 样本）；
 第 7 层设备语料（需真机/播放器）；
 subset corpus 的 golden 图像比较（需固定语料字体，先撞许可审计）；
@@ -47,6 +46,11 @@ DirectWrite fallback 链（需 COM，ISSUES AG1）；真 minidump（把数据与
 - 2026-10-17 **交付 AT-BD-001 的 GUI 侧解释**（25 §AT-BD-001）：`gui/src/state/profile.rs` 新增 `problem()`/`is_runnable()`；`profiles_view.rs` 把一句**无条件说的假话**（“Basic PGS: 具备”无例外）换成按真实判定的“符合 09 §6 的硬规则 / 不合规：看下方说明”，并在展开卡片里给出原因 + 两条可选改法。
   **本条抳出一个真缺陷**：出厂默认的第二个 profile 是 `2160p 4K HDR SUP`，而 `pgs encode` 默认 `--level standard`、标准级 PGS 不允许 3840x2160 —— 实测报 `STK-PGS-0091`。即**用户装好、什么都不改、直接排队，第一个 profile 就失败**；而且失败发生在批量执行中途。已改成 `1080p HDR SUP`（HDR 映射 `ReferenceWhite(203)` 保留），回归用例 `the_default_sup_profile_is_not_4k` 钉住；实测新默认打通真 libass 并产出合法 SUP（`PG` 魔数、`no_blocking_findings: true`）。
   GUI **不重写判定**：直接调 `core_model::Canvas::within_bluray`（组件级单一事实源），有专门用例 `gui_agrees_with_the_core_rule_it_reuses` 锁住“GUI 不另立规则”。新增 9 个用例；`cargo test -p gui --lib` 35 passed。AT 覆盖 23/26 → **24/26**。裁决：[at-bd-001-gui](reviews/2026-10-17-at-bd-001-gui.md)。
+- 2026-10-17 **交付 36 §1 第三层 Preset（TOML），并解除 ISSUES E4**。核权威来源（crates.io API）确认 `toml` 许可是 **`MIT OR Apache-2.0`** —— 正是 21 §1 明确允许的宽松家族，且与本项目自身许可相同。E4 原文写的就是「建议批准」，阻塞只是「依赖表里没有它」这个**行政手续**。用户已批准。
+  新增 `core_model::preset` + `preset show|validate|example` + `Domain::Preset`（`STK-PRE-xxxx`，单独立域：preset 故障与“输入不对”是两回事）。端到端实测：`preset example > spec.toml` 存出纯 TOML、`validate` exit=0 `problems=[]`、`show` 逐目标报出名字/格式/画布/后缀/hdr/renderer。
+  **设计主线是“可搬运”**：一条 preset 会离开它被写下的机器 → 不存绝对 DLL 路径与哈希（§4，存 provider 偏好）、未知字段保留（§3，旧版读一次不该毁掉新版配置）、schema 高于自己就拒（§6 条1，不猜）。与 batch spec 的 `deny_unknown_fields` **相反**且两者都对：区别在失败代价（spec 猜错产出错误成品，preset 猜错只丢字段）。
+  **实测抳出两个真问题**：① **`hdr.mode` 不是扁平键** —— TOML 里点号是嵌套表语法糖，`flatten` 看不到它，实测报 `unknown field hdr`（而且 serde 的 `deny_unknown_fields` 与 `flatten` 本就不能共存）；② **`preset example` 存出的文件自己读不了** —— 第一版还打 JSON 信封，`example > my.toml` 后半是 JSON，validate 报“第 20 行 key 没有值”，而 `example` 的全部用途就是“原样拿走存成文件”，修法是给 `Envelope` 加显式的 `raw_stdout`（而不是在 `emit` 里按命令名特判）。
+  另一个信号：**依赖门禁当场报出 SBOM 过期**（537 → 542 组件），重跑后 506 包 0 问题 —— 证明那道门禁真的逐个核依赖树，不信任“我记得许可没问题”。新增 21 个用例。裁决：[preset-toml](reviews/2026-10-17-preset-toml.md)。
 - 2026-10-17 **AT-RENDER-002 验收：用真第三方 provider 崩溃证明进程隔离**。我上一轮的推断（“没法让第三方 DLL 自己崩，所以不可达”）**被证伪了**。探针逐个在子进程里试了 18 种违反 CSRI 契约的输入，**18 中 1 崩**：`csri_open_mem(rdr, data, length, ...)` 的 `length` 若**大于真实缓冲**，VSFilterMod 不做上界检查，越界读到 **`0xC0000005` 访问违例**。其余 17 种（null 缓冲、截断数据、UTF-16、0x0/4G 画布、未知像素格式、null plane、非法 stride、NaN/1e300/负时间、16 字节缓冲、null ext 名…）都防御了或忽略了 —— 这个分布说明它**恰好缺一道检查**，所以那不是碰运气，是定向利用一个已知的单一缺失。
   该缺陷在**正常路径上不可达**（host 先 `read_bounded` 校验长度，而那正是 provider 缺失的那道）→ 新增 `CsriProvider::open_with_declared_len(..., Option<usize>)` **显式谎报**，让读代码的人在签名上就看见这条路径；`STK_HOST_LIE_ABOUT_LENGTH` 只能从启动环境来。
   实测（真 VSFilterMod.dll，无模拟）：主进程 **存活**且 `contained=true`、退出码 **3221225477 (0xC0000005)**、崩溃现场带 `provider sha256=87a9c3c1ab76…` 与阶段并**落盘**、**重试出帧 4233 个不透明像素**。规格三句逐条对上。AT 覆盖 **24/26 → 25/26**。
@@ -197,7 +201,8 @@ DirectWrite fallback 链（需 COM，ISSUES AG1）；真 minidump（把数据与
 ## 项目边界
 
 - 项目面向 Windows x64，正式 Rust target 为 `x86_64-pc-windows-msvc`。
-- 当前交付形态是 CLI + Iced GUI + renderer host；安装包、Authenticode 签名与更新器未实现。
+- 当前交付形态是 CLI + Iced GUI + renderer host；安装包已交付，
+  Authenticode 签名暂缓（用户明确置），更新器为第一版（不出网）。
 - Cargo 工作区包含 `subtitletool-cli.exe`、`subtitletoolkit-gui.exe` 与 `subtitletool-render-host.exe`。renderer host 用于隔离 libass DLL。
 - `P0` 等级表示产品目标优先级，不表示该功能已交付。
 
@@ -242,7 +247,9 @@ DirectWrite fallback 链（需 COM，ISSUES AG1）；真 minidump（把数据与
 
 ## 未交付或未裁决
 
-- CSRI/VSFilterMod provider、x86 renderer host 和发行安装链未实现。
+- CSRI/VSFilterMod provider 已实现并验收；x86 renderer host 可构建且路由判定已验；
+  发行安装链（portable + Inno Setup）已交付。
+  **Authenticode 签名暂缓**（用户 2026-10-17 明确置）；第三方 DLL 分发审计未完成。
 - 字体服务未使用 DirectWrite 作为权威 resolver；但已补 **GDI 权威交叉核对**
   （`font scan --json` 的 `cross_check`）：GDI 看得到而库里匹配不上的家族会逐个列出。
   DirectWrite 的 **fallback 链**仍未做（需 COM，ISSUES AG1）。
@@ -255,7 +262,10 @@ DirectWrite fallback 链（需 COM，ISSUES AG1）；真 minidump（把数据与
   **22 §2 correlation id 已实现**（`J/O/R` 三层，日志与报告同一个值）。
   **22 §6 的崩溃现场记录已实现**（阶段/帧号/provider 身份进错误卡）；
   真 minidump 仍未做（需异常处理器，且含内存镜像与 22 §5 冲突）。
-- 36 §1 的另外两层（ToolDefaults、Preset）未实现；Preset 需要 TOML 依赖获批（ISSUES E4）。
+- 36 §1 的五层中**前四层已实现**：AppSettings（`settings.json`）、ToolDefaults（`tool-defaults.json`）、
+  **Preset（TOML，2026-10-17，`preset show|validate|example`）**、JobSnapshot（JSON batch spec）。
+  **第五层 Plan（Planner 的 stage DAG）也未实现**。另：`batch --preset` 的直接接入未做
+  （§6 的合成顺序与 batch 的“已冻结快照”语义相冲，已在规格里说明）。
 
 ## 2026-10-08 早前代码审查验证
 

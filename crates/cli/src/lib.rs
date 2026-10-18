@@ -14,6 +14,7 @@ pub(crate) mod front;
 pub mod mkv;
 pub mod output;
 pub mod pipeline;
+pub mod preset;
 pub mod render;
 // 磁盘缓存与 `front`（前半链）是一体的：它的公开面里带着 `front::Rendered` /
 // `front::RenderJob`，而那两个类型本就是 crate 内部的。整体压到 `pub(crate)` 比把
@@ -81,6 +82,11 @@ pub fn dispatch(argv: Vec<String>) -> i32 {
 }
 
 fn emit(env: &output::Envelope, json: bool) -> i32 {
+    // 命令自己已经把产物写到 stdout 了（如 `preset example`）——
+    // 再写一遍信封会污染那个产物本身。见 `Envelope::raw_stdout`。
+    if env.raw_stdout {
+        return if env.ok { EXIT_OK } else { EXIT_ERROR };
+    }
     let mut out = std::io::stdout();
     let text = if json {
         format!("{}\n", env.to_json_line())

@@ -136,6 +136,9 @@ pub(crate) fn execute_ctx(
             value.as_deref(),
             cmd,
         ),
+        Command::Preset { action, path } => {
+            crate::preset::preset_cmd(*action, path.as_deref(), cmd)
+        }
         Command::Diagnose {
             include_input,
             job_state,

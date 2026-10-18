@@ -352,6 +352,7 @@
 | serde_derive | 1.0.229 | MIT OR Apache-2.0 | https://github.com/serde-rs/serde | e7a5d71263a5a7d4... | bundled(允许随包) |
 | serde_json | 1.0.151 | MIT OR Apache-2.0 | https://github.com/serde-rs/json | c841b55ecdae098c... | bundled(允许随包) |
 | serde_repr | 0.1.21 | MIT OR Apache-2.0 | https://github.com/dtolnay/serde-repr | 8d3b1629de253c70... | bundled(允许随包) |
+| serde_spanned | 1.1.2 | MIT OR Apache-2.0 | https://github.com/toml-rs/toml | 4e7523beb55eece2... | bundled(允许随包) |
 | sha2 | 0.10.9 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes | a7507d819769d01a... | bundled(允许随包) |
 | sharded-slab | 0.1.7 | MIT | https://github.com/hawkw/sharded-slab | f40ca3c46823713e... | bundled(允许随包) |
 | shlex | 2.0.1 | MIT OR Apache-2.0 | https://github.com/comex/rust-shlex | f8fadd59c855ef20... | bundled(允许随包) |
@@ -396,9 +397,12 @@
 | tinyvec | 1.13.3 | Zlib OR Apache-2.0 OR MIT | https://github.com/Lokathor/tinyvec | fd3ca314f692efd6... | bundled(允许随包) |
 | tokio | 1.53.3 | MIT | https://github.com/tokio-rs/tokio | ce3335fa71841cda... | bundled(允许随包) |
 | tokio-macros | 2.7.2 | MIT | https://github.com/tokio-rs/tokio | 78773a2a397f4515... | bundled(允许随包) |
+| toml | 0.9.12+spec-1.1.0 | MIT OR Apache-2.0 | https://github.com/toml-rs/toml | cf92845e79fc2e2d... | bundled(允许随包) |
+| toml_datetime | 0.7.5+spec-1.1.0 | MIT OR Apache-2.0 | https://github.com/toml-rs/toml | 92e1cfed4a3038bc... | bundled(允许随包) |
 | toml_datetime | 1.1.2+spec-1.1.0 | MIT OR Apache-2.0 | https://github.com/toml-rs/toml | 2b86d767906c6c42... | bundled(允许随包) |
 | toml_edit | 0.25.17+spec-1.1.0 | MIT OR Apache-2.0 | https://github.com/toml-rs/toml | e3641d5bbb5349a7... | bundled(允许随包) |
 | toml_parser | 1.1.5+spec-1.1.0 | MIT OR Apache-2.0 | https://github.com/toml-rs/toml | baa693a8032d7e1c... | bundled(允许随包) |
+| toml_writer | 1.1.3+spec-1.1.0 | MIT OR Apache-2.0 | https://github.com/toml-rs/toml | 06bdbd8cfc056b8d... | bundled(允许随包) |
 | tracing | 0.1.44 | MIT | https://github.com/tokio-rs/tracing | 63e71662fa4b2a2c... | bundled(允许随包) |
 | tracing-attributes | 0.1.31 | MIT | https://github.com/tokio-rs/tracing | 7490cfa5ec963746... | bundled(允许随包) |
 | tracing-core | 0.1.36 | MIT | https://github.com/tokio-rs/tracing | db97caf9d906fbde... | bundled(允许随包) |
@@ -475,6 +479,7 @@
 | windows_x86_64_gnullvm | 0.52.6 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | 24d5b23dc4174126... | bundled(允许随包) |
 | windows_x86_64_msvc | 0.52.6 | MIT OR Apache-2.0 | https://github.com/microsoft/windows-rs | 589f6da84c646204... | bundled(允许随包) |
 | winit | 0.30.13 | Apache-2.0 | https://github.com/rust-windowing/winit | a6755fa58a9f8350... | bundled(允许随包) |
+| winnow | 0.7.15 | MIT | https://github.com/winnow-rs/winnow | df79d97927682d2f... | bundled(允许随包) |
 | winnow | 1.0.4 | MIT | https://github.com/winnow-rs/winnow | 23b97319f7b8343d... | bundled(允许随包) |
 | wit-bindgen | 0.57.1 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | https://github.com/bytecodealliance/wit-bindgen | 1ebf944e87a7c253... | bundled(允许随包) |
 | writeable | 0.6.4 | Unicode-3.0 | https://github.com/unicode-org/icu4x | 3ad82d2a33cdc967... | bundled(允许随包) |

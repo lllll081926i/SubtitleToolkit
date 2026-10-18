@@ -58,6 +58,14 @@ font-service = { path = "crates/font-service", version = "0.1.0" }
 container-adapter = { path = "crates/container-adapter", version = "0.1.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# 36 §1 第三层 Preset：用户可命名、导入导出的配置文件。规格 §2 的示例就是 TOML。
+# 许可：`MIT OR Apache-2.0`（crates.io 官方记录核实，2026-10-17）——
+# 正是 21 §1 明确允许的宽松家族，且与本项目自身许可相同。
+# 它解除了 ISSUES E4 那个待决项。
+# 用 `toml` 而不自己写解析器：TOML 有日期时间、多行字符串、数组表等
+# 一堆边角，自写一份就是在造一个“差不多能读”的东西 ——
+# 而配置文件最不能接受的就是“差不多”（读错的配置会静默跑错任务）。
+toml = "0.9"
 # 22 §1 的日志。两者都是 MIT，符合 21 §1。
 # 选 tracing 而不是 log：22 §1 要求 structured logging，而 structured
 # （带字段的 span/event）正是 tracing 相对 log 的全部差异；用 log 就只能回到

@@ -59,6 +59,20 @@ pub struct Envelope {
     /// 不序列化：它是构造状态，不是契约的一部分。
     #[serde(skip)]
     pub came_with_corr_id: bool,
+    /// 命令已经**自己**往 stdout 写了东西，不要让 `emit` 再写一遍。
+    ///
+    /// ## 为什么需要这个
+    ///
+    /// `preset example` 的全部用途是“把样板原样拿走存成文件”
+    /// （`subtitletool preset example > my.toml`）。
+    /// 而 `emit` 默认会再写一份 JSON 信封 —— 实测结果是存出来的文件
+    /// 前半是 TOML、后半是 JSON，再拿回来 `validate` 报
+    /// “第 20 行 key 没有值”。
+    ///
+    /// 把这件事做成一个**显式标记**而不是“看命令名特判”：
+    /// 特判会散在 `emit` 里，而看到 `emit` 的人不知道哪几个命令是特例。
+    #[serde(skip)]
+    pub raw_stdout: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data: Option<serde_json::Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -78,12 +92,23 @@ impl Envelope {
             command: command.to_string(),
             corr_id: core_model::CorrId::new_job().as_string(),
             came_with_corr_id: false,
+            raw_stdout: false,
             ok: true,
             data: Some(data),
             loss: None,
             writes: Vec::new(),
             errors: Vec::new(),
         }
+    }
+
+    /// 命令已经自己往 stdout 写了内容，不要再写信封。
+    ///
+    /// 只用于 `preset example` 这类“输出就是产物本身”的命令。
+    /// 用它的命令必须自己保证退出码正确（`ok` 为 true 时 `emit` 退 0）。
+    pub fn ok_quiet(command: &str) -> Envelope {
+        let mut e = Envelope::ok(command, serde_json::Value::Null);
+        e.raw_stdout = true;
+        e
     }
 
     /// 用给定的 corr_id 构造成功信封。
@@ -104,6 +129,7 @@ impl Envelope {
             command: command.to_string(),
             corr_id: core_model::CorrId::new_job().as_string(),
             came_with_corr_id: false,
+            raw_stdout: false,
             ok: false,
             data: None,
             loss: None,

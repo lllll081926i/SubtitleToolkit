@@ -123,6 +123,7 @@ pub const COMMAND_CATALOG: &[&str] = &[
     "mkv remux",
     "cache",
     "settings",
+    "preset",
     "diagnose",
     "doctor",
 ];
@@ -182,6 +183,25 @@ pub enum SettingsAction {
     Init,
     /// 改一个受管字段：`settings set <键> <值>`。
     Set,
+}
+
+/// `preset` 的三个动作（36 §1）。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PresetAction {
+    /// 读一份 preset，报出它的目标、来源与问题（**默认**）。
+    #[default]
+    Show,
+    /// 只做校验：能读就报“能读”，不能读就报为什么。
+    ///
+    /// 与 `show` 分开是因为它们回答的问题不同：`show` 问“里面是什么”，
+    /// `validate` 问“能不能用”。后者的调用者是 CI 或“提交前检查”这类场景，
+    /// 它不需要看内容，只需要一个退出码。
+    Validate,
+    /// 把规格 §2 的样板吐到 stdout。
+    ///
+    /// 存在的理由很实际：TOML 的嵌套表与非嵌套语法容易记错，
+    /// 而一份**错的样板**比没有样板更坏 —— 用户会以为是程序不认。
+    Example,
 }
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -285,6 +305,12 @@ pub enum Command {
         key: Option<String>,
         /// `set` 的新值。
         value: Option<String>,
+    },
+    /// 36 §1 的 Preset：用户可命名、导入导出的配置文件（TOML）。
+    Preset {
+        action: PresetAction,
+        /// 要操作的 preset 文件路径。
+        path: Option<PathBuf>,
     },
     /// 22 §5 的诊断包：把故障现场打成一个 zip。
     Diagnose {
@@ -443,6 +469,7 @@ impl Command {
             Command::Cache { .. } => "cache",
             Command::Settings { .. } => "settings",
             Command::ToolDefaults { .. } => "tool-defaults",
+            Command::Preset { .. } => "preset",
             Command::Diagnose { .. } => "diagnose",
             Command::Render { .. } => "render",
             Command::Batch { .. } => "batch",
@@ -1060,6 +1087,37 @@ pub fn parse(argv: &[String]) -> Result<Invocation, ArgError> {
                 key,
                 value,
             }
+        }
+        "preset" => {
+            let action = match rest.first().map(|s| s.as_str()).unwrap_or("show") {
+                "show" => PresetAction::Show,
+                "validate" => PresetAction::Validate,
+                "example" => PresetAction::Example,
+                other => {
+                    return Err(ArgError::usage(format!(
+                        "preset 的子命令只能是 show、validate 或 example，收到 {other}"
+                    )));
+                }
+            };
+            let path = match action {
+                // `example` 不读文件：它把规格 §2 的样板吐出来，
+                // 用户拿它当起点。要求它先有个文件才能看样板是反的。
+                PresetAction::Example => {
+                    if rest.len() > 1 {
+                        return Err(ArgError::usage("preset example 不接受额外参数"));
+                    }
+                    None
+                }
+                _ => {
+                    if rest.len() != 2 {
+                        return Err(ArgError::usage(format!(
+                            "preset {action:?} 需要一个文件路径"
+                        )));
+                    }
+                    Some(PathBuf::from(&rest[1]))
+                }
+            };
+            Command::Preset { action, path }
         }
         "diagnose" => {
             let mut include_input = Vec::new();

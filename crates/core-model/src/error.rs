@@ -22,6 +22,12 @@ pub enum Domain {
     /// 输出失败意味着用户拿不到东西，缓存失败只意味着这一次慢一点。
     /// 混在一个域里，读报告的人分不清「产物坏了」和「缓存坏了」。
     Cache,
+    /// 36 §1 第三层 Preset。
+    ///
+    /// 单独立一域：preset 的故障（读不开、schema 太新、字段非法）
+    /// 与“任务自身的输入不对”是两件事。混在 `Input` 里，
+    /// 用户分不清“我的字幕有问题”还是“我的配置有问题”。
+    Preset,
 }
 
 impl Domain {
@@ -40,6 +46,7 @@ impl Domain {
             Domain::Validate => "VAL",
             Domain::Dependency => "DEP",
             Domain::Cache => "RCA",
+            Domain::Preset => "PRE",
         }
     }
 }

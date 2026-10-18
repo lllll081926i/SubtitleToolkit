@@ -67,13 +67,35 @@ VSFilterMod.dll  → Some(Csri)     导出 20 个名字，CSRI 符号齐全
 libass-9.dll     → None           导出 50 个名字，看着像 libass = true
 ```
 
-**仍未做**：CSRI **渲染链**（探测能认出 CSRI provider，但 `renderer-host`
-仍只有 libass 一条链）。所以 AT-RENDER-002 仍不验收。
-设计与许可边界已写成待办：[CSRI 渲染链](CSRI_RENDER_CHAIN_NEXT.md)（`docs/planning/`）。
-要点：**loader 可以写**（21 §6 说它就是"用户提供/可选外部 renderer provider
-通过 renderer-host/CSRI 调用"），而**GPL 的 DLL 不能随包发**——
-两件事互相独立，且 21 §1 明说"进程边界不自动解决分发许可义务"。
-详见 [provider 能力探测裁决](../reviews/2026-10-17-provider-capability-probe.md)。
+#### CSRI 渲染链已实现（2026-10-17）
+
+新增 `crates/render-csri`：CSRI C ABI（结构体偏移 `offset_of!` 编译期核对）+ 像素转换 + 加载用户提供的 provider。
+
+**真实 provider 实测**（本机 `third_party/VSFilterMod.dll`）：
+
+```
+provider 身份：name="vsfiltermod_textsub" longname="2.39"
+640x480 @2.0s：1882 个白像素（字幕）+ 303907 个黑像素（底）
+0–4.9s 有字幕，5.0s 起 0 个  ← 时刻真的传进去了
+libass-9.dll 被正确拒绝：STK-RND-0096
+```
+
+许可边界（不是脚注）：21 §6 说它的默认设计就是"用户提供/可选外部 provider，
+通过 renderer-host/CSRI 调用"，所以**写 loader 允许**；
+而 21 §1 说"进程边界不自动解决分发许可义务"，所以**GPL 的 DLL 不随包发** ——
+两件事独立。
+
+**仍未接进 `renderer-host`**（仍硬编码 libass）。接它要改三处，
+而其中一处是**语义差异**而不是机械重构：CSRI 头文件里没有加字体的入口，
+所以"注入字体"在那条链上只能**报告不支持**。
+**不允许"先试 libass 失败再试 CSRI"** —— 那会在进程里留下半初始化状态，
+而分派必须**先看导出表**再只走一条链。
+
+**AT-RENDER-002 仍不验收**：规格要的是"证明它的崩溃只终止 renderer-host"，
+而那需要先接进 host 加一次真的崩溃注入。探测 ≠ 渲染 ≠ 隔离证据。
+
+详见 [CSRI 渲染链裁决](../reviews/2026-10-17-csri-render-chain.md)。
+
 - 2026 xy-VSFilter 的 release 说明表明其 external CSRI backend 使用标准 `csri_stream_ext` + `CSRI_F_BGRA`，并指出 Masaiki 的 VSFilterMod r5.3.0 可作为兼容 provider；这证明“特定 VSFilterMod build 可以是 CSRI provider”，不是证明所有历史 VSFilterMod.dll 都可以。
 - 当前工作区的 `third_party/VSFilterMod.dll` 静态导出表含 `csri_*` 符号，但来源提交未核实。导出名存在不等于 ABI 或输出行为兼容；该文件尚未由本项目加载或通过真实画面对照。
 

@@ -13,6 +13,7 @@ pub mod pe;
 pub mod profile;
 pub mod settings;
 pub mod time;
+pub mod tool_defaults;
 
 pub use canvas::Canvas;
 pub use color::AssColor;

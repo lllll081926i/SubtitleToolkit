@@ -123,6 +123,18 @@ pub(crate) fn execute_ctx(
         Command::Settings { action, key, value } => {
             settings_cmd(*action, key.as_deref(), value.as_deref(), cmd)
         }
+        Command::ToolDefaults {
+            action,
+            tool,
+            key,
+            value,
+        } => tool_defaults_cmd(
+            *action,
+            tool.as_deref(),
+            key.as_deref(),
+            value.as_deref(),
+            cmd,
+        ),
         Command::Diagnose {
             include_input,
             job_state,
@@ -1306,6 +1318,191 @@ fn settings_cmd(
                         .unwrap_or(serde_json::Value::Null),
                     // 之前读时的警告（例如别的字段格式不对）也要一并给出，
                     // 否则用户会以为整份文件都好了。
+                    "problems": got.problems,
+                }),
+            ))
+        }
+    }
+}
+
+/// 36 §1 的 ToolDefaults：每工具默认参数的读/写/改。
+///
+/// ## 与 `settings_cmd` 刻意不共用的地方
+///
+/// 两者共用的是**纪律**（坏文件退回默认值、未知字段保留、原子写、坏文件留证据），
+/// 而不是代码：两份文件是两个独立的 schema，抽公共部分会把它们绑在一起，
+/// 而它们本来就该能各自演进。
+///
+/// 真正长在一起的只有 `SettingsAction` 那个三态枚举（show/init/set）——
+/// 那两个命令的动作集**恰好**一样，而复用它是安全的。
+fn tool_defaults_cmd(
+    action: crate::args::SettingsAction,
+    tool: Option<&str>,
+    key: Option<&str>,
+    value: Option<&str>,
+    cmd: &str,
+) -> Result<Envelope> {
+    use crate::args::SettingsAction;
+    use core_model::tool_defaults::{self as td, DefaultsStore, Tool};
+
+    // `STK_TOOL_DEFAULTS` 优先：与 `STK_SETTINGS` 同一理由。
+    let store = match std::env::var("STK_TOOL_DEFAULTS") {
+        Ok(p) if !p.trim().is_empty() => DefaultsStore::at(PathBuf::from(p)),
+        _ => DefaultsStore::current(),
+    };
+
+    /// 把所有工具的“实际生效取值”都算一遍。
+    ///
+    /// `show` 报的是**求值结果**而不是文件里有什么：用户问的是“我设的生效了吗”，
+    /// 而“文件里有这一条”不回答那个问题（它可能因键名拼错而不被采纳）。
+    fn resolved_json(d: &td::ToolDefaults) -> serde_json::Value {
+        let mut out = serde_json::Map::new();
+        for t in Tool::ALL {
+            let r = td::resolve(d, *t);
+            let known: serde_json::Map<String, serde_json::Value> = t
+                .keys()
+                .iter()
+                .map(|(k, doc)| ((*k).to_string(), serde_json::json!(doc)))
+                .collect();
+            out.insert(
+                t.name().to_string(),
+                serde_json::json!({
+                    "effective": r.effective,
+                    "unknown_keys": r.unknown_keys,
+                    // 未设置的键不出现：调用方据此沿用 CLI 自己的默认值。
+                    // 把白名单一并给出，用户不必去翻文档就知道能设什么。
+                    "allowed_keys": known,
+                }),
+            );
+        }
+        serde_json::Value::Object(out)
+    }
+
+    match action {
+        SettingsAction::Show => {
+            let got = store.load();
+            Ok(Envelope::ok(
+                cmd,
+                serde_json::json!({
+                    "path": store.path().map(|p| p.display().to_string()),
+                    "source": got.source.label(),
+                    "schema": got.defaults.schema,
+                    "tools": resolved_json(&got.defaults),
+                    "problems": got.problems,
+                    "quarantined": got.quarantined.map(|p| p.display().to_string()),
+                }),
+            ))
+        }
+        SettingsAction::Init => {
+            let got = store.load();
+            if got.source == td::DefaultsSource::File {
+                return Err(StkError::simple(
+                    Domain::Input,
+                    320,
+                    "工具默认值文件已存在，init 不会覆盖它",
+                )
+                .with_detail(
+                    store
+                        .path()
+                        .map(|p| p.display().to_string())
+                        .unwrap_or_default(),
+                )
+                .with_action("直接编辑该文件，或用 `tool-defaults set <工具> <键> <值>` 修改"));
+            }
+            let path = store.save(&got.defaults)?;
+            Ok(Envelope::ok(
+                cmd,
+                serde_json::json!({
+                    "path": path.display().to_string(),
+                    "schema": got.defaults.schema,
+                    "tools": resolved_json(&got.defaults),
+                }),
+            ))
+        }
+        SettingsAction::Set => {
+            let (Some(tool_name), Some(k), Some(v)) = (tool, key, value) else {
+                return Err(StkError::simple(
+                    Domain::Input,
+                    216,
+                    "tool-defaults set 需要三个参数：工具名 键名 值",
+                ));
+            };
+            let Some(t) = Tool::from_name(tool_name) else {
+                return Err(
+                    StkError::simple(Domain::Input, 217, "不认识的工具名").with_detail(format!(
+                        "{}；已知：{}",
+                        tool_name,
+                        Tool::ALL
+                            .iter()
+                            .map(|x| x.name())
+                            .collect::<Vec<_>>()
+                            .join("、")
+                    )),
+                );
+            };
+            // **写之前**就拒白名单外的键。
+            //
+            // 允许写进去的后果：它能存下来但**不生效**（`resolve` 会把它归到
+            // `unknown_keys`），于是用户看到“设置成功了”却看不到任何变化——
+            // 而那正是最难查的一类问题。
+            if !t.keys().iter().any(|(kk, _)| *kk == k) {
+                return Err(
+                    StkError::simple(Domain::Input, 218, "这个工具没有该默认项，拒绝写入")
+                        .with_detail(format!("{tool_name} 不认识键 {k:?}"))
+                        .with_action(
+                            format!(
+                                "{} 可设的键：{}",
+                                tool_name,
+                                t.keys()
+                                    .iter()
+                                    .map(|(kk, _)| *kk)
+                                    .collect::<Vec<_>>()
+                                    .join("、")
+                            )
+                            .as_str(),
+                        ),
+                );
+            }
+
+            let got = store.load();
+            // 与 AppSettings 同一条：schema 高于本程序就只读不写。
+            if got.defaults.schema > td::CURRENT_SCHEMA {
+                return Err(StkError::simple(
+                    Domain::Input,
+                    321,
+                    "工具默认值文件的 schema 高于本程序支持的版本，拒绝写回",
+                )
+                .with_detail(format!(
+                    "文件 schema={}，本程序支持到 {}",
+                    got.defaults.schema,
+                    td::CURRENT_SCHEMA
+                ))
+                .with_action("用较新版本的程序修改，或手工编辑该文件"));
+            }
+
+            // 值的类型：`true`/`false` 存布尔，能当整数解析的存数字，其余存字符串。
+            // 不一律存字符串的理由：数字与布尔的区别会丢，而下游每次都要重新解析。
+            let parsed = match v {
+                "true" => serde_json::json!(true),
+                "false" => serde_json::json!(false),
+                other => match other.parse::<i64>() {
+                    Ok(n) => serde_json::json!(n),
+                    Err(_) => serde_json::json!(other),
+                },
+            };
+
+            let mut d = got.defaults.clone();
+            d.tools
+                .entry(tool_name.to_string())
+                .or_default()
+                .insert(k.to_string(), parsed);
+            let path = store.save(&d)?;
+            Ok(Envelope::ok(
+                cmd,
+                serde_json::json!({
+                    "path": path.display().to_string(),
+                    "changed": format!("{tool_name}.{k}"),
+                    "tools": resolved_json(&d),
                     "problems": got.problems,
                 }),
             ))

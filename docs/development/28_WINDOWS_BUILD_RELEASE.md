@@ -117,7 +117,8 @@ x86 host **已能构建**且与 x64 输出逐字节一致，但**尚未随包分
 `data_dir.kind=portable`；`font scan` 后缓存确实落在 `<解包目录>/data/fontdb-v1.json`；
 包内每个文件的 SHA-256 与 `SHA256SUMS.txt` 一致。回归用例：`crates/cli/tests/portable.rs`。
 
-仍未实现：settings/presets/logs 的落盘（目前只有字体库缓存走数据目录）。
+**已补齐（同日）**：settings、日志与诊断包都已走 `DataDir`，不再只有字体库缓存。
+剩下的只有 **Preset/ToolDefaults（36 §1 的其余两层）** —— 见本节末。
 
 **AppSettings 已落地（2026-10-17，36 §1）**：`core_model::SettingsStore` + CLI `settings show|init|set`。
 
@@ -140,7 +141,9 @@ x86 host **已能构建**且与 x64 输出逐字节一致，但**尚未随包分
 未知字段往返不丢、`init` 拒绝覆盖、5 种非法取值全被拒且不落文件、
 坏文件降级并保留证据、设置确实落在 `DataDir` 内。
 
-仍未实现：ToolDefaults / Preset（36 §1 的其余两层）与日志落盘。
+仍未实现：**Preset（36 §1 第四层）** 卡在 TOML 依赖审批（ISSUES E4）；
+ToolDefaults 的**存储与求值已实现**（见 36 §1），但 CLI 命令尚未在“用户没给参数时”
+去查它——那是接入层，需单独做（见 [tool-defaults 裁决](../reviews/2026-10-17-tool-defaults.md)）。
 
 ## 5. Signing
 正式 release：所有 EXE/DLL/installer 用同一 publisher identity Authenticode；timestamp server；CI 验证签名后再上传。

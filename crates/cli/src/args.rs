@@ -85,6 +85,13 @@ commands:
 cache [stat|clear]                 37 §2：报账或清理磁盘渲染缓存
 settings [show|init|set]           36 §1：查看/初始化/修改全局偏好
    settings set <键> <值>           受管字段：log_level / ui_language / default_fps / default_canvas
+tool-defaults [show|init|set]      36 §1 的第二层：每个工具的默认参数
+   tool-defaults set <工具> <键> <值>
+                     工具名与子命令名同源（含空格的要加引号），如：
+                       tool-defaults set \"pgs encode\" level standard
+                       tool-defaults set render min_axis 8
+                     只收白名单内的键：写之前就拒，不会存下一个不生效的设置
+                     show 报的是**实际生效取值**与白名单，不是文件里有什么
 diagnose [--include-input F]…      22 §5：打出诊断包 zip（**默认不含**原字幕/视频，附上需点名）
 
 全局开关：--json（单行信封）/ --dry-run（不写盘）/ --out PATH / --overwrite skip|rename|replace
@@ -255,6 +262,16 @@ pub enum Command {
         /// `set` 的新值；其余动作是空。
         value: Option<String>,
     },
+    /// 36 §1 的 ToolDefaults：每个工具的默认参数（分层里的第二层）。
+    ToolDefaults {
+        action: SettingsAction,
+        /// `set` 的工具名（与 CLI 子命令名同源，例如 `pgs encode`）。
+        tool: Option<String>,
+        /// `set` 的键名。
+        key: Option<String>,
+        /// `set` 的新值。
+        value: Option<String>,
+    },
     /// 22 §5 的诊断包：把故障现场打成一个 zip。
     Diagnose {
         /// 要附进去的输入文件（**显式**选择才会包含用户内容）。
@@ -400,6 +417,7 @@ impl Command {
             Command::Doctor => "doctor",
             Command::Cache { .. } => "cache",
             Command::Settings { .. } => "settings",
+            Command::ToolDefaults { .. } => "tool-defaults",
             Command::Diagnose { .. } => "diagnose",
             Command::Render { .. } => "render",
             Command::Batch { .. } => "batch",
@@ -931,6 +949,61 @@ pub fn parse(argv: &[String]) -> Result<Invocation, ArgError> {
                 }
             };
             Command::Settings { action, key, value }
+        }
+        // 36 §1 的 ToolDefaults。与 `settings` 分开而不是做成它的子命令：
+        // 两者是分层的**两层**（AppSettings 全局偏好 vs 每工具默认），
+        // 而 `settings set tool.pgs.level ...` 这种写法会让人以为全局只有一个命名空间。
+        "tool-defaults" => {
+            let action = match rest.first().map(|s| s.as_str()).unwrap_or("show") {
+                "show" => SettingsAction::Show,
+                "init" => SettingsAction::Init,
+                "set" => SettingsAction::Set,
+                other => {
+                    return Err(ArgError::usage(format!(
+                        "tool-defaults 的子命令只能是 show、init 或 set，收到 {other}"
+                    )));
+                }
+            };
+            let (tool, key, value) = match action {
+                SettingsAction::Set => {
+                    if rest.len() != 4 {
+                        return Err(ArgError::usage(
+                            "tool-defaults set 需要三个参数：工具名 键名 值\n\
+                             （例：tool-defaults set \"pgs encode\" level standard）",
+                        ));
+                    }
+                    // 工具名先在这里校验：把它留到执行阶段会在“写好了却发现没用”之后才发现。
+                    // 工具名可能含空格（`pgs encode`），所以它仍是一个 argv 元素（要加引号）。
+                    if core_model::tool_defaults::Tool::from_name(&rest[1]).is_none() {
+                        return Err(ArgError::value(format!(
+                            "不认识工具 {:?}（已知：{}）",
+                            rest[1],
+                            core_model::tool_defaults::Tool::ALL
+                                .iter()
+                                .map(|t| t.name())
+                                .collect::<Vec<_>>()
+                                .join("、")
+                        )));
+                    }
+                    (
+                        Some(rest[1].clone()),
+                        Some(rest[2].clone()),
+                        Some(rest[3].clone()),
+                    )
+                }
+                _ => {
+                    if rest.len() > 1 {
+                        return Err(ArgError::usage("tool-defaults show/init 不接受额外参数"));
+                    }
+                    (None, None, None)
+                }
+            };
+            Command::ToolDefaults {
+                action,
+                tool,
+                key,
+                value,
+            }
         }
         "diagnose" => {
             let mut include_input = Vec::new();

@@ -262,6 +262,70 @@ impl TaskDrawerState {
             .count()
     }
 
+    /// **该重试的那些行**：失败的 + 根本没跑到的，改成（输入路径, profile 名）。
+    ///
+    /// ## 为什么要连“没跑到的”一起带上
+    ///
+    /// AT-RENDER-002 要的是“GUI 可重试”，而用户看到的是“这一格红了”。
+    /// 而一次失败常常连带后面整批（例如渲染器崩了，剩下的还没开始）。
+    /// 只重试 `Failed` 会让那些格子永远停在那里，
+    /// 而它们与红的那些**一样没产出东西**。
+    ///
+    /// ## “没跑到的”同时包含两种状态
+    ///
+    /// - `NotAttempted`：worker 明确报了“因为前面的失败而中止”；
+    /// - `Queued`：跑完了但这一格**从未被报告过** —— 对用户而言
+    ///   它与 `NotAttempted` 是同一件事（没东西出来）。
+    ///
+    /// 把 `Queued` 也算进来不是宽容，而是**避免一个死角**：
+    /// 如果 worker 因故没给某格发状态，那格会永远停在 Queued，
+    /// 而重试按钮会视而不见 —— 用户只能点“开始”把整批重跑。
+    ///
+    /// ## 为什么连“已成功的”不带
+    ///
+    /// 重试成功的不但浪费一遍，还会**重写已经好的产物** ——
+    /// 用户点“重试”想要的是“把缺的补上”，不是“全部重来”。
+    /// 要全部重来他可以再点“开始”。
+    pub fn retry_targets(&self) -> Vec<(String, String)> {
+        let mut out: Vec<(String, String)> = Vec::new();
+        for t in &self.tasks {
+            let wants = matches!(
+                t.status,
+                TaskStatus::Failed { .. } | TaskStatus::NotAttempted { .. } | TaskStatus::Queued
+            );
+            if !wants {
+                continue;
+            }
+            // 同一对 (输入, profile) 只留一条：矩阵里本来就不该有重复，
+            // 但真有的话重试两次会互相覆写同一份产物。
+            let pair = (t.input.clone(), t.profile_name.clone());
+            if !out.contains(&pair) {
+                out.push(pair);
+            }
+        }
+        out
+    }
+
+    /// 重试之前把要重试的那些行**退回 Queued**。
+    ///
+    /// 不这么做的话，统计会把上次的红格子继续算进去，
+    /// 而界面会显示“跑完了，但还有 3 个失败” —— 那与“正在重试”矛盾。
+    ///
+    /// 返回有多少行被动过。
+    pub fn reset_for_retry(&mut self) -> usize {
+        let mut n = 0;
+        for t in &mut self.tasks {
+            if matches!(
+                t.status,
+                TaskStatus::Failed { .. } | TaskStatus::NotAttempted { .. }
+            ) {
+                t.status = TaskStatus::Queued;
+                n += 1;
+            }
+        }
+        n
+    }
+
     /// 整体判定：只要有任何一格没成功或没跑，就不是 success。
     /// 与 CLI 的 `JobOutcome` 同一套优先级（14 §Multi-output）。
     pub fn derived_outcome(&self) -> &'static str {
@@ -447,5 +511,118 @@ mod tests {
             reason: String::new()
         }
         .is_success());
+    }
+
+    /// AT-RENDER-002：“GUI 可重试”—— **只重跑该重跑的那些**。
+    ///
+    /// 三条同时成立才算对：
+    /// 1. 失败的进集合；
+    /// 2. **没跑到的**也进（一次失败常常连带后面整批没开始）；
+    /// 3. **已成功的绝不进** —— 重试它们会重写已经好的产物。
+    #[test]
+    fn retry_targets_are_exactly_the_failed_and_not_attempted_rows() {
+        let mut d = TaskDrawerState::new();
+        let inputs = vec![
+            ("a.ass".to_string(), "a.ass".to_string()),
+            ("b.ass".to_string(), "b.ass".to_string()),
+            ("c.ass".to_string(), "c.ass".to_string()),
+        ];
+        let profiles = vec!["srt".to_string(), "pgs".to_string()];
+        d.plan(&inputs, &profiles);
+
+        d.apply(
+            "a.ass",
+            "srt",
+            TaskStatus::Verified {
+                detail: "ok".into(),
+            },
+        );
+        d.apply(
+            "a.ass",
+            "pgs",
+            TaskStatus::Failed {
+                code: "STK-RND-0001".into(),
+                detail: "渲染器挂了".into(),
+            },
+        );
+        d.apply(
+            "b.ass",
+            "srt",
+            TaskStatus::NotAttempted {
+                reason: "前面的失败中止了本批".into(),
+            },
+        );
+        d.apply(
+            "c.ass",
+            "srt",
+            TaskStatus::FromCache {
+                detail: "skip".into(),
+            },
+        );
+
+        let t = d.retry_targets();
+        // 该进的四条：a/pgs（失败）、b/srt（明确没跑到）、b/pgs 与 c/pgs（从未被报告）。
+        // 不该进的两条：a/srt（已验证）、c/srt（from-cache，skip 也是成功）。
+        assert_eq!(
+            t.len(),
+            4,
+            "应当是 a/pgs、b/srt、b/pgs、c/pgs 四条，实际 {t:?}"
+        );
+        assert!(!t.iter().any(|(i, p)| i == "a.ass" && p == "srt"), "{t:?}");
+        assert!(!t.iter().any(|(i, p)| i == "c.ass" && p == "srt"), "{t:?}");
+        assert!(t.iter().any(|(i, p)| i == "a.ass" && p == "pgs"), "{t:?}");
+        assert!(t.iter().any(|(i, p)| i == "b.ass" && p == "srt"), "{t:?}");
+    }
+
+    /// 退回 Queued 之后，统计不能还把上次的红格子算进去。
+    ///
+    /// 不这么做的话，界面会显示“跑完了，但还有 3 个失败”——
+    /// 而那与“正在重试”互相矛盾。
+    #[test]
+    fn reset_for_retry_clears_the_previous_failures_from_the_counts() {
+        let mut d = TaskDrawerState::new();
+        d.plan(
+            &[("a.ass".to_string(), "a.ass".to_string())],
+            &["srt".to_string(), "pgs".to_string()],
+        );
+        d.apply(
+            "a.ass",
+            "srt",
+            TaskStatus::Failed {
+                code: "STK-X".into(),
+                detail: "x".into(),
+            },
+        );
+        d.apply(
+            "a.ass",
+            "pgs",
+            TaskStatus::Verified {
+                detail: "ok".into(),
+            },
+        );
+        assert_eq!(d.failed_tasks(), 1);
+
+        let n = d.reset_for_retry();
+        assert_eq!(n, 1, "只该退回那一个失败的");
+        assert_eq!(d.failed_tasks(), 0, "退回去之后就不算失败了");
+        assert_eq!(d.completed_tasks(), 1, "已成功的不能被动过");
+    }
+
+    /// 全部成功时没有可重试的 —— 界面不该出现一个点了没反应的按钮。
+    #[test]
+    fn nothing_to_retry_when_everything_succeeded() {
+        let mut d = TaskDrawerState::new();
+        d.plan(
+            &[("a.ass".to_string(), "a.ass".to_string())],
+            &["srt".to_string()],
+        );
+        d.apply(
+            "a.ass",
+            "srt",
+            TaskStatus::Verified {
+                detail: "ok".into(),
+            },
+        );
+        assert!(d.retry_targets().is_empty());
     }
 }

@@ -46,11 +46,17 @@ COVERAGE = {
     ),
     "AT-RENDER-002": (
         "covered",
-        "**已验收（真第三方 provider 崩溃）**：`crates/renderer-host/tests/at_render_002.rs`。探针逐项试了 18 种违反 CSRI 契约的输入，"
-        "只有一种让 VSFilterMod 崩：`csri_open_mem` 的 `length` 大于真实缓冲时它不做上界检查，"
-        "越界读到 **0xC0000005 访问违例**。用例向它谎报长度（`STK_HOST_LIE_ABOUT_LENGTH`，"
-        "只能从启动环境来）逼出真崩溃，实测：主进程存活且 `contained=true`、退出码 3221225477、"
-        "崩溃现场带 provider sha256 与阶段并落盘、重试出帧 4233 个不透明像素。\n"
+        "**已验收（真第三方 provider 崩溃 + GUI 可重试）**："
+        "`crates/renderer-host/tests/at_render_002.rs`。"
+        "探针逐项试了 18 种违反 CSRI 契约的输入，只有一种让 VSFilterMod 崩："
+        "`csri_open_mem` 的 `length` 大于真实缓冲时它不做上界检查，越界读到 **0xC0000005 访问违例**。"
+        "用例向它谎报长度（`STK_HOST_LIE_ABOUT_LENGTH`，只能从启动环境来）逼出真崩溃，实测："
+        "主进程存活且 `contained=true`、退出码 3221225477、崩溃现场带 provider sha256 与阶段并落盘、"
+        "重试出帧 4233 个不透明像素。\n"
+        "**“GUI 可重试”那半在 `gui/src/state/task.rs` + `gui/src/views/task_view.rs` + "
+        "`gui/tests/task_e2e.rs`**：新增 `RetryFailed` 与**只重跑失败/没跑到**的集合"
+        "（`retry_targets`，已成功的绝不重写）；重试用同一份 batch spec 表达"
+        "（`roots` 只放涉事输入、`profiles` 只放涉事项），所以那份 spec **仍能拿去 CLI 重放**。\n"
         "顺带抳出两个真缺陷：① 硬故障下“失败时写现场”永远不会跑（内核直接掐进程，"
         "不执行任何 Rust 返回路径）→ 改成在调 provider 前先写；"
         "② WER 对话框会把整条管道挂住（host 在等对话框、客户端在等 host）"

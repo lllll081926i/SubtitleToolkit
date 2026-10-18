@@ -382,6 +382,105 @@ impl SubtitleApp {
                     },
                 );
             }
+            Message::RetryFailed => {
+                // AT-RENDER-002 的“GUI 可重试”。
+                //
+                // ## 为什么用 roots 而不是新增一个“只要这几对”的字段
+                //
+                // `Spec` 的语义是“roots 里的文件 × 全部 profile”（15 §1）。
+                // 重试的集合是“失败的（输入, profile）” —— 那不一定是
+                // 输入的全集 × profile 的全集。
+                //
+                // 两件事分开表达：
+                //   - **哪些输入参加** → 只把有失败格的那些文件放进 `roots`；
+                //   - **哪些 profile 参加** → 只把有失败格的那些 profile 放进去。
+                // 两边的交集正好就是“失败的格子”，而不需要给 spec 加字段
+                // （加字段会让这份 spec 不再能拿去 CLI 重放 —— 而“可重放”
+                // 是 GUI 与 CLI 同源的全部价值）。
+                let targets = self.task_drawer.retry_targets();
+                if targets.is_empty() {
+                    self.task_drawer
+                        .notes
+                        .push("没有可重试的格子（失败的与没跑到的都没有）".to_string());
+                    return Task::none();
+                }
+
+                // 重试哪些 profile。用**名字**匹配，因为界面上的 profile
+                // 可能在上一次执行之后被改过 —— 改过的按新参数跑，那是用户的意思。
+                let want_profiles: Vec<&crate::state::profile::OutputProfile> = self
+                    .profiles
+                    .enabled_profiles()
+                    .into_iter()
+                    .filter(|p| targets.iter().any(|(_, n)| *n == p.name))
+                    .collect();
+                if want_profiles.is_empty() {
+                    self.task_drawer.notes.push(
+                        "要重试的 profile 现在已经不在启用列表里了 —— \
+                         先把它们重新启用，或者直接点“开始”跑一批新的"
+                            .to_string(),
+                    );
+                    return Task::none();
+                }
+
+                let want_inputs: Vec<std::path::PathBuf> = {
+                    let mut v: Vec<std::path::PathBuf> = Vec::new();
+                    for (path, _) in &targets {
+                        let p = std::path::PathBuf::from(path);
+                        if !v.contains(&p) {
+                            v.push(p);
+                        }
+                    }
+                    v
+                };
+
+                // 退回 Queued，否则统计会把上次的红格子继续算进去，
+                // 界面会显示“跑完了，但还有 N 个失败”—— 那与“正在重试”矛盾。
+                let n = self.task_drawer.reset_for_retry();
+                self.task_drawer
+                    .notes
+                    .push(format!("开始重试 {n} 个格子（只跑失败与没跑到的）"));
+                self.task_drawer.is_running = true;
+                self.task_drawer.is_expanded = true;
+
+                let libass = std::env::var("STK_LIBASS_DLL")
+                    .ok()
+                    .map(std::path::PathBuf::from)
+                    .filter(|p| p.is_file());
+                let (spec, notes) = crate::worker::spec::compile_spec(
+                    &crate::worker::task_worker::job_id(),
+                    &want_inputs,
+                    &want_profiles,
+                    &self.task_drawer.output_dir,
+                    libass,
+                    "{stem}.{profile}.{ext}",
+                );
+                self.task_drawer.notes = notes;
+                let out_dir = self.task_drawer.output_dir.clone();
+                self.cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let cancel = self.cancel.clone();
+
+                return Task::perform(
+                    async move {
+                        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+                        let handle = tokio::task::spawn_blocking(move || {
+                            crate::worker::task_worker::run(&spec, &out_dir, cancel, |p| {
+                                let _ = tx.send(p);
+                            })
+                        });
+                        let mut updates = Vec::new();
+                        let mut rx = rx;
+                        while let Some(p) = rx.recv().await {
+                            updates.push(p);
+                        }
+                        let result = handle.await.ok().and_then(|r| r.err());
+                        (updates, result)
+                    },
+                    |(updates, err)| Message::BatchProduced {
+                        updates,
+                        error: err,
+                    },
+                );
+            }
             Message::BatchProduced { updates, error } => {
                 for u in updates {
                     match u {
@@ -429,6 +528,18 @@ impl SubtitleApp {
                         format!("任务失败：{code} {title}（{action}）")
                     });
                 }
+                // AT-RENDER-002：**失败之后一定要能重试**。
+                //
+                // 实测抳出的一个死角：有一种失败发生在**任何一行被报告之前** ——
+                // 例如根路径不存在，`discover` 直接报 `STK-INP-0086` 返回，
+                // 于是 `BatchProduced` 里一行 `Row` 都没有。
+                //
+                // 幸而 `finish()`（上面那两处调用）把没跑到的 `Queued` 行
+                // 都转成了 `NotAttempted` —— 那也是可重试的，
+                // 所以抽屉里**有行可重**。这条注释的目的是把那个依赖写明：
+                // 如果哪天 `finish()` 不再做那个转换，这个死角会重新出现，
+                // 而 `retrying_only_reruns_what_failed_and_really_produces_it`
+                // 会当场报出来。
             }
             Message::TaskNotes(notes) => {
                 for n in notes {

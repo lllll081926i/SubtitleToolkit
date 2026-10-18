@@ -237,3 +237,125 @@ fn the_gui_cancel_flag_is_the_same_flag_the_engine_checks() {
         "引擎内部置位也必须对调用方可见"
     );
 }
+
+/// AT-RENDER-002 的“GUI 可重试” —— 走**真通路**证一遍。
+///
+/// 不只测状态机（那在 `state::task` 的单元用例里），而是：
+/// 从一个**真的有失败**的批量出发，算出重试集合，用它编出 spec，
+/// 再**真跑一遍**，看产物是不是只补了缺的那些。
+///
+/// 为什么必须跑这一遍：状态机算对了而 spec 编错了（或者反过来），
+/// 单元用例都看不见。
+#[test]
+fn retrying_only_reruns_what_failed_and_really_produces_it() {
+    let dir = workspace("retry");
+    let good = dir.join("good.ass");
+    std::fs::write(&good, ASS).unwrap();
+    // 第二个输入故意不存在：它会让那一行失败，而失败正是要重试的东西。
+    let missing = dir.join("missing.ass");
+    let out_dir = dir.join("out");
+
+    let p = srt("文本导出");
+    let (spec, _) = gui::worker::spec::compile_spec(
+        &gui::worker::task_worker::job_id(),
+        &[good.clone(), missing.clone()],
+        &[&p],
+        &out_dir,
+        None,
+        "{stem}.{profile}.{ext}",
+    );
+
+    // ---- 第一次：应当一成一败 ----
+    //
+    // 注意：输入不存在时 `discover` 会在**任何一行被报告之前**报错返回，
+    // 所以这里会拿到 `Finished{outcome:"failed", error:Some(...)}`
+    // 而**没有任何 `Row`**。那是真实的一种失败形状，用例必须覆盖它。
+    let mut first: Vec<Progress> = Vec::new();
+    let _ = gui::worker::task_worker::run(&spec, &out_dir, Arc::new(AtomicBool::new(false)), |p| {
+        first.push(p)
+    });
+    let mut drawer = gui::state::task::TaskDrawerState::new();
+    drawer.plan(
+        &[
+            (good.display().to_string(), "good.ass".to_string()),
+            (missing.display().to_string(), "missing.ass".to_string()),
+        ],
+        &["文本导出".to_string()],
+    );
+    for u in &first {
+        if let Progress::Row {
+            input,
+            profile,
+            status,
+            detail,
+        } = u
+        {
+            drawer.apply(
+                input,
+                profile,
+                gui::state::task::TaskStatus::from_report(status, detail),
+            );
+        }
+    }
+    // 模拟 `app.rs` 在收到失败时做的事：`finish()` 把没跑到的行转成 NotAttempted。
+    // 不转的话，那些行会永远停在 Queued —— 而用户看到的是“失败了”
+    // 却一个可重试的格子都没有（那是个没有出路的状态）。
+    drawer.finish("failed", "STK-INP-0086: 输入根路径不存在");
+
+    // ---- 第二次：只重试该重试的 ----
+    let targets = drawer.retry_targets();
+    assert_eq!(
+        targets.len(),
+        2,
+        "两个输入都没跑到（整个批次在执行前就失败了），所以两个都该重试：{targets:?}"
+    );
+    assert!(
+        targets.iter().any(|(p, _)| p.contains("missing.ass")),
+        "{targets:?}"
+    );
+    assert!(
+        targets.iter().any(|(p, _)| p.contains("good.ass")),
+        "一次都没跑到的不该被排除 —— 它同样没产出东西：{targets:?}"
+    );
+
+    // 重试集合能编成一份**能拿去 CLI 重放**的 spec（不加私有字段）
+    let retry_inputs: Vec<PathBuf> = targets.iter().map(|(p, _)| PathBuf::from(p)).collect();
+    let (retry_spec, _) = gui::worker::spec::compile_spec(
+        &gui::worker::task_worker::job_id(),
+        &retry_inputs,
+        &[&p],
+        &out_dir,
+        None,
+        "{stem}.{profile}.{ext}",
+    );
+    assert_eq!(
+        retry_spec.roots.len(),
+        2,
+        "重试 spec 该带两个输入：{:?}",
+        retry_spec.roots
+    );
+
+    // 修好缺失的输入再重试 —— 这次必须真的出产物
+    std::fs::write(&missing, ASS).unwrap();
+    let mut second: Vec<Progress> = Vec::new();
+    let r = gui::worker::task_worker::run(
+        &retry_spec,
+        &out_dir,
+        Arc::new(AtomicBool::new(false)),
+        |p| second.push(p),
+    );
+    assert!(r.is_ok(), "重试必须能跑起来：{r:?}");
+    let ok_rows = second
+        .iter()
+        .filter(|u| matches!(u, Progress::Row { status, .. } if status != "failed"))
+        .count();
+    assert!(ok_rows >= 2, "修好输入后重试两个都该成功，实际：{second:?}");
+    let produced = std::fs::read_dir(&out_dir)
+        .map(|rd| {
+            rd.flatten()
+                .filter(|e| e.path().extension().is_some_and(|x| x == "srt"))
+                .count()
+        })
+        .unwrap_or(0);
+    assert!(produced >= 2, "两个输入都该有产物，实际 {produced} 个");
+}

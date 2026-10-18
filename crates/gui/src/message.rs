@@ -54,6 +54,11 @@ pub enum Message {
     // === 底栏：任务抽屉与执行 ===
     StartQueue,
     CancelQueue,
+    /// AT-RENDER-002 的“GUI 可重试”：**只重跑失败与没跑到的那些格**。
+    ///
+    /// 与 `StartQueue` 分开而不是复用它：那个是“把整批重来”，
+    /// 会重写已经好的产物（见 `TaskDrawerState::retry_targets` 的说明）。
+    RetryFailed,
     ToggleTaskDrawer,
     SelectOutputDir,
     OpenOutputDir,

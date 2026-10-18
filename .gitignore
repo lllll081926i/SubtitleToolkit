@@ -9,3 +9,7 @@ tools/vcpkg/
 tools/**/*.log
 __pycache__/
 .trash/
+
+# 门禁运行产生的日志（与 target/ 同类：是运行痕迹不是源）
+audit/
+

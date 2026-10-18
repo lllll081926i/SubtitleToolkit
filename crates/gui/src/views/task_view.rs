@@ -26,6 +26,30 @@ pub fn view<'a>(state: &'a TaskDrawerState, total_plan: usize) -> Element<'a, Me
         .padding([8, 16])
     };
 
+    // AT-RENDER-002：失败之后必须能重试，而不只是“看得到红了”。
+    //
+    // 只重跑失败与没跑到的（见 `TaskDrawerState::retry_targets`）——
+    // 不重写已经好的产物。没有可重试的格子时**按钮不出现**：
+    // 一个点了没反应的按钮比没有按钮更差（用户会以为界面卡了）。
+    let retry_count = state.retry_targets().len();
+    let retry_btn: Option<Element<'a, Message>> = if !state.is_running && retry_count > 0 {
+        Some(
+            button(
+                row![
+                    icons::play(14.0),
+                    text(format!("重试失败的 {retry_count} 个")).size(13)
+                ]
+                .spacing(6)
+                .align_y(Alignment::Center),
+            )
+            .on_press(Message::RetryFailed)
+            .padding([8, 16])
+            .into(),
+        )
+    } else {
+        None
+    };
+
     let dir_text = format!("输出目录: {}", state.output_dir.display());
 
     let dir_controls = row![
@@ -66,6 +90,12 @@ pub fn view<'a>(state: &'a TaskDrawerState, total_plan: usize) -> Element<'a, Me
 
     let bar_content = row![
         action_btn,
+        // 重试按钮紧跟在开始/取消后面：它们是同一条动作链上的两步。
+        // `Option` 在 `row!` 里不能直接展开，所以用一个零宽的空元素占位。
+        match retry_btn {
+            Some(b) => row![Space::with_width(Length::Fixed(8.0)), b],
+            None => row![],
+        },
         Space::with_width(Length::Fixed(16.0)),
         dir_controls,
         Space::with_width(Length::Fill),

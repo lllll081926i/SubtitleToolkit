@@ -601,10 +601,28 @@ fn shift_to_cache_code_2(e: StkError) -> StkError {
 }
 
 /// 汇总键：与 `front::RenderMemo` 同一口径（见本文件顶部「第一条设计决定」）。
-pub fn key_for(job: &RenderJob<'_>, dll_hash: &str, inject_hashes: &[String]) -> String {
+///
+/// ## 为什么 key 里必须含 **host 可执行文件的哈希**
+///
+/// 它的加入不是“多一道保险”，而是堵一个实测到的**错误复用**：
+/// `STK_RENDERER_HOST` 可以指向另一个宿主（典型是 x86 的那只），
+/// 而原 key 只看 provider DLL 的哈希 —— 于是换成 x86 host 后**直接命中了 x64 的缓存**，
+/// host 压根没跑，它的位数校验也就没机会报错（实测：x64 先渲一次 `hit=false`，
+/// 换 x86 再渲 `hit=true` 且退 0，而其实 x86 host 会拒这个 x64 DLL）。
+///
+/// 后果是用户以为用的是 x86 host，拿到的却是另一只宿主的像素 —— 静默错误。
+/// 键里同时有 DLL 与 host 两个身份，才是“谁画了这张图”的完整回答。
+pub fn key_for(
+    job: &RenderJob<'_>,
+    dll_hash: &str,
+    host_hash: &str,
+    inject_hashes: &[String],
+) -> String {
     let mut h = sha2::Sha256::new();
     use sha2::Digest as _;
-    h.update(b"stk:render-cache-key:v1");
+    // 版本号升到 v2：v1 的 key 少了 host 身份，不能与这版混用。
+    // 升版本号让旧记录自然变成“未命中”并被丢弃，而不是被误读。
+    h.update(b"stk:render-cache-key:v2");
     // 输入内容：走文件的 SHA-256 而不是路径——同一个路径的内容会变，
     // 不同路径的内容可能相同（用户复制了一份）。
     let input_bytes = std::fs::read(job.input).unwrap_or_default();
@@ -615,6 +633,10 @@ pub fn key_for(job: &RenderJob<'_>, dll_hash: &str, inject_hashes: &[String]) ->
     h.update(job.default_font.as_bytes());
     // renderer 二进制身份：换 DLL 就是换渲染结果
     h.update(dll_hash.as_bytes());
+    // 宿主二进制身份：换 host（含 x64 ↔ x86）也是换渲染结果。
+    // 哈希读不到时传空串：调用方把“没有 host 哈希”当成一个**独立的身份取值**，
+    // 而不是当成“和别的都一样”。
+    h.update(host_hash.as_bytes());
     // 注入字体：同一条 17 §7 的理由，注入什么字节决定画出来什么
     for x in inject_hashes {
         h.update(x.as_bytes());
@@ -630,7 +652,9 @@ pub fn key_for(job: &RenderJob<'_>, dll_hash: &str, inject_hashes: &[String]) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core_model::canvas::Canvas;
     use core_model::loss::LossReport;
+    use core_model::time::Fps;
     use core_model::time::Time;
 
     fn tmpdir(tag: &str) -> PathBuf {
@@ -832,6 +856,121 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(&path, encode("a", &rendered()).unwrap()).unwrap();
         assert!(matches!(c.read("b", &path), ReadOutcome::Corrupt));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // ---- 跨宿主复用（实测过的真缺陷的回归用例） ----------------------------
+
+    fn job<'a>(input: &'a Path, dll: &'a Path) -> RenderJob<'a> {
+        RenderJob {
+            input,
+            dll: Some(dll),
+            fps: Fps::NTSC_23976,
+            canvas: Canvas::FHD1080,
+            default_font: "Arial",
+            inject: None,
+        }
+    }
+
+    /// 换 host 必须换 key。
+    ///
+    /// 这个缺陷的实测形态：x64 host 先渲一次（`hit=false`），
+    /// 再把 `STK_RENDERER_HOST` 指向 x86 host 渲同一个东西 —— `hit=true` 且退 0，
+    /// 而那只 host **本来会拒绝** 这个 x64 DLL（`STK-RND-0091`）。
+    /// host 压根没跑，它的位数校验也就没机会报错。
+    ///
+    /// 后果是用户以为用的是 x86 host，拿到的却是另一只宿主的像素。
+    ///
+    /// 注意 provider DLL 哈希在两次里是**同一个** —— 光靠它区分不出来。
+    #[test]
+    fn keys_differ_when_only_the_host_binary_differs() {
+        let dir = tmpdir("hostkey");
+        let input = dir.join("a.ass");
+        std::fs::write(&input, b"[Script Info]").unwrap();
+        let dll = dir.join("ass.dll");
+        std::fs::write(&dll, b"not-really-a-pe").unwrap();
+        let j = job(&input, &dll);
+
+        let a = key_for(&j, "dll-hash", "host-x64-hash", &[]);
+        let b = key_for(&j, "dll-hash", "host-x86-hash", &[]);
+        assert_ne!(a, b, "换 host 却得到同一个 key：会跨宿主错误复用");
+
+        // 反向：只要 host 哈希一样，key 就该一样（否则缓存永远不命中）。
+        assert_eq!(a, key_for(&j, "dll-hash", "host-x64-hash", &[]));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 没有 host 哈希（读不到文件）是一个**独立的身份取值**，
+    /// 不能与“有某个 host 哈希”碰成同一个 key。
+    #[test]
+    fn a_missing_host_hash_is_its_own_identity() {
+        let dir = tmpdir("nohost");
+        let input = dir.join("a.ass");
+        std::fs::write(&input, b"[Script Info]").unwrap();
+        let dll = dir.join("ass.dll");
+        std::fs::write(&dll, b"x").unwrap();
+        let j = job(&input, &dll);
+
+        assert_ne!(
+            key_for(&j, "d", "", &[]),
+            key_for(&j, "d", "abc", &[]),
+            "空 host 哈希与真实哈希碰成了同一个 key"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// provider DLL 哈希仍然要进 key：换 DLL 就是换渲染结果。
+    #[test]
+    fn keys_still_differ_when_only_the_provider_differs() {
+        let dir = tmpdir("dllkey");
+        let input = dir.join("a.ass");
+        std::fs::write(&input, b"[Script Info]").unwrap();
+        let dll = dir.join("ass.dll");
+        std::fs::write(&dll, b"x").unwrap();
+        let j = job(&input, &dll);
+
+        assert_ne!(
+            key_for(&j, "dll-1", "host", &[]),
+            key_for(&j, "dll-2", "host", &[])
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// key 的版本号变了：v1 的记录不能与 v2 的记录混用。
+    ///
+    /// 这条靠**行为**核：同一个输入在 v2 下算出的 key（也就是文件名）
+    /// 不会与 v1 的算法结果相同。用一次性重算 v1 算法的方式钉住。
+    #[test]
+    fn the_key_version_is_bumped_so_old_records_do_not_collide() {
+        let dir = tmpdir("kv");
+        let input = dir.join("a.ass");
+        std::fs::write(&input, b"[Script Info]").unwrap();
+        let dll = dir.join("ass.dll");
+        std::fs::write(&dll, b"x").unwrap();
+        let j = job(&input, &dll);
+
+        let now = key_for(&j, "d", "h", &[]);
+
+        // 手算一份 v1（少了 host 哈希，且版本串是 v1）。
+        use sha2::Digest as _;
+        let mut h = sha2::Sha256::new();
+        h.update(b"stk:render-cache-key:v1");
+        h.update(sha2::Sha256::digest(std::fs::read(&input).unwrap()));
+        h.update(j.fps.to_label().as_bytes());
+        h.update(j.canvas.width.to_le_bytes());
+        h.update(j.canvas.height.to_le_bytes());
+        h.update(j.default_font.as_bytes());
+        h.update(b"d");
+        h.update(b"\0end");
+        let old = h
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<Vec<_>>()
+            .join("");
+
+        assert_ne!(now, old, "key 版本没生效：旧的 v1 记录会被当成命中");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

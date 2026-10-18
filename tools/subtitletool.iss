@@ -81,7 +81,7 @@ Name: "assoc\srt"; Description: ".srt 纯文本字幕"; Flags: unchecked
 Name: "assoc\sup"; Description: ".sup PGS 字幕流"; Flags: unchecked
 Name: "assoc\xml"; Description: ".xml（BDN XML 字幕）"; Flags: unchecked
 ; legacy renderer support（28 §3 第四条）：装上 x86 宿主供 32 位 VSFilterMod 用。
-; 默认不勾，因为它需要额外的 x86 产物 —— 而那份产物当前**尚未构建**（28 §2 列为可选组件）。
+; 默认不勾：它是可选组件。
 ; 这里保留任务项而不是删掉：删掉会让"想用的人找不到入口"，保留但在缺失时明确报错
 ; 才是诚实的做法（见 [Code] 的 LegacyRendererRequested）。即使勾了也不会因为
 ; 缺文件而让整个安装失败，而是写一条警告并跳过 —— 安装器不该因为一个可选组件而失败。
@@ -221,9 +221,9 @@ begin
 
   // 28 §3 的第四条：legacy renderer support。
   //
-  // x86 宿主是**可选组件**，而它当前尚未构建（28 §2）。勾了却拿不到文件时：
-  // 不静默跳过（用户以为装上了），也不让整个安装失败（为一个可选组件废掉主功能）。
-  // 做法是写一条显式警告。
+  // 这个警告的存在理由：x86 宿主是**可选组件**，将来可能因为目标机缺 i686 工具链
+  // 而没随包提供。勾了却拿不到文件时：不静默跳过（用户以为装上了），
+  // 也不让整个安装失败（为一个可选组件废掉主功能）—— 写一条显式警告。
   if WizardIsTaskSelected('legacy') then
   begin
     LegacyHost := ExpandConstant('{app}\subtitletool-render-host-x86.exe');

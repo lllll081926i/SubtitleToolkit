@@ -304,9 +304,17 @@ pub(crate) fn resolve_cached(
         return render_to_plan(job).map(|r| (r, false));
     };
     // key 与 `RenderMemo` 同一口径：输入内容 + 画布 + 帧率 + 默认字体
-    // + renderer 二进制哈希 + 注入字体哈希（见 `rendercache` 顶部第一条设计决定）。
+    // + renderer 二进制哈希 + **宿主二进制哈希** + 注入字体哈希
+    // （见 `rendercache` 顶部第一条设计决定）。
     let dll_hash = job
         .dll
+        .and_then(|p| std::fs::read(p).ok())
+        .map(|b| crate::pipeline::sha256_hex(&b))
+        .unwrap_or_default();
+    // host 身份也要进 key：`STK_RENDERER_HOST` 可以指向另一只宿主（典型是 x86），
+    // 而两只宿主对同一个 DLL 的接受度不同。不进 key 就会跨宿主复用缓存，
+    // 于是“换成 x86 host”这件事静默无效（实测过，见 key_for 的注释）。
+    let host_hash = run::renderer_host_exe()
         .and_then(|p| std::fs::read(p).ok())
         .map(|b| crate::pipeline::sha256_hex(&b))
         .unwrap_or_default();
@@ -314,7 +322,7 @@ pub(crate) fn resolve_cached(
         .inject
         .map(|l| l.iter().map(|f| f.expect_sha.clone()).collect())
         .unwrap_or_default();
-    let key = crate::rendercache::key_for(job, &dll_hash, &inject_hashes);
+    let key = crate::rendercache::key_for(job, &dll_hash, &host_hash, &inject_hashes);
     let loaded = c.obtain(&key, job)?;
     Ok((loaded.rendered, loaded.from_disk))
 }

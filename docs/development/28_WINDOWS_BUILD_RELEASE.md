@@ -33,7 +33,8 @@
 - `subtitletool-cli.exe`
 - `subtitletool-render-host.exe`（当前 x64 Cargo 产物）
 - `subtitletoolkit-gui.exe`（Iced 工作台；已接入真 batch 通路，见 [GUI 接通裁决](../reviews/2026-10-17-gui-backend-wiring.md)）
-- `renderer-host-x86.exe`（可选组件）
+- `renderer-host-x86.exe`（可选组件；**已能构建**，见 [x86 host 裁决](../reviews/2026-10-17-x86-host-and-cache-key.md)。
+  与 x64 在真 libass 下输出逐字节一致。**尚未随包分发** —— 它的分发前提是 x86 libass DLL 的许可审计（21 §6））
 - bundled permissive DLLs
 - installer `.exe`
 - portable `.zip`
@@ -90,7 +91,10 @@
 只删值会把空壳 progid 留下，用户卸载后「打开方式」列表里仍有一个指向已删程序的条目。
 
 裁决与完整验证记录：[windows-installer](../reviews/2026-10-17-windows-installer.md)。
-**未完成**：Authenticode 签名（见 §5）；x86 宿主未构建；all-users 模式未实机验证。
+**未完成**：Authenticode 签名（见 §5）；all-users 模式未实机验证；
+x86 host **已能构建**且与 x64 输出逐字节一致，但**尚未随包分发**
+（前提是 x86 libass DLL 的许可审计，21 §6），且 **x86 DLL 路由仍未验收**
+（无 x86 libass 样本）。详见 [x86 host 裁决](../reviews/2026-10-17-x86-host-and-cache-key.md)。
 
 ## 4. Portable
 

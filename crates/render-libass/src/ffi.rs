@@ -170,6 +170,89 @@ impl ProbeReport {
 
 /// 探测一个候选 DLL：加载 → 逐个符号名检查 → 缺哪个报哪个。
 pub fn probe(path: &Path) -> Result<(LibHandle, ProbeReport)> {
+    // 12 §1 的能力探测必须在 **LoadLibrary 之前** 做。
+    //
+    // 两道理由，每一道都足够：
+    //
+    // 1. **位数**。`LibHandle::open` 就是 `LoadLibraryExW`。对一个 x86 DLL 调它，
+    //    在 x64 进程里只会拿到一句含糊的“不是有效的 Win32 应用程序”；
+    //    而 12 §3 直接禁止跨位数加载 —— “先加载再问你是谁”在位数错时已经晚了。
+    // 2. **错误质量**。靠 `GetProcAddress` 问不出“它到底是谁”：它只能回答
+    //    “没有 ass_library_init”。而用户真正需要知道的是
+    //    “这是一个 CSRI/VapourSynth provider，不是 libass”——那要看导出表。
+    //
+    // 读导出表不需要加载，也不执行任何代码。
+    let exports = core_model::pe::exports_of_file(path).map_err(|e| {
+        // **“读不了”与“不是那种 DLL”必须分开**：
+        //
+        // 前者是环境问题（文件不在、被占用、路径打错），用户要做的是修路径；
+        // 后者是拿错了东西（CSRI provider、资源 DLL），用户要做的是换一个。
+        // 两者报同一个码会让“DLL 路径写错了”看起来像“DLL 不对”。
+        match e {
+            core_model::pe::PeError::Unreadable(_) => {
+                StkError::simple(Domain::Render, 71, "libass DLL 读取失败")
+                    .with_detail(format!("{path:?}：{e}"))
+                    .with_action("确认路径拼写与文件是否存在（这是环境问题，不是 DLL 类型问题）")
+            }
+            core_model::pe::PeError::NotPe(_) => {
+                StkError::simple(Domain::Render, 72, "候选 DLL 不是有效的 PE 文件")
+                    .with_detail(format!("{path:?}：{e}"))
+                    .with_action("确认这是一个真的 Windows DLL，而不是改名或截断的文件")
+            }
+        }
+    })?;
+    let names = exports.names.clone();
+    // 把它**是**什么说出来。这是本次最重要的改进：
+    // 旧文案只说“缺符号”，让用户无从判断是自己拿错了 DLL，还是这个
+    // provider 本来走另一条接口。
+    let kind = render_api::capability::probe(
+        path.file_name().and_then(|s| s.to_str()).unwrap_or(""),
+        &names,
+    );
+    let is_libass = core_model::pe_exports_have_libass_required(&names);
+    if !is_libass {
+        let mut e = StkError::simple(Domain::Render, 72, "候选 DLL 不是可用的 libass provider");
+        // 先报“它是什么”
+        match kind.kind {
+            Some(render_api::capability::ProviderKind::Csri) => {
+                e = e.with_detail(format!(
+                    "{path:?} 看导出表是一个 **CSRI provider**（不是 libass）。\
+                     CSRI 通过 renderer-host 的 CSRI 链调用，不经过 libass 的 ABI"
+                ));
+            }
+            Some(render_api::capability::ProviderKind::LegacyVapourSynth) => {
+                e = e.with_detail(format!(
+                    "{path:?} 看导出表是一个 **VapourSynth 插件**（不是 libass）"
+                ));
+            }
+            Some(render_api::capability::ProviderKind::LegacyAviSynth) => {
+                e = e.with_detail(format!(
+                    "{path:?} 看导出表是一个 **AviSynth 滤镜**（不是 libass）"
+                ));
+            }
+            _ => {
+                let missing: Vec<&str> = LIBASS_REQUIRED_SYMBOLS
+                    .iter()
+                    .copied()
+                    .filter(|n| !names.iter().any(|e| e == n))
+                    .collect();
+                e = e.with_detail(format!(
+                    "{path:?} 导出 {} 个符号，缺 {} 个必需项，例如 {:?}",
+                    exports.declared,
+                    missing.len(),
+                    &missing[..missing.len().min(3)]
+                ));
+            }
+        }
+        // 读不全时要把这一点说出来：一份不完整的导出表不能被当成“没有那些符号”。
+        if let Some(note) = &exports.note {
+            e = e.with_detail(format!("注意导出表未读全：{note}"));
+        }
+        return Err(e.with_action(
+            "按导出符号判定能力，不看文件名（12 §1）；libass 那一份要导出 ass_library_init 等符号",
+        ));
+    }
+
     let handle = LibHandle::open(path)?;
     let mut found = Vec::new();
     let mut missing = Vec::new();
@@ -180,15 +263,16 @@ pub fn probe(path: &Path) -> Result<(LibHandle, ProbeReport)> {
             missing.push(*name);
         }
     }
+    // 导出表说有、`GetProcAddress` 说没有：这只能发生在“读的是另一个文件”
+    // （被换过、被截过）或“转发导出”的边上。不当作正常路径。
     if !missing.is_empty() {
         return Err(
             StkError::simple(Domain::Render, 72, "候选 DLL 不是可用的 libass provider")
                 .with_detail(format!(
-                    "{path:?} 缺 {} 个必需符号，例如 {:?}",
-                    missing.len(),
+                    "{path:?} 静态导出表里有这些符号，但加载后取不到：{:?}",
                     &missing[..missing.len().min(3)]
                 ))
-                .with_action("按导出符号判定能力，不看文件名（12 §探测）"),
+                .with_action("文件可能在读导出表之后被换过；重试，或换一份 DLL"),
         );
     }
     // 能力探测与"是不是 provider"分开算：这里只记录，不参与可用性判定

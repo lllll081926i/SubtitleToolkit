@@ -14,7 +14,7 @@
 | BDN XML+PNG | P0/P1 | CLI 已实现 | XML、PNG 尺寸和时间码互相核对 |
 | PGS parser/Fast Path | P1 | 已实现基础路径 | 外部 `.sup` 语料与解码器互操作仍需扩充 |
 | PGS Basic Encoder | P1 | 已实现 | Basic 结构校验不等于 Strict Blu-ray 合规 |
-| CSRI/VSFilterMod host | P1（待裁定） | 未实现 | 先确认 ABI、可分发 provider、许可和真渲染样本 |
+| CSRI/VSFilterMod host | P1（待裁定） | **能力探测已实现**（12 §1）：`provider probe` + `render-api::capability` 接入生产；真 DLL 实测能认出 `third_party/VSFilterMod.dll` 是 CSRI provider | **CSRI 渲染链未实现**（能认出，不能拿来渲染），故 AT-RENDER-002 仍不验收；该 DLL 为 GPL-3.0，21 §1 下不得进安装包 |
 | VapourSynth/AviSynth adapter | 可选 | 未实现 | legacy 可选项，不阻塞 libass |
 | Font health | P1 | 基础扫描与报告已实现 | DirectWrite 权威、完整字体环境和外部渲染仍需核验 |
 | Font subset | 后续 | 已实现（`font subset`） | `allsorts` 子集 + cmap 级等价检查 + 真 libass 逐像素 RGBA 对照；复杂脚本一律回退整份 |

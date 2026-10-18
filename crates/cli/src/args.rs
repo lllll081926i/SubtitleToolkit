@@ -82,6 +82,8 @@ commands:
                      18 §2/§4：重封装成新 MKV，绝不原地修改；写完重新 identify 核对元数据
                      需要 MKVToolNix（--tools-dir 或 STK_MKVTOOLNIX_DIR），不做视频/音频转码
   doctor                             环境自检：架构、可写路径、ffprobe 身份、未实现清单
+  provider probe <dll> [<dll>…]     12 §1/§4：报出每个 DLL **是什么**（libass / CSRI / VapourSynth / AviSynth）
+                     只读 PE 头与导出表，**不加载**任何 DLL（所以对 x86 的也安全）
 cache [stat|clear]                 37 §2：报账或清理磁盘渲染缓存
 settings [show|init|set]           36 §1：查看/初始化/修改全局偏好
    settings set <键> <值>           受管字段：log_level / ui_language / default_fps / default_canvas
@@ -325,6 +327,16 @@ pub enum Command {
         /// MKVToolNix 安装目录（mkvmerge/mkvextract 都在里面）；None 走环境变量/默认
         tools_dir: Option<PathBuf>,
     },
+    /// 12 §1/§4 的 provider 能力探测：**不加载**，只看 PE 导出表。
+    ///
+    /// 存在的理由：用户拿一个 DLL 来问“这个能用吗”，当前的回答是
+    /// 跑一遍渲染然后看报错。而那时已经加载过了（12 §3 禁止跨位数加载），
+    /// 而且报错只说“不是 libass”而不说“它到底是什么”。
+    /// 这个命令把那份诊断提前到加载之前，并与 12 §1 的三条能力链对齐。
+    ProviderProbe {
+        /// 要探测的 DLL。可重复，一次问多个。
+        paths: Vec<PathBuf>,
+    },
     /// 20 §Commands 已规划、但当前 Phase 还没有 backing crate 的命令。
     /// 明确报错而不是"看起来成功了"，这是 39 检查表的要求。
     NotBuilt {
@@ -427,6 +439,7 @@ impl Command {
             Command::PgsValidate { .. } => "pgs validate",
             Command::PgsEncode { .. } => "pgs encode",
             Command::Doctor => "doctor",
+            Command::ProviderProbe { .. } => "provider probe",
             Command::Cache { .. } => "cache",
             Command::Settings { .. } => "settings",
             Command::ToolDefaults { .. } => "tool-defaults",
@@ -926,6 +939,28 @@ pub fn parse(argv: &[String]) -> Result<Invocation, ArgError> {
                 return Err(ArgError::usage("doctor 不接受位置参数"));
             }
             Command::Doctor
+        }
+        // 12 §1/§4 的 provider 能力探测。
+        "provider" => {
+            let sub = rest.first().map(String::as_str).unwrap_or("");
+            if sub != "probe" {
+                return Err(ArgError::usage(format!(
+                    "provider 的子命令只能是 probe，收到 {sub:?}"
+                )));
+            }
+            let mut paths: Vec<PathBuf> = Vec::new();
+            for a in rest.iter().skip(1) {
+                if a.starts_with("--") {
+                    return Err(ArgError::usage(format!("provider probe 不接受开关 {a}")));
+                }
+                paths.push(PathBuf::from(a));
+            }
+            if paths.is_empty() {
+                return Err(ArgError::usage(
+                    "provider probe 至少要给一个 DLL 路径（可重复）",
+                ));
+            }
+            Command::ProviderProbe { paths }
         }
         "cache" => {
             let action = match rest.first().map(|s| s.as_str()).unwrap_or("stat") {

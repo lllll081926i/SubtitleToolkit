@@ -47,6 +47,16 @@ pub struct HostSpec<'a> {
     pub crash_dir: Option<&'a Path>,
 }
 
+/// 把 host 回传的 details 拼成一句可读的尾巴。
+///
+/// 为空时返回空串（调用方直接拼接，不会多出一个分隔符）。
+fn join_details(details: &[String]) -> String {
+    if details.is_empty() {
+        return String::new();
+    }
+    format!("（{}）", details.join("；"))
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HostFailure {
     /// 位数不符或架构未知：主进程据此换 host 或明确放弃（12 §3）
@@ -271,9 +281,14 @@ impl Host {
                 host.handshake = hs;
                 host.verify_handshake()?;
             }
-            Ok(Response::Error { code, title }) => {
+            Ok(Response::Error {
+                code,
+                title,
+                details,
+            }) => {
                 return Err(HostFailure::Protocol(format!(
-                    "host 拒绝握手：{code} {title}"
+                    "host 拒绝握手：{code} {title}{}",
+                    join_details(&details)
                 )))
             }
             Ok(other) => return Err(HostFailure::Protocol(format!("握手收到意外消息 {other:?}"))),
@@ -325,8 +340,13 @@ impl Host {
         protocol::write_message(&mut self.stdin, &Message::Blob(ass.to_vec()))?;
         match self.recv()? {
             Response::ScriptLoaded { bytes } => Ok(bytes),
-            Response::Error { code, title } => Err(HostFailure::Protocol(format!(
-                "host 拒绝加载脚本 {code}：{title}"
+            Response::Error {
+                code,
+                title,
+                details,
+            } => Err(HostFailure::Protocol(format!(
+                "host 拒绝加载脚本 {code}：{title}{}",
+                join_details(&details)
             ))),
             other => Err(HostFailure::Protocol(format!(
                 "LoadScript 收到意外消息 {other:?}"
@@ -344,8 +364,13 @@ impl Host {
         protocol::write_message(&mut self.stdin, &Message::Blob(bytes.to_vec()))?;
         match self.recv()? {
             Response::FontAdded { bytes } => Ok(bytes),
-            Response::Error { code, title } => Err(HostFailure::Protocol(format!(
-                "host 拒绝注入字体 {code}：{title}"
+            Response::Error {
+                code,
+                title,
+                details,
+            } => Err(HostFailure::Protocol(format!(
+                "host 拒绝注入字体 {code}：{title}{}",
+                join_details(&details)
             ))),
             other => Err(HostFailure::Protocol(format!(
                 "AddFont 收到意外消息 {other:?}"
@@ -368,9 +393,14 @@ impl Host {
                 images,
                 loss,
             } => (width, height, bytes, digest, detect_change, images, loss),
-            Response::Error { code, title } => {
+            Response::Error {
+                code,
+                title,
+                details,
+            } => {
                 return Err(HostFailure::Protocol(format!(
-                    "host 渲染失败 {code}：{title}"
+                    "host 渲染失败 {code}：{title}{}",
+                    join_details(&details)
                 )))
             }
             other => {

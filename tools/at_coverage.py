@@ -46,8 +46,13 @@ COVERAGE = {
     ),
     "AT-RENDER-002": (
         "uncovered",
-        "需要真实 VSFilterMod provider；工作区只有未核验的候选 DLL，"
-        "来源/许可未完成审计（21 §6），不以自伤注入代替",
+        "**前置条件本轮被修正**：不是“缺真实 provider 素材”——"
+        "工作区已有 `third_party/VSFilterMod.dll` 且已在 SOURCE_AUDIT_LOCK 登记（GPL-3.0）。"
+        "真正缺的是 **CSRI 渲染链**：`renderer-host` 当前只有 libass 一条链。"
+        "本轮新增 `provider probe`（12 §1）已能**认出**它是 CSRI provider（真 DLL 实测），"
+        "但“探测 ≠ 渲染”——规格要的是“证明它的崩溃只终止 renderer-host，GUI 可重试”，"
+        "而那需要先有 CSRI 链 + 一次真的崩溃注入。所以仍不验收。"
+        "另：21 §1 下它（GPL-3.0）**不得**进安装包；探测它是“读文件”不是“分发”。",
     ),
     "AT-RENDER-003": (
         "uncovered",
@@ -55,8 +60,10 @@ COVERAGE = {
         "产物真 32 位，与 x64 在真 libass 下输出逐字节一致 —— 见 x86-host-and-cache-key 裁决）。"
         "但规格要的是**x86 DLL 路由**的证据，而那需要一只真的 x86 libass DLL"
         "（本机只有 x64 那份，机器类型 0x8664）。已验到的是“x86 host 正确**拒绝** x64 DLL”"
-        "（STK-RND-0091）—— 那是反面证据（证明校验在位），**不是**路由可用的证据，"
-        "所以不列作已覆盖。另：x86 host 尚未随包分发（前提是 x86 DLL 的许可审计，21 §6）。",
+        "（STK-RND-0091）—— 那是反面证据（证明校验在位），**不是**路由可用的证据。"
+        "本轮新增的 `provider probe` 给它添了一个核对工具："
+        "能对一个 x86 DLL 报出位数与能力**而不加载它**，但那仍不是路由证据。"
+        "另：x86 host 尚未随包分发（前提是 x86 DLL 的许可审计，21 §6）。",
     ),
     "AT-PGS-001": (
         "covered",

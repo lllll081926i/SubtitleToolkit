@@ -101,10 +101,18 @@ pub enum Response {
         images: usize,
         loss: LossReport,
     },
-    /// host 出错：错误码与标题原样带回主进程（12 §5 "provider load failure 独立错误码"）。
+    /// host 出错：错误码、标题与**具体原因**一起带回主进程
+    /// （12 §5 "provider load failure 独立错误码"）。
+    ///
+    /// `details` 不能省：host 是唯一真的看过那个 DLL 的地方，
+    /// 它知道"这是一个 CSRI provider，不是 libass"或"缺哪几个符号"。
+    /// 只传一个概括的 `title` 会让那份诊断在进程边界上丢掉。
+    /// 旧版协议没这个字段，所以用 `#[serde(default)]` 保持向后兼容。
     Error {
         code: String,
         title: String,
+        #[serde(default)]
+        details: Vec<String>,
     },
     ByeOk,
 }

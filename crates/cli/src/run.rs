@@ -119,6 +119,7 @@ pub(crate) fn execute_ctx(
             &cache,
         ),
         Command::Doctor => doctor(cmd),
+        Command::ProviderProbe { paths } => provider_probe(paths, cmd),
         Command::Cache { action } => cache_cmd(*action, cmd),
         Command::Settings { action, key, value } => {
             settings_cmd(*action, key.as_deref(), value.as_deref(), cmd)
@@ -242,6 +243,134 @@ fn suggestion_row(it: &media_probe::Suggestion) -> serde_json::Value {
         "auto_checked": it.auto_checked(),
         "evidence": it.evidence,
     })
+}
+
+/// 12 §1/§4 的 provider 能力探测：**只读导出表，不加载 DLL**。
+///
+/// ## 为什么这条命令有价值
+///
+/// 用户拿一个 DLL 问"这个能用吗"。没有这条命令时，唯一的回答方式是
+/// 拿它跑一遍渲染然后读报错 —— 而那时 `LoadLibrary` 已经调过了，
+/// 恰好是 12 §3 禁止跨位数做的事。
+///
+/// 这个命令把那份诊断提前到**加载之前**，而且回答的是用户真正的问题：
+/// **它到底是什么**（libass / CSRI / VapourSynth / AviSynth），
+/// 而不只是"它不是什么"。
+///
+/// ## 为什么一次能问多个
+///
+/// 用户手上常常有几个候选（`renderers/` 目录里一堆 DLL）。
+/// 一次一个地跑会让人来回对照，而一条命令列出所有候选的判定
+/// 才能回答"我该选哪个"。
+fn provider_probe(paths: &[PathBuf], cmd: &str) -> Result<Envelope> {
+    let mut rows: Vec<serde_json::Value> = Vec::with_capacity(paths.len());
+    for p in paths {
+        let mut row = serde_json::json!({
+            "path": p.display().to_string(),
+            "file_name": p.file_name().and_then(|s| s.to_str()).unwrap_or(""),
+        });
+        // ① 位数（12 §3）。读不到就如实报，不猜。
+        let arch = match core_model::pe::arch_of_file(p) {
+            Ok(a) => {
+                row["arch"] = serde_json::json!(a.label());
+                row["arch_ok_for_x64_host"] = serde_json::json!(a.is_x64());
+                Some(a)
+            }
+            Err(e) => {
+                row["arch"] = serde_json::Value::Null;
+                row["arch_error"] = serde_json::json!(e.to_string());
+                None
+            }
+        };
+        // ② 导出表（12 §1）。这一层才回答"它是什么"。
+        match core_model::pe::exports_of_file(p) {
+            Ok(e) => {
+                row["exports_declared"] = serde_json::json!(e.declared);
+                if let Some(n) = &e.note {
+                    // 读不全就必须说出来：一份不完整的导出表不能被当成
+                    // “没有那些符号”，否则会对可用的 provider 报错。
+                    row["exports_note"] = serde_json::json!(n);
+                }
+                let probe = render_api::capability::probe(
+                    p.file_name().and_then(|s| s.to_str()).unwrap_or(""),
+                    &e.names,
+                );
+                row["kind"] = match probe.kind {
+                    Some(render_api::capability::ProviderKind::LibassBuiltin) => {
+                        serde_json::json!("libass")
+                    }
+                    Some(render_api::capability::ProviderKind::Csri) => serde_json::json!("csri"),
+                    Some(render_api::capability::ProviderKind::LegacyVapourSynth) => {
+                        serde_json::json!("vapoursynth")
+                    }
+                    Some(render_api::capability::ProviderKind::LegacyAviSynth) => {
+                        serde_json::json!("avisynth")
+                    }
+                    Some(render_api::capability::ProviderKind::LegacyOther) => {
+                        serde_json::json!("legacy-other")
+                    }
+                    None => serde_json::Value::Null,
+                };
+                // 本项目当前**唯一**实现了的渲染链是 libass；
+                // 所以“能不能现在就用”只由这一项决定，而不由 kind 决定。
+                row["usable_as_libass"] =
+                    serde_json::json!(core_model::pe_exports_have_libass_required(&e.names));
+                row["stages"] = serde_json::json!(probe
+                    .stages
+                    .iter()
+                    .map(|(s, o, m)| serde_json::json!({
+                        "stage": format!("{s:?}"),
+                        "outcome": format!("{o:?}"),
+                        "message": m,
+                    }))
+                    .collect::<Vec<_>>());
+                // 把“为什么不能用”直接写成一句人能读的话，
+                // 免得用户自己从 stages 里推。
+                row["verdict"] = if core_model::pe_exports_have_libass_required(&e.names) {
+                    serde_json::json!("可作为 libass provider")
+                } else {
+                    match probe.kind {
+                        Some(render_api::capability::ProviderKind::Csri) => serde_json::json!(
+                            "是 CSRI provider，不是 libass；当前只有 libass 链已实现（12 §1B）"
+                        ),
+                        Some(render_api::capability::ProviderKind::LegacyVapourSynth) => {
+                            serde_json::json!(
+                                "是 VapourSynth 插件，不是 libass；legacy 链未实现（12 §1C）"
+                            )
+                        }
+                        Some(render_api::capability::ProviderKind::LegacyAviSynth) => {
+                            serde_json::json!(
+                                "是 AviSynth 滤镜，不是 libass；legacy 链未实现（12 §1C）"
+                            )
+                        }
+                        _ => serde_json::json!("不是 libass provider（导出表里没有 ass_* 入口）"),
+                    }
+                };
+            }
+            Err(e) => {
+                row["exports_error"] = serde_json::json!(e.to_string());
+                row["kind"] = serde_json::Value::Null;
+                row["usable_as_libass"] = serde_json::json!(false);
+                row["verdict"] = serde_json::json!(format!("读不了导出表：{e}"));
+            }
+        }
+        let _ = arch;
+        rows.push(row);
+    }
+
+    let any_usable = rows
+        .iter()
+        .any(|r| r["usable_as_libass"] == serde_json::json!(true));
+    Ok(Envelope::ok(
+        cmd,
+        serde_json::json!({
+            "probed": rows.len(),
+            "any_usable_as_libass": any_usable,
+            "rows": rows,
+            // 与 `check-updates` 同一纪律：把“这次到底做了什么”写进结果。
+            "meaning": "只读了 PE 头与导出表；没有加载任何 DLL，也没有执行里面的代码",
+        }),
+    ))
 }
 
 /// 28 §6 的更新检查（第一版）。

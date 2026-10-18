@@ -48,6 +48,7 @@ validator = { path = "crates/validator", version = "0.1.0" }
 task-engine = { path = "crates/task-engine", version = "0.1.0" }
 media-probe = { path = "crates/media-probe", version = "0.1.0" }
 pgs-author = { path = "crates/pgs-author", version = "0.1.0" }
+render-api = { path = "crates/render-api", version = "0.1.0" }
 render-libass = { path = "crates/render-libass", version = "0.1.0" }
 win-job = { path = "crates/win-job", version = "0.1.0" }
 renderer-host = { path = "crates/renderer-host", version = "0.1.0" }

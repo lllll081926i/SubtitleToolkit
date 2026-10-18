@@ -29,7 +29,7 @@ pub use logging::{current_log_file, init as init_logging, log_dir};
 pub use loss::LossReport;
 // PE 头读取（23 §DLL / 12 §3）：放在 core-model 是因为主程序与 renderer-host
 // 都要在加载 DLL 之前判定位数，而**两份实现对同一个 DLL 会给出不同答案**。
-pub use pe::{arch_of_bytes, arch_of_file, PeArch, PeError};
+pub use pe::{arch_of_bytes, arch_of_file, pe_exports_have_libass_required, PeArch, PeError};
 pub use profile::{
     FormatKind, HdrMode, HdrSettings, JobSnapshot, OutputProfile, Plan, RendererChoice,
     ValidationLevel, ValueOrigin,

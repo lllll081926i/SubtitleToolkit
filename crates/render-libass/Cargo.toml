@@ -8,5 +8,6 @@ description = "libass 位图合成层（12 §1A、09 §3）：ASS_Image 链表 �
 
 [dependencies]
 core-model = { workspace = true }
+render-api = { workspace = true }
 image-core = { workspace = true }
 sha2 = { workspace = true }

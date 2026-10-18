@@ -53,6 +53,30 @@ fn reply_err(w: &mut impl Write, code: &str, title: &str) -> io::Result<()> {
         &Response::Error {
             code: code.to_string(),
             title: title.to_string(),
+            // 空：调用方若需要带上 details，用下面的 `reply_stk_err`。
+            // 保留这个重载是为了“只有一句话”的那些场合（如协议错）。
+            details: Vec::new(),
+        },
+    )
+}
+
+/// 把 `StkError` 的**全部**信息回给主进程。
+///
+/// 为什么不能只传 `title`：host 是**唯一**真的看过这个 DLL 的地方。
+/// 它知道“这是一个 CSRI provider，不是 libass”或“缺哪几个符号”，
+/// 而主进程只知道“host 拒绝了”。只传一句概括的话，那份诊断就在进程边界上丢了 ——
+/// 而 12 §1 把“说清它是什么”当成能力探测的产出之一。
+fn reply_stk_err(w: &mut impl Write, e: &core_model::StkError) -> io::Result<()> {
+    eprintln!("[renderer-host] {}: {}", e.code_string(), e.title);
+    for d in &e.details {
+        eprintln!("[renderer-host]   {d}");
+    }
+    reply(
+        w,
+        &Response::Error {
+            code: e.code_string(),
+            title: e.title.clone(),
+            details: e.details.clone(),
         },
     )
 }
@@ -127,8 +151,9 @@ fn serve() -> Result<(), String> {
     let mut provider =
         render_libass::Provider::open(&dll_path, storage_canvas, output_canvas, &default_font)
             .map_err(|e| {
-                let _ = reply_err(&mut writer, &e.code_string(), &e.title);
-                format!("provider 打不开：{}", e.title)
+                // 把 details 一起回给主进程（见 `reply_stk_err` 的注释）。
+                let _ = reply_stk_err(&mut writer, &e);
+                format!("provider 打不开：{}；{}", e.title, e.details.join("；"))
             })?;
 
     let name = dll_path

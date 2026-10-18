@@ -47,6 +47,23 @@ DirectWrite fallback 链（需 COM，ISSUES AG1）；真 minidump（把数据与
 - 2026-10-17 **交付 AT-BD-001 的 GUI 侧解释**（25 §AT-BD-001）：`gui/src/state/profile.rs` 新增 `problem()`/`is_runnable()`；`profiles_view.rs` 把一句**无条件说的假话**（“Basic PGS: 具备”无例外）换成按真实判定的“符合 09 §6 的硬规则 / 不合规：看下方说明”，并在展开卡片里给出原因 + 两条可选改法。
   **本条抳出一个真缺陷**：出厂默认的第二个 profile 是 `2160p 4K HDR SUP`，而 `pgs encode` 默认 `--level standard`、标准级 PGS 不允许 3840x2160 —— 实测报 `STK-PGS-0091`。即**用户装好、什么都不改、直接排队，第一个 profile 就失败**；而且失败发生在批量执行中途。已改成 `1080p HDR SUP`（HDR 映射 `ReferenceWhite(203)` 保留），回归用例 `the_default_sup_profile_is_not_4k` 钉住；实测新默认打通真 libass 并产出合法 SUP（`PG` 魔数、`no_blocking_findings: true`）。
   GUI **不重写判定**：直接调 `core_model::Canvas::within_bluray`（组件级单一事实源），有专门用例 `gui_agrees_with_the_core_rule_it_reuses` 锁住“GUI 不另立规则”。新增 9 个用例；`cargo test -p gui --lib` 35 passed。AT 覆盖 23/26 → **24/26**。裁决：[at-bd-001-gui](reviews/2026-10-17-at-bd-001-gui.md)。
+- 2026-10-17 **provider 能力探测（12 §1/§4）与两处真缺陷**：新增 CLI `provider probe <dll>…`；新增 `core-model::pe` 的 **PE 导出表解析**（此前只有位数，没有任何代码读导出名）；把孤儿的 `render-api::capability` 接进生产路径。
+  **两处真缺陷**：① `CSRI_REQUIRED_EXPORTS` 原来是 `[csri_open, csri_close, csri_render, csri_get_renderer]`，
+  而 **`csri_open` 与 `csri_get_renderer` 根本不是 CSRI API** —— 按旧集合**每一个真的 CSRI provider 都会被误判成“不是 provider”**，
+  而那四个幽灵名字还会出现在报错里让人以为是自己拿错了 DLL。修成真实调用链
+  （`csri_renderer_default`/`csri_render`/`csri_close` + `csri_open_file`∨`csri_open_mem` 二选一 ——
+  只支持内存脚本的 provider 也是一种 provider，判它不可用是假阴性）。
+  ② `render-libass::ffi::probe` **先 `LoadLibrary` 再看导出符号**，恰好是 12 §3 禁止的跨位数加载；
+  改为先静态读导出表，通过了才加载。
+  **还修了一处信息丢失**：host 是唯一真的看过那个 DLL 的地方，但它只知道 `title` 而不知道
+  `details` —— 三层（`reply_err` → 协议 `Response::Error` → CLI 的 `render_host_error`）各丢一点，
+  结果是用户看到的还是旧的“不是可用的 libass provider”。补上后用户看到的是：
+  “`VSFilterMod.dll` 看导出表是一个 **CSRI provider**（不是 libass）”。
+  **实测**（本机真文件）：`VSFilterMod.dll`（20 个导出）→ `Some(Csri)`；`libass-9.dll`（50 个）→ 非 CSRI 且“看着像 libass = true”。
+  新增 8 个 PE 解析用例（含真 kernel32/libass/VSFilterMod）+ 9 个 CLI 集成用例。
+  裁决：[provider-capability-probe](reviews/2026-10-17-provider-capability-probe.md)。
+  **未做（如实记）**：CSRI **渲染链**仍未实现（能认出，不能拿来渲染），故 AT-RENDER-002 仍不验收；
+  `ProviderKind::LibassBuiltin` 从未被产出（是死值）；VSFilterMod 在 21 §1 下（GPL-3.0）不得进安装包。
 - 2026-10-17 **建立 subset equivalence corpus（17 §5）**：新增 `crates/font-service/tests/subset_corpus.rs`（9 个用例）。规格列了 11 项必须覆盖的情形，本文件逐项回答**每一类被怎么处理**。
   **关键认识**：那 11 项写在同一张清单里，但**风险来源分两类**，判据因此不同——
   ① **字符级**（Arabic/Indic/combining/vertical/CJK+IVS/emoji）危险来自“请求了哪些字”，**必回退**；

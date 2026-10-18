@@ -37,6 +37,39 @@ libass 返回 linked list，必须按链表顺序 composite；每个 bitmap 是 
 CSRI 是一个独立 provider ABI，不能在文档中与“任意 VSFilterMod DLL”写成同义词。
 - renderer-host 必须先枚举/探测 provider 的 CSRI 导出与 capability；
 - 只有确实暴露标准 CSRI / `csri_stream_ext` 的 provider 才走这条链；
+
+#### 能力探测已实现（2026-10-17）
+
+两道入口，都不加载 DLL：
+
+- `subtitletool-cli provider probe <dll>…`（用户可直接跑）；
+- `render-libass::ffi::probe` 在 `LoadLibrary` **之前** 先读导出表。
+
+底层是 `core-model::pe::exports_of_file`（静态读 PE 导出表）
+与 `render-api::capability::probe`（12 §1 的三链判定）。
+
+**抳出两处真缺陷**：
+
+1. `CSRI_REQUIRED_EXPORTS` 原来是 `[csri_open, csri_close, csri_render, csri_get_renderer]`，
+   而 **`csri_open` 与 `csri_get_renderer` 根本不是 CSRI API** ——
+   按旧集合**每一个真的 CSRI provider 都会被误判**。
+   已改成真实调用链：
+   `[csri_renderer_default, csri_render, csri_close]` + `csri_open_file`/`csri_open_mem` **二选一**
+   （只支持内存脚本的 provider 也是可用的 provider，判它不可用是假阴性）。
+2. `render-libass::ffi::probe` **先 `LoadLibrary` 再看符号** ——
+   恰好是 12 §3 禁止的跨位数加载。“先加载再问你是谁”在位数错时已经晚了。
+   已改为先读导出表，通过了才加载。
+
+**实测**（本机真文件）：
+
+```
+VSFilterMod.dll  → Some(Csri)     导出 20 个名字，CSRI 符号齐全
+libass-9.dll     → None           导出 50 个名字，看着像 libass = true
+```
+
+**仍未做**：CSRI **渲染链**（探测能认出 CSRI provider，但 `renderer-host`
+仍只有 libass 一条链）。所以 AT-RENDER-002 仍不验收。
+详见 [provider 能力探测裁决](../reviews/2026-10-17-provider-capability-probe.md)。
 - 2026 xy-VSFilter 的 release 说明表明其 external CSRI backend 使用标准 `csri_stream_ext` + `CSRI_F_BGRA`，并指出 Masaiki 的 VSFilterMod r5.3.0 可作为兼容 provider；这证明“特定 VSFilterMod build 可以是 CSRI provider”，不是证明所有历史 VSFilterMod.dll 都可以。
 - 当前工作区的 `third_party/VSFilterMod.dll` 静态导出表含 `csri_*` 符号，但来源提交未核实。导出名存在不等于 ABI 或输出行为兼容；该文件尚未由本项目加载或通过真实画面对照。
 

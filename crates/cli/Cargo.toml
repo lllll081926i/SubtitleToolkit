@@ -12,6 +12,7 @@ path = "src/main.rs"
 
 [dependencies]
 core-model = { workspace = true }
+render-api = { workspace = true }
 format-detect = { workspace = true }
 codec-ass = { workspace = true }
 codec-srt = { workspace = true }

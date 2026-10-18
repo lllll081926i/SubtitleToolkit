@@ -209,8 +209,19 @@ pub(crate) fn render_to_plan(job: &RenderJob<'_>) -> Result<Rendered> {
 
 fn render_host_error(error: renderer_host::client::HostFailure) -> StkError {
     let title = error.title();
-    let mut e = StkError::simple(Domain::Render, 91, &title)
-        .with_detail(format!("{}：{error:?}", error.code()));
+    let mut e = StkError::simple(Domain::Render, 91, &title).with_detail(error.code().to_string());
+    // 把 host 那边给出的**具体原因**原样带上来。
+    //
+    // 这一点很容易弄丢：`title()` 只给一句概括（“协议不符”），而
+    // host 真正知道的那些（“这是一个 CSRI provider，不是 libass”、
+    // “缺哪几个符号”）在 `Protocol(String)` 里。用 `{:?}` 会把它们
+    // 包成 `Protocol("…")` —— 信息在，但读起来像内部调试输出。
+    // 拆出来当一条普通 detail，用户才看得懂。
+    if let renderer_host::client::HostFailure::Protocol(s) = &error {
+        if !s.trim().is_empty() && *s != title {
+            e = e.with_detail(s.trim());
+        }
+    }
     // 22 §6：崩溃现场必须进错误卡。
     //
     // 只说“退出码 3”对用户毫无用处；“死在 render 阶段的第 417 帧、

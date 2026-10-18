@@ -327,7 +327,11 @@ fn reap_and_check(mut child: std::process::Child, dll: &Path) {
     };
     let resp: renderer_host::protocol::Response = serde_json::from_str(&text).unwrap();
     match resp {
-        renderer_host::protocol::Response::Error { code, title } => {
+        renderer_host::protocol::Response::Error {
+            code,
+            title,
+            details: _,
+        } => {
             assert_eq!(code, "STK-RND-0201", "{title}");
             assert!(title.contains("位数不符"), "{title}");
         }

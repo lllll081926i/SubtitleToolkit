@@ -50,23 +50,69 @@ impl ProbeResult {
     }
 }
 
-/// CSRI 必需导出名集合。最终名单待与 csri.h 核对（见 docs/history/2026-10-06/ISSUES.md C9），
-/// 这里按 CSRI C API 的公开符号取保守集合，缺任何一个即判定"不是 CSRI provider"。
-pub const CSRI_REQUIRED_EXPORTS: [&str; 4] = [
-    "csri_open",
-    "csri_close",
-    "csri_render",
-    "csri_get_renderer",
-];
+/// CSRI 必需导出名集合。
+///
+/// ## 第一版把这四个名字写错了
+///
+/// 原来的集合是 `[csri_open, csri_close, csri_render, csri_get_renderer]`，
+/// 其中 **`csri_open` 与 `csri_get_renderer` 根本不是 CSRI API 的一部分**。
+/// 后果是：**每一个真的 CSRI provider 都会被判成"不是 CSRI provider"** ——
+/// 而这四个名字还会出现在错误信息里，让人以为是自己拿错了 DLL。
+///
+/// 实测抳出来的（`a_real_libass_exports_...` 与 `the_vsfiltermod_candidate_is_probed_by_exports_not_by_name`）：
+/// 本机 `third_party\VSFilterMod.dll` 导出 8 个 `csri_*` 符号，
+/// 包括 `csri_open_file`、`csri_open_mem`、`csri_renderer_default`、`csri_query_ext`
+/// —— 但 **没有** `csri_open`。按旧集合它会被误判为非 provider。
+///
+/// ## 按实际 ABI 取集合
+///
+/// 独立参考（Aegisub 自带的 CSRI 示例、x264 的 vsfilter patch）给的调用序列是：
+///
+/// ```c
+/// csri_rend *r = csri_renderer_default();       // 或 csri_renderer_byname()
+/// csri_inst *i = csri_open_file(r, path, NULL); // 或 csri_open_mem()
+/// csri_render(i, &frame, t);
+/// ```
+///
+/// 所以必需项取这条**调用链**上用到的符号，而不是我当初以为的那四个。
+/// 两个 open 变体（file/mem）**只需其一**：一个只支持内存脚本的 provider
+/// 也是可用的 provider，把它判成不可用是假的阴性。
+///
+/// 见 `docs/history/2026-10-06/ISSUES.md` C9。
+pub const CSRI_REQUIRED_EXPORTS: [&str; 3] = ["csri_renderer_default", "csri_render", "csri_close"];
+
+/// `csri_open_file` 与 `csri_open_mem` **至少有一个**。
+///
+/// 分成两半而不是写进上面那个集合：它们不是"两个都要"，
+/// 而是"两条等价入口的二选一"。写成一个固定列表就无法表达这个语义。
+pub const CSRI_OPEN_VARIANTS: [&str; 2] = ["csri_open_file", "csri_open_mem"];
+
+/// 只看导出名，判定"这是不是一个 CSRI provider"。
+///
+/// 给 `capability::probe` 与错误文案共用，避免两处各自解释一遍"什么叫 CSRI"。
+pub fn looks_like_csri(exports: &[String]) -> bool {
+    let has = |n: &str| exports.iter().any(|e| e == n);
+    CSRI_REQUIRED_EXPORTS.iter().all(|n| has(n)) && CSRI_OPEN_VARIANTS.iter().any(|n| has(n))
+}
+
+/// 列出**缺哪个**（用于错误文案）。空 = 齐全。
+pub fn missing_csri(exports: &[String]) -> Vec<&'static str> {
+    let has = |n: &str| exports.iter().any(|e| e == n);
+    let mut out: Vec<&'static str> = CSRI_REQUIRED_EXPORTS
+        .iter()
+        .copied()
+        .filter(|n| !has(n))
+        .collect();
+    if !CSRI_OPEN_VARIANTS.iter().any(|n| has(n)) {
+        out.push("csri_open_file（或 csri_open_mem）");
+    }
+    out
+}
 
 /// 探测主流程。`exports` 由 PE 解析层提供（不在本 crate 里读 DLL，保持可测试）。
 pub fn probe(filename_hint: &str, exports: &[String]) -> ProbeResult {
     let mut stages: Vec<(ProbeStage, Outcome, String)> = Vec::new();
-    let missing: Vec<&str> = CSRI_REQUIRED_EXPORTS
-        .iter()
-        .copied()
-        .filter(|n| !exports.iter().any(|e| e.as_str() == *n))
-        .collect();
+    let missing = missing_csri(exports);
     let has_csri = missing.is_empty();
     stages.push((
         ProbeStage::ExportedApi,
@@ -87,15 +133,19 @@ pub fn probe(filename_hint: &str, exports: &[String]) -> ProbeResult {
         if has_csri {
             "标准 CSRI 符号齐全".to_string()
         } else {
+            // 把**缺哪个**写出来：只说“缺 CSRI 符号”会让用户无从判断
+            // 是自己拿错了 DLL，还是这个 provider 用了另一条接口。
             format!("缺少 CSRI 符号: {missing:?}")
         },
     ));
     let legacy = if has_csri {
         Outcome::NotApplicable
     } else {
-        let vs = exports
-            .iter()
-            .any(|e| e.starts_with("getVapourSynthAPI") || e.starts_with("vsfm"));
+        let vs = exports.iter().any(|e| {
+            e.starts_with("getVapourSynthAPI")
+                || e.starts_with("vsfm")
+                || e == "VapourSynthPluginInit"
+        });
         let avs = exports
             .iter()
             .any(|e| e.starts_with("avs_") || e.contains("CreateAudioRenderer"));
@@ -113,10 +163,9 @@ pub fn probe(filename_hint: &str, exports: &[String]) -> ProbeResult {
 
     let kind = if has_csri {
         Some(ProviderKind::Csri)
-    } else if exports
-        .iter()
-        .any(|e| e.starts_with("getVapourSynthAPI") || e.starts_with("vsfm"))
-    {
+    } else if exports.iter().any(|e| {
+        e.starts_with("getVapourSynthAPI") || e.starts_with("vsfm") || e == "VapourSynthPluginInit"
+    }) {
         Some(ProviderKind::LegacyVapourSynth)
     } else if exports.iter().any(|e| e.starts_with("avs_")) {
         Some(ProviderKind::LegacyAviSynth)
@@ -178,10 +227,10 @@ mod tests {
         let r = probe(
             "XySubFilter.dll",
             &ex(&[
-                "csri_open",
-                "csri_close",
+                "csri_renderer_default",
                 "csri_render",
-                "csri_get_renderer",
+                "csri_close",
+                "csri_open_file",
             ]),
         );
         assert_eq!(r.kind, Some(ProviderKind::Csri));
@@ -193,18 +242,90 @@ mod tests {
         );
     }
 
+    /// **内存入口也能算 CSRI provider**。
+    ///
+    /// 回归用例：必需集合里若把 `csri_open_file` 写成硬要求，
+    /// 一个只支持内存脚本的 provider 会被误判成不可用 —— 那是假阴性。
+    #[test]
+    fn a_memory_only_csri_provider_is_still_csri() {
+        let r = probe(
+            "mem-only.dll",
+            &ex(&[
+                "csri_renderer_default",
+                "csri_render",
+                "csri_close",
+                "csri_open_mem",
+            ]),
+        );
+        assert_eq!(r.kind, Some(ProviderKind::Csri), "内存入口也是合法入口");
+    }
+
+    /// 回归用例：**真实的 VSFilterMod 导出集必须被判为 CSRI。**
+    ///
+    /// 第一版的必需集合是 `[csri_open, csri_close, csri_render, csri_get_renderer]`，
+    /// 而 `csri_open` / `csri_get_renderer` **根本不是 CSRI API**。
+    /// 下面这组名字是从本机 `third_party\VSFilterMod.dll` 的真实导出表里抄来的，
+    /// 它没有 `csri_open` —— 按旧集合会被误判成“不是 CSRI provider”。
+    #[test]
+    fn the_real_vsfiltermod_exports_are_recognized_as_csri() {
+        let real = ex(&[
+            "VapourSynthPluginInit",
+            "csri_close",
+            "csri_open_file",
+            "csri_open_mem",
+            "csri_query_ext",
+            "csri_render",
+            "csri_renderer_byname",
+            "csri_renderer_default",
+            "csri_renderer_info",
+        ]);
+        let r = probe("VSFilterMod.dll", &real);
+        assert_eq!(
+            r.kind,
+            Some(ProviderKind::Csri),
+            "真实 CSRI 导出集被误判了：{:?}",
+            r.stages
+        );
+    }
+
+    /// 旧集合里的那两个幽灵名字**不得**成为必需项。
+    ///
+    /// 直接钉住“含 `csri_open` 而缺 `csri_renderer_default` 的东西不是 CSRI provider”。
+    #[test]
+    fn the_phantom_symbols_are_not_required() {
+        assert!(
+            !CSRI_REQUIRED_EXPORTS.contains(&"csri_open"),
+            "csri_open 不是 CSRI API 的一部分"
+        );
+        assert!(
+            !CSRI_REQUIRED_EXPORTS.contains(&"csri_get_renderer"),
+            "csri_get_renderer 不是 CSRI API 的一部分"
+        );
+        // 只导出幽灵名字的那一组不能算 CSRI
+        let r = probe(
+            "fake.dll",
+            &ex(&[
+                "csri_open",
+                "csri_close",
+                "csri_render",
+                "csri_get_renderer",
+            ]),
+        );
+        assert_ne!(r.kind, Some(ProviderKind::Csri));
+    }
+
     #[test]
     fn missing_one_csri_symbol_is_not_csri() {
         let r = probe(
             "XySubFilter.dll",
-            &ex(&["csri_open", "csri_close", "csri_render"]),
+            &ex(&["csri_renderer_default", "csri_render", "csri_open_file"]),
         );
         assert_eq!(r.stage(ProbeStage::CsriCapability), Some(Outcome::Fail));
         assert_ne!(r.kind, Some(ProviderKind::Csri));
         assert!(r
             .stages
             .iter()
-            .any(|(_, _, msg)| msg.contains("csri_get_renderer")));
+            .any(|(_, _, msg)| msg.contains("csri_close")));
     }
 
     #[test]
@@ -216,8 +337,10 @@ mod tests {
         );
         assert_eq!(r.kind, Some(ProviderKind::LegacyVapourSynth));
         assert_eq!(r.stage(ProbeStage::CsriCapability), Some(Outcome::Fail));
-        // 同名的 CSRI build 才会走 CSRI
-        let c = probe("VSFilterMod.dll", &ex(&CSRI_REQUIRED_EXPORTS));
+        // 同名的 CSRI build 才会走 CSRI（必需项 + 任一个 open 变体）
+        let mut csri_exports: Vec<&str> = CSRI_REQUIRED_EXPORTS.to_vec();
+        csri_exports.push(CSRI_OPEN_VARIANTS[0]);
+        let c = probe("VSFilterMod.dll", &ex(&csri_exports));
         assert_eq!(c.kind, Some(ProviderKind::Csri));
         // 名字像 provider 但既无 CSRI 也无 VS/AVS 符号 → 不给 kind，绝不猜
         let n = probe(

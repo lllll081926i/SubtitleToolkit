@@ -18,6 +18,7 @@
 | VapourSynth/AviSynth adapter | 可选 | 未实现 | legacy 可选项，不阻塞 libass |
 | Font health | P1 | 基础扫描与报告已实现 | DirectWrite 权威、完整字体环境和外部渲染仍需核验 |
 | Font subset | 后续 | 已实现（`font subset`） | `allsorts` 子集 + cmap 级等价检查 + 真 libass 逐像素 RGBA 对照；复杂脚本一律回退整份 |
+| 25 校验规则双向覆盖 | 已交付 | `tools/rule_coverage.py` 盘点：**未覆盖 15 → 0**、双向 27 → 37、反向 2 → 7；15 条规则每个都成对写（正例 + 反例） | **仍有 19 条只有单向（“该报”）**，同属 AK16 那一类风险；`ASS.STR.03` 的 Styles 分支疑似死代码（未改动，只记录） |
 | 17 §7 字体注入报告 | 已交付 | 真 libass 与 CSRI **两条链对照实测**：libass 报 2 份真注入（字节数+sha256），CSRI 报 `injected: []` + `skipped_by_chain: 2` 并说明“字形来自系统字体”；不再出现“发出去了”被当成“进去了” | 无 `user_action` 指向可行替代（如改用 libass 链）；`batch` 侧字段无专属用例 |
 | MKV helper | 后续 | 已实现（`mkv identify\|extract\|remux`） | 调用外部 MKVToolNix；原文件不改，产物重读逐轨校验（AT-MKV-001 已执行通过；无 EBML 自实现） |
 | Media probe | P1 | ffprobe adapter 已实现 | 真实工具与视频样本验证；只提供建议，不自动改速度 |

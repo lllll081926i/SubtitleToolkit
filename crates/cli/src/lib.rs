@@ -5,6 +5,7 @@
 
 pub mod args;
 pub mod batch;
+pub mod defaults;
 pub mod deliver;
 pub mod diagnostic;
 pub mod font;

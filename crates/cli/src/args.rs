@@ -225,25 +225,37 @@ pub enum Command {
         peak_bps: Option<i64>,
     },
     /// 14 §ASS→SUP：渲染 → 采样 → author → 校验 → 写出。
+    ///
+    /// ## 为什么这几个字段是 `Option`
+    ///
+    /// 36 §1 的 ToolDefaults 要在“用户**没给**参数时”提供默认值。
+    /// 而像原先那样在解析阶段就填成 `ValidationLevel::Standard`，
+    /// 到执行阶段已经**看不出**用户到底给没给 —— 那正是“用用户的值”
+    /// 与“用默认值”的分界。
+    ///
+    /// 所以解析阶段只记“用户给了什么”（`Some` = 给了），
+    /// 执行阶段按 `用户值 → ToolDefaults → 编译期默认` 顺序求值（`run.rs`）。
     PgsEncode {
         input: PathBuf,
-        fps: Fps,
-        canvas: Canvas,
-        level: ValidationLevel,
+        fps: Option<Fps>,
+        canvas: Option<Canvas>,
+        level: Option<ValidationLevel>,
         dll: Option<PathBuf>,
-        default_font: String,
+        default_font: Option<String>,
         exact_colors: bool,
         /// AA5：把每个显示集起点吸附到 --fps 的帧网格（默认关，输出逐字节不变）
         snap_pts: bool,
     },
     /// 14 §ASS→BDN：渲染成 BDN XML + PNG 目录。
+    ///
+    /// 字段为 `Option` 的理由同 `PgsEncode`。
     Render {
         input: PathBuf,
-        fps: Fps,
-        canvas: Canvas,
+        fps: Option<Fps>,
+        canvas: Option<Canvas>,
         dll: Option<PathBuf>,
-        default_font: String,
-        min_axis: u32,
+        default_font: Option<String>,
+        min_axis: Option<u32>,
     },
     #[default]
     Doctor,
@@ -494,17 +506,27 @@ fn script_policy(s: &str) -> Result<ScriptResolutionPolicy, ArgError> {
 }
 
 fn parse_level(s: &str) -> Result<ValidationLevel, ArgError> {
-    Ok(match s.to_lowercase().as_str() {
+    parse_level_public(s)
+        .ok_or_else(|| ArgError::value("--level 只能是 probe|structure|basic|standard|strict"))
+}
+
+/// 与 [`parse_level`] 同一个映射，但给 **36 §1 的 ToolDefaults** 用。
+///
+/// 为什么必须共用这一份：设置文件里的 `level` 与命令行上的 `--level`
+/// 是**同一个概念**。各写一份映射的后果是“设置里能写的取值”与
+/// “命令行能写的取值”逐渐不一致，而用户会认为两者一样。
+///
+/// 返回 `Option` 而不是 `ArgError`：调用方（`defaults.rs`）要把错误报成
+/// “工具默认值里的东西不对”而不是“命令行参数不对”，而两者的错误码与
+/// “改法”完全不同。
+pub fn parse_level_public(s: &str) -> Option<ValidationLevel> {
+    Some(match s.to_lowercase().as_str() {
         "probe" => ValidationLevel::Probe,
         "structure" => ValidationLevel::Structure,
         "basic" => ValidationLevel::Basic,
         "standard" => ValidationLevel::Standard,
         "strict" => ValidationLevel::Strict,
-        _ => {
-            return Err(ArgError::value(
-                "--level 只能是 probe|structure|basic|standard|strict",
-            ))
-        }
+        _ => return None,
     })
 }
 
@@ -850,20 +872,23 @@ pub fn parse(argv: &[String]) -> Result<Invocation, ArgError> {
                     }
                 }
                 "encode" => {
-                    let mut fps = Fps::NTSC_23976;
-                    let mut canvas = Canvas::FHD1080;
-                    let mut level = ValidationLevel::Standard;
+                    // 36 §1：这几个字段是 `Option`，因为“用户有没有给这个参数”
+                    // 决定了该不该去查 ToolDefaults。在这里就填成具体值，
+                    // 到执行阶段已经看不出分界（见 `defaults.rs`）。
+                    let mut fps: Option<Fps> = None;
+                    let mut canvas: Option<Canvas> = None;
+                    let mut level: Option<ValidationLevel> = None;
                     let mut dll: Option<PathBuf> = None;
-                    let mut font = "Arial".to_string();
+                    let mut font: Option<String> = None;
                     let mut exact = false;
                     let mut snap = false;
                     let input = scan(tail, &mut |name, value| {
                         match name {
-                            "--fps" => fps = parse_fps(value)?,
-                            "--canvas" => canvas = parse_canvas(value)?,
-                            "--level" => level = parse_level(value)?,
+                            "--fps" => fps = Some(parse_fps(value)?),
+                            "--canvas" => canvas = Some(parse_canvas(value)?),
+                            "--level" => level = Some(parse_level(value)?),
                             "--libass-dll" => dll = Some(PathBuf::from(value)),
-                            "--default-font" => font = value.to_string(),
+                            "--default-font" => font = Some(value.to_string()),
                             "--exact-colors" => exact = true,
                             "--snap-pts" => snap = true,
                             _ => {
@@ -874,14 +899,10 @@ pub fn parse(argv: &[String]) -> Result<Invocation, ArgError> {
                         }
                         Ok(())
                     })?;
-                    // 采样网格与输出画布都必须是 16:9 profile（13 §4：composition canvas
-                    // 始终是完整画布），非 16:9 在这里就拒绝，而不是让 PGS 段流带病出门
-                    if !canvas.is_16_9() {
-                        return Err(ArgError::value(format!(
-                            "PGS composition canvas 必须是 16:9 profile，收到 {}",
-                            canvas.label()
-                        )));
-                    }
+                    // 16:9 的校验**不在这里**做：这个值可能来自 ToolDefaults，
+                    // 而“设置文件里的画布不是 16:9”应该在求值时报一次
+                    // （错误码指向 `tool-defaults set`），而不是在这里报成
+                    // 一个指向命令行的错。见 `run.rs` 的 encode 分支。
                     Command::PgsEncode {
                         input,
                         fps,
@@ -1034,32 +1055,30 @@ pub fn parse(argv: &[String]) -> Result<Invocation, ArgError> {
             }
         }
         "render" => {
-            let mut fps = Fps::NTSC_23976;
-            let mut canvas = Canvas::FHD1080;
+            // 同 `pgs encode`：`Option` 区分“用户给了”与“没给”，
+            // 16:9 的校验移到求值之后（值可能来自 ToolDefaults）。
+            let mut fps: Option<Fps> = None;
+            let mut canvas: Option<Canvas> = None;
             let mut dll: Option<PathBuf> = None;
-            let mut font = "Arial".to_string();
-            let mut min_axis = 0u32;
+            let mut font: Option<String> = None;
+            let mut min_axis: Option<u32> = None;
             let input = scan(rest, &mut |name, value| {
                 match name {
-                    "--fps" => fps = parse_fps(value)?,
-                    "--canvas" => canvas = parse_canvas(value)?,
+                    "--fps" => fps = Some(parse_fps(value)?),
+                    "--canvas" => canvas = Some(parse_canvas(value)?),
                     "--libass-dll" => dll = Some(PathBuf::from(value)),
-                    "--default-font" => font = value.to_string(),
+                    "--default-font" => font = Some(value.to_string()),
                     "--min-axis" => {
-                        min_axis = value
-                            .parse::<u32>()
-                            .map_err(|_| ArgError::value("--min-axis 需要非负整数"))?
+                        min_axis = Some(
+                            value
+                                .parse::<u32>()
+                                .map_err(|_| ArgError::value("--min-axis 需要非负整数"))?,
+                        )
                     }
                     _ => return Err(ArgError::value(format!("render 不支持开关 {name}"))),
                 }
                 Ok(())
             })?;
-            if !canvas.is_16_9() {
-                return Err(ArgError::value(format!(
-                    "BDN 输出画布必须是完整 16:9，收到 {}",
-                    canvas.label()
-                )));
-            }
             Command::Render {
                 input,
                 fps,
@@ -1952,10 +1971,14 @@ mod tests {
                 dll,
                 ..
             } => {
-                assert_eq!(min_axis, 8);
-                assert_eq!(fps, Fps::NTSC_23976, "默认帧率要有出处");
-                assert_eq!(canvas, Canvas::FHD1080);
-                assert_eq!(default_font, "Arial");
+                // 36 §1：解析阶段只记“用户给了什么”（`Some`），
+                // 求值（含 ToolDefaults）在执行阶段做。
+                assert_eq!(min_axis, Some(8), "用户显式给了 --min-axis");
+                // 没给的几项是 `None` —— 这正是“求值时该去查 ToolDefaults”的信号。
+                // 它们**不再**在这里被填成具体默认值（那会让执行阶段看不出分界）。
+                assert_eq!(fps, None, "没给 --fps 就该是 None");
+                assert_eq!(canvas, None);
+                assert_eq!(default_font, None);
                 assert_eq!(dll, None);
             }
             other => panic!("render 应该解析成 Command::Render，收到 {other:?}"),
@@ -1990,14 +2013,22 @@ mod tests {
         match on.command {
             Command::PgsEncode { snap_pts, fps, .. } => {
                 assert!(snap_pts, "--snap-pts 没生效");
-                assert_eq!(fps.to_label(), "23.976", "开关不该改动别的字段");
+                // 开关不该改动别的字段：`--snap-pts` 不影响 `fps` 的“用户给没给”。
+                assert_eq!(fps, None, "开关不该凭空造出一个 --fps");
             }
             _ => panic!("不是 pgs encode"),
         }
     }
 
+    /// 36 §1：解析阶段只记“用户给了什么”；默认值不在这一层定。
+    ///
+    /// 这条取代了旧的 `pgs_encode_defaults_are_the_bluray_profile_and_quantized_colors`，
+    /// 因为**默认值现在在执行阶段求**（`defaults::pgs_encode`），
+    /// 而那一条不再属于参数解析的职责。默认值的正确性由
+    /// `crates/cli/src/defaults.rs` 的用例钉住；无参数时的**端到端**行为由
+    /// `crates/cli/tests/tool_defaults.rs` 与 `args.rs` 的 CLI 用例钉住。
     #[test]
-    fn pgs_encode_defaults_are_the_bluray_profile_and_quantized_colors() {
+    fn pgs_encode_records_only_what_the_user_gave() {
         let inv = parse(&argv(&["pgs", "encode", "x.ass"])).unwrap();
         match inv.command {
             Command::PgsEncode {
@@ -2009,22 +2040,31 @@ mod tests {
                 exact_colors,
                 ..
             } => {
-                assert_eq!(fps.to_label(), "23.976");
-                assert_eq!((canvas.width, canvas.height), (1920, 1080));
-                assert_eq!(level, ValidationLevel::Standard);
+                assert_eq!(fps, None, "没给 --fps 就该是 None");
+                assert_eq!(canvas, None, "没给 --canvas 就该是 None");
+                assert_eq!(level, None, "没给 --level 就该是 None");
+                assert_eq!(default_font, None, "没给 --default-font 就该是 None");
                 assert_eq!(dll, None, "不猜 DLL 路径，只认显式输入与环境变量");
-                assert_eq!(default_font, "Arial");
                 assert!(!exact_colors, "默认走量化档：真实渲染就是会超过 255 色");
             }
             other => panic!("不是 PgsEncode：{other:?}"),
         }
-        // 非 16:9 的 composition canvas 在参数阶段就拒（13 §4 的 profile 约束）
-        assert_eq!(
-            parse(&argv(&["pgs", "encode", "x.ass", "--canvas", "1000x800"]))
-                .unwrap_err()
-                .message,
-            "PGS composition canvas 必须是 16:9 profile，收到 1000x800"
-        );
+        // 用户显式给的要被记下来
+        let inv = parse(&argv(&[
+            "pgs", "encode", "x.ass", "--canvas", "1280x720", "--level", "basic",
+        ]))
+        .unwrap();
+        match inv.command {
+            Command::PgsEncode { canvas, level, .. } => {
+                assert_eq!(canvas.map(|c| (c.width, c.height)), Some((1280, 720)));
+                assert_eq!(level, Some(ValidationLevel::Basic));
+            }
+            other => panic!("不是 PgsEncode：{other:?}"),
+        }
+        // 那个”非 16:9 在参数阶段就拒“的行为**改到了执行阶段**：
+        // 画布可能来自 ToolDefaults，而那要在求值之后才能判定。
+        // 所以这里只断言参数解析不再拦它（拦它的地方是 `run::pgs_encode`）。
+        assert!(parse(&argv(&["pgs", "encode", "x.ass", "--canvas", "1000x800"])).is_ok());
         let e = parse(&argv(&["pgs", "encode", "x.ass", "--nosuch=1"])).unwrap_err();
         assert!(
             e.message.contains("pgs encode 不支持开关 --nosuch"),

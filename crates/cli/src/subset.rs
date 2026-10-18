@@ -56,6 +56,22 @@ pub fn run_subset(inv: &Invocation) -> Result<Envelope> {
         return Err(cli_err(280, "font 命令分派错误"));
     };
 
+    // 36 §1：命令行 > ToolDefaults > 内置默认。
+    //
+    // `fallback_full` 是个**开关**，但这里的语义与其他开关不同：
+    // 它是“我恒常希望回退就整份失败”这种偏好，而不是“这次要不要做”。
+    // 所以它进 ToolDefaults。
+    //
+    // `--fallback-full` 只能置真、不能置假（命令行没有“显式关”的写法），
+    // 所以命令行给的 `true` 能压过设置里的 `false`，反之不成立 ——
+    // 这一点在文档里写清楚，不让它成为一个暗坑。
+    let (td_fallback_full, td_subset_dir) =
+        crate::defaults::font_subset(&crate::defaults::load().defaults)?;
+    let fallback_full = *fallback_full || td_fallback_full;
+    let subset_dir = subset_dir.clone().or(td_subset_dir);
+    let fallback_full = &fallback_full;
+    let subset_dir = &subset_dir;
+
     // 与 font scan 完全同一套"抽取用量 → 建库 → 评级"：子集必须建立在
     // 同一份用量结论上，否则"要保留哪些字"会在两个命令之间漂移。
     let loaded = pipeline::load_text(input)?;

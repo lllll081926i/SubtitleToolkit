@@ -48,7 +48,13 @@ use crate::datadir::DataDir;
 use crate::error::{Domain, Result, StkError};
 
 /// 当前 ToolDefaults 文件的 schema 版本。
-pub const CURRENT_SCHEMA: u32 = 1;
+///
+/// 名字带上 `TOOL_DEFAULTS_` 前缀而不叫 `CURRENT_SCHEMA`：
+/// `settings.rs` 里已经有一个同名常量，而 `core-model` 的
+/// 错误码唯一性测试会把**同名常量**当成“同一个编号”来核对 ——
+/// 两个不同文件里各自定义 `CURRENT_SCHEMA` 会让它报“编号无法确定”。
+/// 名字区分开既让测试能继续把关，也让读代码的人一眼看出是哪份文件。
+pub const TOOL_DEFAULTS_CURRENT_SCHEMA: u32 = 1;
 
 /// 文件名（在数据目录里）。
 pub const FILE_NAME: &str = "tool-defaults.json";
@@ -138,7 +144,7 @@ pub struct ToolDefaults {
 impl Default for ToolDefaults {
     fn default() -> Self {
         ToolDefaults {
-            schema: CURRENT_SCHEMA,
+            schema: TOOL_DEFAULTS_CURRENT_SCHEMA,
             tools: BTreeMap::new(),
             extra: serde_json::Map::new(),
         }
@@ -288,7 +294,7 @@ impl DefaultsStore {
                 if schema_too_new {
                     problems.push(format!(
                         "schema {} 高于本程序支持的 {}；将只读不写，避免降级破坏新版字段",
-                        d.schema, CURRENT_SCHEMA
+                        d.schema, TOOL_DEFAULTS_CURRENT_SCHEMA
                     ));
                 }
                 DefaultsLoad {
@@ -362,11 +368,11 @@ fn parse(text: &str) -> std::result::Result<(ToolDefaults, Vec<String>, bool), S
         Some(n) => u32::try_from(n).unwrap_or(0),
         None => {
             problems.push("缺少 schema 字段，按当前版本解析".to_string());
-            CURRENT_SCHEMA
+            TOOL_DEFAULTS_CURRENT_SCHEMA
         }
     };
     out.schema = schema;
-    let schema_too_new = schema > CURRENT_SCHEMA;
+    let schema_too_new = schema > TOOL_DEFAULTS_CURRENT_SCHEMA;
 
     for (k, val) in obj {
         match k.as_str() {

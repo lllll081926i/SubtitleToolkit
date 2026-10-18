@@ -28,6 +28,17 @@ fn cli_err(code: u16, msg: &str) -> StkError {
 /// → PATH。绝不猜硬盘上的位置：指向错误的 exe 会以"非零退出"的形式出现，
 /// 那比"未找到"更难查。
 fn resolve_tools(tools_dir: Option<&Path>) -> Result<Tools> {
+    // 36 §1：命令行 > ToolDefaults > 环境变量/默认。
+    //
+    // ToolDefaults 插在命令行之后、环境变量之前：命令行是**这次**的意图，
+    // 设置文件是**跨会话**的偏好，而环境变量是外部环境的状态。
+    // 三者的优先序与 `defaults.rs` 里其他几项一致。
+    let from_td = if tools_dir.is_none() {
+        crate::defaults::mkv(&crate::defaults::load().defaults)
+    } else {
+        None
+    };
+    let tools_dir = tools_dir.or(from_td.as_deref());
     let (merge, extract) = if let Some(dir) = tools_dir {
         if !dir.is_dir() {
             return Err(cli_err(250, "--tools-dir 不是目录").with_detail(dir.display().to_string()));

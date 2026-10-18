@@ -111,7 +111,7 @@ pub(crate) fn execute_ctx(
             *canvas,
             *level,
             dll.as_deref(),
-            default_font,
+            default_font.as_deref(),
             *exact_colors,
             *snap_pts,
             cmd,
@@ -153,7 +153,7 @@ pub(crate) fn execute_ctx(
                 fps: *fps,
                 canvas: *canvas,
                 dll: dll.as_deref(),
-                default_font,
+                default_font: default_font.as_deref(),
                 min_axis: *min_axis,
             },
             cmd,
@@ -906,17 +906,54 @@ pub(crate) fn sample_grid(fps: Fps, last_end_ms: i64) -> Result<Grid> {
 fn pgs_encode(
     inv: &Invocation,
     input: &Path,
-    fps: Fps,
-    canvas: Canvas,
-    level: core_model::profile::ValidationLevel,
+    cli_fps: Option<Fps>,
+    cli_canvas: Option<Canvas>,
+    cli_level: Option<core_model::profile::ValidationLevel>,
     dll: Option<&Path>,
-    default_font: &str,
+    cli_font: Option<&str>,
     exact_colors: bool,
     snap_pts: bool,
     cmd: &str,
     shared: Option<&crate::front::SharedRender<'_>>,
     cache: &Option<crate::rendercache::DiskCache>,
 ) -> Result<Envelope> {
+    // 36 §1：用 `用户值 → ToolDefaults → 编译期默认` 顺序求值。
+    //
+    // 求值放在**执行阶段的最开头**而不是解析阶段，因为要区分“用户给了”与
+    // “没给”（见 args.rs 的注释）。
+    let td_load = crate::defaults::load();
+    let resolved =
+        crate::defaults::pgs_encode(&td_load.defaults, cli_fps, cli_canvas, cli_level, cli_font)?;
+    let fps = resolved.value.fps;
+    let canvas = resolved.value.canvas;
+    let level = resolved.value.level;
+    let default_font = resolved.value.default_font.as_str();
+
+    // 16:9 的校验在**求值之后**做：值可能来自 ToolDefaults，
+    // 而一条错在设置文件里的画布应当在报告里指向 `tool-defaults set`。
+    //
+    // 判定用 `Geometry::for_canvas(...).validate()`（09 §1 的唯一事实源），
+    // 不手写 `is_16_9()`：两份规则会对同一个画布给出不同答案。
+    if !canvas.is_16_9() {
+        let from_settings = resolved
+            .sources
+            .get("canvas")
+            .is_some_and(|s| *s == "tool-defaults");
+        let e = StkError::simple(
+            Domain::Input,
+            // 这不是 09 §1 的通用画布错（那条是 core-model 的 Input/31），
+            // 而是 PGS 特有的 composition canvas 约束（13 §4）。
+            221,
+            "PGS composition canvas 必须是 16:9 profile",
+        )
+        .with_detail(format!("收到 {}", canvas.label()));
+        return Err(if from_settings {
+            e.with_action("改工具默认值：tool-defaults set \"pgs encode\" canvas 1920x1080")
+        } else {
+            e.with_action("用 --canvas 1920x1080 这样的 16:9 画布")
+        });
+    }
+
     let no_render_cache = !inv.render_cache;
     let mut loss_disk_hit = false;
     // 前半链（采样 → 变化检测）与 ASS→BDN 共用同一份实现；批量里同一输入的
@@ -1009,6 +1046,15 @@ fn pgs_encode(
         ),
         "canvas": canvas.label(),
         "fps": fps.to_label(),
+        // 36 §1：报出这四项**最终取值来自哪**。
+        //
+        // 用户问的是“我设的生效了吗”，而只有取值不回答那个问题 ——
+        // 同一份报告在“设了 level=standard 而默认恰好也是 standard”时
+        // 与非“设过的”长得一模一样。这个字段把两者分开。
+        "resolved_from": resolved.sources,
+        // 读设置时的警告（如 schema 过高、坏文件）也要在报告里出现，
+        // 否则“我设了却不生效”会变成一件没有线索的事。
+        "tool_defaults_problems": td_load.problems,
         "samples": rendered.samples,
         "stream_end_ms": grid.stream_end_ms,
         // 37 §2：缓存命不命中是**可核对的事实**，不是内部细节。
@@ -1466,7 +1512,7 @@ fn tool_defaults_cmd(
 
             let got = store.load();
             // 与 AppSettings 同一条：schema 高于本程序就只读不写。
-            if got.defaults.schema > td::CURRENT_SCHEMA {
+            if got.defaults.schema > td::TOOL_DEFAULTS_CURRENT_SCHEMA {
                 return Err(StkError::simple(
                     Domain::Input,
                     321,
@@ -1475,7 +1521,7 @@ fn tool_defaults_cmd(
                 .with_detail(format!(
                     "文件 schema={}，本程序支持到 {}",
                     got.defaults.schema,
-                    td::CURRENT_SCHEMA
+                    td::TOOL_DEFAULTS_CURRENT_SCHEMA
                 ))
                 .with_action("用较新版本的程序修改，或手工编辑该文件"));
             }

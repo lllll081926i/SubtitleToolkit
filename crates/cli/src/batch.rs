@@ -434,11 +434,17 @@ fn command_for(r: &Resolved, input: &Path, dll: Option<&str>) -> Command {
     match r.target {
         FormatKind::Pgs => Command::PgsEncode {
             input: input.to_path_buf(),
-            fps: r.profile.fps,
-            canvas: r.profile.canvas,
-            level: ValidationLevel::Standard,
+            // 批量 spec 里的值是**已解析的确定值**，所以一律 `Some`：
+            // spec 自己就是一份完整的参数快照（36 §1 的 JobSnapshot 层），
+            // 不应被用户的 ToolDefaults 影响 —— 否则同一份 spec
+            // 在不同机器上会跑出不同的结果，而“可重放”正是它的用途。
+            fps: Some(r.profile.fps),
+            canvas: Some(r.profile.canvas),
+            // 与单命令默认一致（spec 没有这个字段）。
+            // 也不查 ToolDefaults：同上，spec 是冻结的参数。
+            level: Some(ValidationLevel::Standard),
             dll: dll.map(PathBuf::from),
-            default_font: r.font.clone(),
+            default_font: Some(r.font.clone()),
             exact_colors: r.exact_colors,
             // AA5 的吸附是"改动输出"的动作，批量 profile 里不暴露：
             // spec 里没有这个字段就保持与单命令默认一致（不许悄悄替用户改时间轴）。

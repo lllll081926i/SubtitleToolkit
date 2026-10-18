@@ -388,7 +388,7 @@ fn render_without_a_renderer_fails_with_the_missing_input_and_writes_nothing() {
 }
 
 #[test]
-fn render_rejects_a_non_widescreen_canvas_as_a_usage_error() {
+fn render_rejects_a_non_widescreen_canvas_with_a_coded_error() {
     // 09 §1：BDN 输出画布永远是完整 16:9。这里退出码必须是 2（用法错误），
     // 而不是 1——用户参数写错与跑不起来是两回事（20 §Exit codes）。
     let dir = workspace("canvas");
@@ -402,16 +402,24 @@ fn render_rejects_a_non_widescreen_canvas_as_a_usage_error() {
             "1024x768",
             "--json",
         ],
+        // 不给 DLL：画布的校验现在在**求值之后、载 DLL 之前**做，
+        // 所以本用例不该依赖“本机恰好装了 libass”，也不该被缺 DLL 的错抢在前面。
         None,
     );
-    assert_eq!(out.status.code(), Some(2));
-    // 用法错误走 stderr 文本，不开 JSON 信封：信封是给"跑起来了并且有结论"的运行用的
+    // 36 §1 把画布的 16:9 校验从“参数解析”搬到了“执行阶段”：画布可能来自
+    // ToolDefaults，而那要到求值之后才知道。于是这个错从用法错（退 2、
+    // 走 stderr 文本）变成了执行错（退 1、带 JSON 信封）。
+    //
+    // 这个变化是**更好的**：它进了信封，因而带了错误码（STK-INP-0031）
+    // 与可机读的 details —— 而旧的 stderr 文本没法让脚本判定失败原因。
+    assert_eq!(out.status.code(), Some(1));
+    let body = String::from_utf8_lossy(&out.stdout).to_string();
     assert!(
-        String::from_utf8_lossy(&out.stdout).trim().is_empty(),
-        "用法错误不该有信封"
+        body.contains("STK-INP-0031"),
+        "要带上错误码，脚本才能判因: {body}"
     );
-    let text = String::from_utf8_lossy(&out.stderr).to_string();
-    assert!(text.contains("16:9"), "{text}");
+    assert!(body.contains("16:9"), "{body}");
+    assert!(body.contains("1024x768"), "要报出实际的画布: {body}");
     std::fs::remove_dir_all(&dir).ok();
 }
 

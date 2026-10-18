@@ -38,11 +38,12 @@ type PngMap = BTreeMap<String, Vec<u8>>;
 /// 省掉八个位置参数，也就少了"某个参数没传到底"的空间。
 pub struct RenderArgs<'a> {
     pub input: &'a Path,
-    pub fps: Fps,
-    pub canvas: Canvas,
+    /// 36 §1：`None` = 用户没给，执行阶段去查 ToolDefaults。
+    pub fps: Option<Fps>,
+    pub canvas: Option<Canvas>,
     pub dll: Option<&'a Path>,
-    pub default_font: &'a str,
-    pub min_axis: u32,
+    pub default_font: Option<&'a str>,
+    pub min_axis: Option<u32>,
 }
 
 /// 一次 render 的中间产物：XML 字节 + 每个**存活事件**的 PNG 字节。
@@ -127,6 +128,8 @@ fn build(
     inject: Option<&[crate::front::InjectFace]>,
     cache: &Option<crate::rendercache::DiskCache>,
 ) -> Result<Built> {
+    // `RenderArgs` 到这里已经是**确定值**（求值在 `run_render` 里做一次，
+    // 见那里的注释），所以这里解包时是安全的 —— 不是“碰运气 unwrap 到的”。
     let RenderArgs {
         input,
         fps,
@@ -135,6 +138,12 @@ fn build(
         default_font,
         min_axis,
     } = *args;
+    // 下面四个解包：`build` 只被 `run_render` 调，而那已经求过值了。
+    // 用 `expect` 而不是 `unwrap` 是为了把“这是不变式”而非“可能缺失”写清楚。
+    let fps = fps.expect("build 拿到的 RenderArgs 应当已求值");
+    let canvas = canvas.expect("build 拿到的 RenderArgs 应当已求值");
+    let default_font = default_font.expect("build 拿到的 RenderArgs 应当已求值");
+    let min_axis = min_axis.expect("build 拿到的 RenderArgs 应当已求值");
     // 前半链（采样 → 变化检测 → tight 裁剪）与 ASS→SUP 共用同一份实现：
     // 14 §ASS→SUP 写的是"同 BDN 前半"，反过来 BDN 也不该另写一套"什么时候算换帧"。
     let job = crate::front::RenderJob {
@@ -209,13 +218,47 @@ pub(crate) fn run_render(
     shared: Option<&crate::front::SharedRender<'_>>,
     cache: &Option<crate::rendercache::DiskCache>,
 ) -> Result<Envelope> {
-    let RenderArgs {
-        input,
-        fps,
-        canvas,
-        min_axis,
-        ..
-    } = *args;
+    let input = args.input;
+    // 36 §1：用 `用户值 → ToolDefaults → 编译期默认` 顺序求值。
+    //
+    // **求值只在这一处**：`build` 拿到的 `RenderArgs` 已经是确定值，
+    // 它不再自己查一遍。两处各查一次的后果是“报告里说的取值”与
+    // “真正拿去渲染的取值”可能不同（读设置两次、而文件可能中间被改过）。
+    let resolved = crate::defaults::render(
+        &crate::defaults::load().defaults,
+        args.fps,
+        args.canvas,
+        args.default_font,
+        args.min_axis,
+    )?;
+    let fps = resolved.value.fps;
+    let canvas = resolved.value.canvas;
+    let default_font = resolved.value.default_font.as_str();
+    let min_axis = resolved.value.min_axis;
+
+    // 画布的 16:9 校验放在这里，而不是等 `codec-bdn` 在深处理报。
+    //
+    // 两个理由：① 求值之后画布已经确定了，再往后走就是浪费；
+    // ② 错在 ToolDefaults 里时，错误应当指向 `tool-defaults set` 而不是
+    // 一句与设置无关的“输出画布必须是完整 16:9”。
+    //
+    // **判定不在这里重写**：用 `Geometry::for_canvas(...)` + `validate()`，
+    // 那是 09 §1 的唯一事实源（`codec-bdn` 也走的同一条）。
+    // 手写一个 `is_16_9()` 会造出第二份规则，而两份规则迟早会对同一个画布
+    // 给出不同答案 —— 那时报告里就会出现“同一输入两种结论”。
+    if let Err(mut e) = core_model::geometry::Geometry::for_canvas(canvas).validate() {
+        let from_settings = resolved
+            .sources
+            .get("canvas")
+            .is_some_and(|s| *s == "tool-defaults");
+        if from_settings {
+            e = e.with_action("改工具默认值：tool-defaults set render canvas 1920x1080");
+        } else {
+            e = e.with_action("用 --canvas 1920x1080 这样的 16:9 画布");
+        }
+        return Err(e);
+    }
+
     // 字体环境与注入计划都在渲染之前算好（17 §7）：
     // 身份要进报告与缓存 key，注入要在 libass 读轨道之前把字节交出去。
     // 顺序不是风格问题 —— 渲染已经发生之后再算身份，那份身份只是事后追认。
@@ -231,11 +274,11 @@ pub(crate) fn run_render(
     };
     let ready_args = RenderArgs {
         input,
-        fps,
-        canvas,
+        fps: Some(fps),
+        canvas: Some(canvas),
         dll: Some(&dll_path),
-        default_font: args.default_font,
-        min_axis,
+        default_font: Some(default_font),
+        min_axis: Some(min_axis),
     };
     let built = build(&ready_args, shared, plan.as_deref(), cache)?;
     let stem = input
@@ -339,6 +382,8 @@ pub(crate) fn run_render(
         "to": "bdn",
         "canvas": canvas.label(),
         "fps": fps.to_label(),
+        // 36 §1：报出这几项**最终取值来自哪**（命令行 / tool-defaults / 内置默认）。
+        "resolved_from": resolved.sources,
         "events": built.events,
         "rendered_frames": built.rendered,
         "pngs": png_count,
@@ -381,13 +426,16 @@ pub fn command_for(
     font: &str,
     min_axis: u32,
 ) -> Command {
+    // 一律 `Some`：批量 spec 里的值是**已解析的确定值**，spec 自己就是一份
+    // 完整的参数快照（36 §1 的 JobSnapshot 层）。让它去查用户的 ToolDefaults
+    // 会让同一份 spec 在不同机器上跑出不同结果，而“可重放”正是 spec 的用途。
     Command::Render {
         input: input.to_path_buf(),
-        fps,
-        canvas,
+        fps: Some(fps),
+        canvas: Some(canvas),
         dll: dll.map(PathBuf::from),
-        default_font: font.to_string(),
-        min_axis,
+        default_font: Some(font.to_string()),
+        min_axis: Some(min_axis),
     }
 }
 

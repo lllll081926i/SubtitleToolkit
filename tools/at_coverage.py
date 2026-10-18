@@ -59,14 +59,20 @@ COVERAGE = {
     ),
     "AT-RENDER-003": (
         "uncovered",
-        "x86 host **已能构建**（`cargo build -p renderer-host --target i686-pc-windows-msvc`；"
-        "产物真 32 位，与 x64 在真 libass 下输出逐字节一致 —— 见 x86-host-and-cache-key 裁决）。"
-        "但规格要的是**x86 DLL 路由**的证据，而那需要一只真的 x86 libass DLL"
-        "（本机只有 x64 那份，机器类型 0x8664）。已验到的是“x86 host 正确**拒绝** x64 DLL”"
-        "（STK-RND-0091）—— 那是反面证据（证明校验在位），**不是**路由可用的证据。"
-        "本轮新增的 `provider probe` 给它添了一个核对工具："
-        "能对一个 x86 DLL 报出位数与能力**而不加载它**，但那仍不是路由证据。"
-        "另：x86 host 尚未随包分发（前提是 x86 DLL 的许可审计，21 §6）。",
+        "**路由判定本身已验，端到端仍未验收。** 规格要的是“验证 x86 DLL 路由”——"
+        "即给一个**真 x86 libass DLL**，系统把它送进 x86 host 并对 x64 主进程提供可用渲染。"
+        "本机扫过三个 libass*.dll（third_party\\libass-9.dll、"
+        "target\\native-msys2-*\\ucrt64\\bin\\libass-9.dll、D:\\OncePower\\libass.dll），"
+        "**全是 x64**（0x8664）。而“造一个能渲染的 x86 DLL”不是测试而是伪造——"
+        "空壳 DLL 能过位数校验却渲染不出东西，那种“通过”没有意义。"
+        "已验的部分（crates/cli/tests/x86_dll_routing.rs，5 个用例手造真导出表的 x86 PE）："
+        "① x86 PE 被读成 x86 且导出名读得出；② x64 主进程拿到 x86 DLL 报“位数不符”"
+        "而**不是**加载器那句“不是有效的 Win32 应用程序”（考的是**报错位置**）；"
+        "③ **不许先 LoadLibrary 再看**（12 §3）——判据是**错误的归属**：把导出目录 RVA 改坏后，"
+        "报错仍必须是位数相关，因为位数检查在读导出表之前；"
+        "④ provider probe 报得出 x86/导出名且明说“没有加载”。"
+        "另有 x86 host **已能构建**（产物真 32 位，与 x64 在真 libass 下输出逐字节一致）。"
+        "最后一条用例把“本机没有真 x86 libass”变成**可核验的事实**：一旦出现，它会失败并提醒接进验收。",
     ),
     "AT-PGS-001": (
         "covered",

@@ -59,24 +59,37 @@ impl ProbeResult {
 /// 后果是：**每一个真的 CSRI provider 都会被判成"不是 CSRI provider"** ——
 /// 而这四个名字还会出现在错误信息里，让人以为是自己拿错了 DLL。
 ///
-/// 实测抳出来的（`a_real_libass_exports_...` 与 `the_vsfiltermod_candidate_is_probed_by_exports_not_by_name`）：
-/// 本机 `third_party\VSFilterMod.dll` 导出 8 个 `csri_*` 符号，
-/// 包括 `csri_open_file`、`csri_open_mem`、`csri_renderer_default`、`csri_query_ext`
-/// —— 但 **没有** `csri_open`。按旧集合它会被误判为非 provider。
+/// 实测抳出来的：本机 `third_party\VSFilterMod.dll` 导出 8 个 `csri_*` 符号，
+/// 但 **没有** `csri_open`。按旧集合它会被误判为非 provider。
 ///
-/// ## 按实际 ABI 取集合
+/// ## 取集合的原则：只要“能建实例 + 能画一帧 + 能释放”
 ///
-/// 独立参考（Aegisub 自带的 CSRI 示例、x264 的 vsfilter patch）给的调用序列是：
+/// | 符号 | 作用 |
+/// | --- | --- |
+/// | `csri_renderer_default` | 拿到 renderer 句柄 |
+/// | `csri_open_file` \| `csri_open_mem` | 从脚本建实例（**二选一**） |
+/// | `csri_render` | 画一帧 |
+/// | `csri_close` | 释放实例 |
 ///
-/// ```c
-/// csri_rend *r = csri_renderer_default();       // 或 csri_renderer_byname()
-/// csri_inst *i = csri_open_file(r, path, NULL); // 或 csri_open_mem()
-/// csri_render(i, &frame, t);
-/// ```
+/// ## 为什么 **不** 要求 `csri_request_fmt`
 ///
-/// 所以必需项取这条**调用链**上用到的符号，而不是我当初以为的那四个。
-/// 两个 open 变体（file/mem）**只需其一**：一个只支持内存脚本的 provider
-/// 也是可用的 provider，把它判成不可用是假的阴性。
+/// 这是本轮**差点搞错的一步**，值得写下来：
+///
+/// 上游 `csri.h` 里确实有 `csri_request_fmt(inst, &fmt)`，而且旧式调用序列
+/// （设格式 → 画帧）要用它。所以我一度把它加进了必需集。
+///
+/// 但**实测否掉了这个改动**：本机真实 `VSFilterMod.dll` 导出 20 个名字，
+/// 其中有 `csri_query_ext` 而**没有** `csri_request_fmt`。
+/// 原因正好对应 12 §1B 那句“只有确实暴露标准 CSRI / `csri_stream_ext`
+/// 的 provider 才走这条链” —— 新式的 `csri_stream_ext` 路径把
+/// “设格式”挪进了扩展接口，不再需要那个旧入口。
+///
+/// 所以把它列为必需项会把**恰恰是规格点名的那类 provider** 排除掉。
+/// 它归入 [`CSRI_OPTIONAL_EXPORTS`]。
+///
+/// **教训**：能力集合不能从“头文件里有什么”推，要从
+/// “**真的 provider 导了什么**”反推。头文件描述接口全集，
+/// 而实现会选其中一条路径。
 ///
 /// 见 `docs/history/2026-10-06/ISSUES.md` C9。
 pub const CSRI_REQUIRED_EXPORTS: [&str; 3] = ["csri_renderer_default", "csri_render", "csri_close"];
@@ -85,7 +98,38 @@ pub const CSRI_REQUIRED_EXPORTS: [&str; 3] = ["csri_renderer_default", "csri_ren
 ///
 /// 分成两半而不是写进上面那个集合：它们不是"两个都要"，
 /// 而是"两条等价入口的二选一"。写成一个固定列表就无法表达这个语义。
+///
+/// 实测：VSFilterMod 两个都导；而一个只支持内存脚本的 provider
+/// （宿主把 ASS 内容直接喂进去）只导 `csri_open_mem` —— 它也是可用的 provider，
+/// 判它不可用是假的阴性。
 pub const CSRI_OPEN_VARIANTS: [&str; 2] = ["csri_open_file", "csri_open_mem"];
+
+/// 可选但有意义的 CSRI 导出：**不参与“是不是 provider”的判定**，
+/// 但用户应当知道它们在与不在。
+///
+/// `csri_query_ext` 是查扩展的入口，`csri_stream_ext`（12 §1B 点名的那条）
+/// 就是通过它获得的。
+///
+/// `csri_request_fmt` 在这里而不在必需集里：旧式路径用它设格式，
+/// 而新式的 `csri_stream_ext` 路径把这件事挪进扩展接口了 ——
+/// 实测 VSFilterMod 就只有后者。详见 [`CSRI_REQUIRED_EXPORTS`] 的注释。
+pub const CSRI_OPTIONAL_EXPORTS: [&str; 6] = [
+    "csri_query_ext",
+    "csri_request_fmt",
+    "csri_renderer_info",
+    "csri_renderer_next",
+    "csri_renderer_byname",
+    "csri_renderer_byext",
+];
+
+/// 一个导出集里**有**哪些可选项（按 [`CSRI_OPTIONAL_EXPORTS`] 的顺序）。
+pub fn csri_optional_extensions(exports: &[String]) -> Vec<&'static str> {
+    CSRI_OPTIONAL_EXPORTS
+        .iter()
+        .copied()
+        .filter(|n| exports.iter().any(|e| e == n))
+        .collect()
+}
 
 /// 只看导出名，判定"这是不是一个 CSRI provider"。
 ///
@@ -95,7 +139,7 @@ pub fn looks_like_csri(exports: &[String]) -> bool {
     CSRI_REQUIRED_EXPORTS.iter().all(|n| has(n)) && CSRI_OPEN_VARIANTS.iter().any(|n| has(n))
 }
 
-/// 列出**缺哪个**（用于错误文案）。空 = 齐全。
+/// 列出**缺哪个必需项**（用于错误文案）。空 = 齐全。
 pub fn missing_csri(exports: &[String]) -> Vec<&'static str> {
     let has = |n: &str| exports.iter().any(|e| e == n);
     let mut out: Vec<&'static str> = CSRI_REQUIRED_EXPORTS
@@ -242,30 +286,16 @@ mod tests {
         );
     }
 
-    /// **内存入口也能算 CSRI provider**。
-    ///
-    /// 回归用例：必需集合里若把 `csri_open_file` 写成硬要求，
-    /// 一个只支持内存脚本的 provider 会被误判成不可用 —— 那是假阴性。
-    #[test]
-    fn a_memory_only_csri_provider_is_still_csri() {
-        let r = probe(
-            "mem-only.dll",
-            &ex(&[
-                "csri_renderer_default",
-                "csri_render",
-                "csri_close",
-                "csri_open_mem",
-            ]),
-        );
-        assert_eq!(r.kind, Some(ProviderKind::Csri), "内存入口也是合法入口");
-    }
-
     /// 回归用例：**真实的 VSFilterMod 导出集必须被判为 CSRI。**
     ///
-    /// 第一版的必需集合是 `[csri_open, csri_close, csri_render, csri_get_renderer]`，
-    /// 而 `csri_open` / `csri_get_renderer` **根本不是 CSRI API**。
-    /// 下面这组名字是从本机 `third_party\VSFilterMod.dll` 的真实导出表里抄来的，
-    /// 它没有 `csri_open` —— 按旧集合会被误判成“不是 CSRI provider”。
+    /// 这组名字是从本机 `third_party\VSFilterMod.dll` 的**真实导出表**抄来的
+    /// （20 个名字里的 csri_* 部分）。两点值得看：
+    ///
+    /// 1. 它没有 `csri_open` —— 第一版的必需集合要求那个名字，
+    ///    于是**每一个真的 CSRI provider 都会被误判**。
+    /// 2. 它**也没有** `csri_request_fmt` —— 本轮我一度把它加进必需集，
+    ///    这条用例当场报了。它走的是 `csri_query_ext` / `csri_stream_ext`
+    ///    那条新式路径（正是 12 §1B 点名的那条）。
     #[test]
     fn the_real_vsfiltermod_exports_are_recognized_as_csri() {
         let real = ex(&[
@@ -286,6 +316,62 @@ mod tests {
             "真实 CSRI 导出集被误判了：{:?}",
             r.stages
         );
+        // 而它含哪些可选项要能报出来 —— 包括那个说明它走 stream_ext 的
+        // `csri_query_ext`，以及**不**含 `csri_request_fmt` 这个事实。
+        let opt = csri_optional_extensions(&real);
+        assert!(
+            opt.contains(&"csri_query_ext"),
+            "应当报出 csri_query_ext: {opt:?}"
+        );
+        assert!(
+            !opt.contains(&"csri_request_fmt"),
+            "VSFilterMod 不导 csri_request_fmt（走 stream_ext 路径）: {opt:?}"
+        );
+    }
+
+    /// **内存入口也能算 CSRI provider**。
+    ///
+    /// 回归用例：必需集合里若把 `csri_open_file` 写成硬要求，
+    /// 一个只支持内存脚本的 provider 会被误判成不可用 —— 那是假阴性。
+    #[test]
+    fn a_memory_only_csri_provider_is_still_csri() {
+        let r = probe(
+            "mem-only.dll",
+            &ex(&[
+                "csri_renderer_default",
+                "csri_render",
+                "csri_close",
+                "csri_open_mem",
+            ]),
+        );
+        assert_eq!(r.kind, Some(ProviderKind::Csri), "内存入口也是合法入口");
+    }
+
+    /// `csri_request_fmt` **不得**成为必需项。
+    ///
+    /// 本轮差点搞错：它在上游 `csri.h` 里确实存在，所以看着像必需。
+    /// 但它是**旧式**路径的入口，而采用 `csri_stream_ext` 的 provider
+    /// （包括 VSFilterMod）不导出它 —— 把它做成硬要求，
+    /// 会把**规格点名的那类 provider** 排除掉。
+    #[test]
+    fn csri_request_fmt_is_not_required() {
+        assert!(
+            !CSRI_REQUIRED_EXPORTS.contains(&"csri_request_fmt"),
+            "旧式入口不是必需项（新式 stream_ext 路径不用它）"
+        );
+        assert!(CSRI_OPTIONAL_EXPORTS.contains(&"csri_request_fmt"));
+        // 一个不导它的 provider 仍然算 CSRI
+        let r = probe(
+            "stream-ext-only.dll",
+            &ex(&[
+                "csri_renderer_default",
+                "csri_open_mem",
+                "csri_render",
+                "csri_close",
+                "csri_query_ext",
+            ]),
+        );
+        assert_eq!(r.kind, Some(ProviderKind::Csri));
     }
 
     /// 旧集合里的那两个幽灵名字**不得**成为必需项。

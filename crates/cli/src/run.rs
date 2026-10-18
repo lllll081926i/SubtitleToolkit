@@ -346,6 +346,13 @@ fn provider_probe(paths: &[PathBuf], cmd: &str) -> Result<Envelope> {
                         _ => serde_json::json!("不是 libass provider（导出表里没有 ass_* 入口）"),
                     }
                 };
+                // CSRI 的可选导出：它们不参与可用性判定，但告诉用户
+                // **这个 provider 走哪条路径**。尤其是 `csri_query_ext` ——
+                // 12 §1B 点名的 `csri_stream_ext` 就是通过它拿到的。
+                let opt = render_api::capability::csri_optional_extensions(&e.names);
+                if !opt.is_empty() {
+                    row["csri_optional_exports"] = serde_json::json!(opt);
+                }
             }
             Err(e) => {
                 row["exports_error"] = serde_json::json!(e.to_string());

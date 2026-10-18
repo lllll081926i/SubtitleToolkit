@@ -439,6 +439,9 @@ fn serve_render_requests(
             Request::Render { pts_ms } => {
                 frames += 1;
                 tracker.enter(renderer_host::crash::Phase::Render, Some(frames));
+                // AT-RENDER-002：在**真的要调 provider 之前**留一个注入点，
+                // 复现“provider 干活的那一刻进程没了”这个时序。见该函数的注释。
+                crash_during_render_if_asked(tracker);
                 match render_at(sink, pts_ms, output) {
                     Ok((frame, digest, detect_change, images, loss)) => {
                         tracker.note_ok("render");
@@ -538,9 +541,53 @@ fn maybe_inject_crash_from_env(tracker: &renderer_host::crash::Tracker) {
         "hang" => loop {
             std::thread::sleep(Duration::from_secs(3600));
         },
+        // 下面这两种**不在启动时死** —— 它们在渲染调用**内部**死，
+        // 见 `crash_during_render`。
+        "render-abort" | "render-hang" => {}
         other => {
             eprintln!("[renderer-host] 未知的崩溃注入种类：{other}");
             std::process::exit(78)
         }
+    }
+}
+
+/// 注入点：**在出帧的调用里**把 host 弄死。
+///
+/// ## 为什么必须在渲染**内部**
+///
+/// 上面那个 `maybe_inject_crash_from_env` 在 `serve()` 的最早期就跑，
+/// 那时连 provider 都还没打开。它验的是“host 启动阶段死了会怎样”。
+///
+/// 而 AT-RENDER-002 要的是另一件事：
+///
+/// > 证明其崩溃只终止 renderer-host，GUI 可重试
+///
+/// 那个“其”指的是**第三方 provider**。provider 的崩溃发生在它的代码里，
+/// 而它的代码只在 `render`/`load_script` 这些调用里执行。
+/// 在启动阶段注入证明不了那件事。
+///
+/// 所以在真正调用 provider **之前**加这个钩子：
+/// 它能复现“就在 provider 干活的那一刻，进程没了”这个时序，
+/// 而那正是隔离要对付的场景（主进程的管道在等回复，而对面已经死了）。
+///
+/// 注：这不是在 provider 里真的造一个访问违例（做不到 —— 我们控制不了
+/// 第三方代码）。它复现的是**同一个时序**。规格要求真 provider 的崩溃行为，
+/// 而 §6.2 里写明了为什么那一步仍不算验收。
+fn crash_during_render_if_asked(tracker: &renderer_host::crash::Tracker) {
+    let Ok(how) = std::env::var(protocol::CRASH_ENV) else {
+        return;
+    };
+    match how.as_str() {
+        "render-abort" => {
+            let _ = tracker.write("出帧中途 abort");
+            std::process::abort();
+        }
+        "render-hang" => {
+            let _ = tracker.write("出帧中途挂住");
+            loop {
+                std::thread::sleep(Duration::from_secs(3600));
+            }
+        }
+        _ => {}
     }
 }

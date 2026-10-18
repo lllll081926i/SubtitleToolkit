@@ -19,8 +19,15 @@ font subset → tool-defaults 设偏好 → 重跑确认设置生效 → cache s
 settings show → diagnose 出诊断包 → check-updates → batch 批量。
 
 **质量门禁**：`cargo fmt --check` 干净、`clippy -D warnings` 干净、
-**80 个测试目标 0 失败**、串行 doctest 通过、`build --release` 通过、
-`notices.py --check` 501 包 0 问题、AT 覆盖 **25/26**。
+**88 个测试目标 0 失败**、串行 doctest 通过、`build --release` 通过、
+`notices.py --check` 506 包 0 问题、安装器 11/11 通过、AT 覆盖 **25/26**。
+
+**本轮之后新交付的**（均带真实验证与裁决）：
+AT-RENDER-002 用**真第三方 provider 崩溃**验收（0xC0000005，主进程存活、
+崩溃现场落盘、重试能成）并补齐了它的**“GUI 可重试”**那半；
+CSRI 链接进 `renderer-host`；36 §1 第三层 **Preset（TOML）** 交付并解除 ISSUES E4；
+修掉 CSRI 链上**字体注入报告说假话**的缺陷（17 §7）；
+AT-RENDER-003 的**路由判定**部分已验（端到端仍需真 x86 libass）。
 
 **仍未完成（外部依赖或外部决策，非代码可解）**：
 Authenticode 签名（需证书，用户 2026-10-17 明确暂缓）；

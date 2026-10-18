@@ -88,6 +88,30 @@ assfonts Rust 版本当前实现从 cmap 把 `required_chars` 映射为 glyph ID
 
 判定方式：原字体 vs subset 字体，在相同 renderer/timestamp/canvas 上的 glyph shaping + rendered RGBA 必须达到 golden 条件。任何复杂脚本失败就回退“复制原字体，不 subset”。
 
+### corpus 已建立（2026-10-17）
+
+`crates/font-service/tests/subset_corpus.rs`（9 个用例）逐项回答上列 11 项**被怎么处理**。
+关键认识：那 11 项写成一张清单，但**风险来源分两类**，判据也因此不同：
+
+| 类别 | 项 | 判据 |
+| --- | --- | --- |
+| **字符级**（危险来自“请求了哪些字”） | Arabic、Indic、combining、vertical、CJK+IVS、emoji | **必回退** |
+| **字体级**（危险来自字体本身的结构） | TTC/OTC、variable、CFF/CFF2、composite | 能做就做且等价，不能就回退 |
+| **单独一类** | Latin ligatures（fi/fl） | **必须真的做子集** |
+
+混用同一个判据会出错：要求 Latin ligatures 也回退等于**对英文关掉子集**。
+所以另有一条**反向**用例断言普通拉丁/汉字/日文/韩文**都不回退** ——
+只断言“该回退的回退了”会漏掉“全都回退”这种也满足的实现。
+
+本机实测：CFF（`MiSans-Regular.otf`）与 variable（`bahnschrift.ttf`）
+**都能正确子集**（等价检查已过）；TTC 走回退分支并带原因；复合字形子集正常。
+
+**仍缺 golden 图像比较**。规格要的 “rendered RGBA 达到 golden 条件” 需要
+固定的语料字体 + 参考图，而选语料先把问题带到许可审计上（21 §6）。
+当前用 shaping 等价（字形数 + advance）作替代：比不查强，但**比规格要求的弱**。
+variable font 的**轴保真**也未证明（等价比较不覆盖轴实例化后的轮廓差异）。
+详见 [subset corpus 裁决](../reviews/2026-10-17-subset-corpus.md)。
+
 ## 6. 输出
 - report only；
 - copy full fonts；

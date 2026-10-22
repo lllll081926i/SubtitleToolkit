@@ -56,6 +56,17 @@ pub struct SpecProfile {
     pub min_axis: u32,
     #[serde(default)]
     pub default_font: Option<String>,
+    /// 每个输出 Profile 独立的时间与 HDR 变换；没有设置时保持输入原样。
+    #[serde(default)]
+    pub offset_ms: Option<i64>,
+    #[serde(default)]
+    pub speed_from: Option<String>,
+    #[serde(default)]
+    pub speed_to: Option<String>,
+    #[serde(default)]
+    pub hdr_percent: Option<u32>,
+    #[serde(default)]
+    pub hdr_reference_nits: Option<u32>,
 }
 
 fn default_canvas() -> String {
@@ -185,6 +196,7 @@ struct Resolved {
     /// 14 §ASS→BDN 的小对象过滤阈值：只过滤，不钳制尺寸（13 §7）
     min_axis: u32,
     font: String,
+    options: SpecProfile,
     /// 需要渲染器才能产出的 profile
     renders: bool,
     ext: &'static str,
@@ -236,6 +248,10 @@ fn parse_overwrite(v: Option<&str>) -> Result<OverwritePolicy> {
 }
 
 fn parse_canvas(s: &str) -> Result<Canvas> {
+    // 实际画布在每个输入上解析；此处的临时值不能拿来执行。
+    if s.eq_ignore_ascii_case("original") {
+        return Ok(Canvas::FHD1080);
+    }
     let (w, h) = s
         .split_once(['x', 'X', ':'])
         .ok_or_else(|| cli_err(159, "profile.canvas 需要 WxH"))?;
@@ -285,6 +301,7 @@ fn resolve_profiles(spec: &Spec) -> Result<Vec<Resolved>> {
                 .clone()
                 .unwrap_or_else(|| "Arial".to_string()),
             renders: matches!(target, FormatKind::Pgs | FormatKind::Bdn),
+            options: p.clone(),
         })
     }
     let mut names: Vec<&str> = out.iter().map(|r| r.profile.name.as_str()).collect();
@@ -330,8 +347,8 @@ fn job_cache_key(
     // inject 也必须进 key（AD5 的同一条纪律）：注入改变的是"哪批字节画了像素"。
     // 复用上一次的产物却不记下这件事，等于拿未注入的像素当注入的结果交付。
     let options = format!(
-        "exact={}|min_axis={}|tool={}|inject={}",
-        r.exact_colors, r.min_axis, tool, inject
+        "exact={}|min_axis={}|tool={}|inject={}|transform={}",
+        r.exact_colors, r.min_axis, tool, inject, transform_fingerprint(&r.options)
     );
     field_hash(&[
         ("input", input_sha),
@@ -368,7 +385,15 @@ fn render_cache_key(
         ("renderer", renderer_sha.unwrap_or("none")),
         ("fonts", font_env),
         ("inject", inject),
+        ("transform", &transform_fingerprint(&r.options)),
     ])
+}
+
+fn transform_fingerprint(p: &SpecProfile) -> String {
+    format!(
+        "offset={:?};speed={:?}/{:?};hdr={:?}/{:?}",
+        p.offset_ms, p.speed_from, p.speed_to, p.hdr_percent, p.hdr_reference_nits
+    )
 }
 
 #[derive(Serialize)]
@@ -457,6 +482,78 @@ fn artifact_of(r: &Resolved, path: &Path) -> Option<String> {
     } else {
         std::fs::read(path).ok().map(|b| sha256_hex(&b))
     }
+}
+
+/// 读取每个输入的原始逻辑画布；拒绝“保持原样”却实际偷偷改成 1080p。
+fn original_canvas(input: &Path, target: FormatKind) -> Result<Canvas> {
+    // 纯文本 SRT 没有画布，且导出 SRT 时画布不参与输出。
+    if matches!(target, FormatKind::Srt) {
+        return Ok(Canvas::FHD1080);
+    }
+    let loaded = pipeline::load_text(input)?;
+    let document = codec_ass::AssDocument::parse(&loaded.text);
+    let (width, height) = document.play_res().ok_or_else(|| {
+        cli_err(220, "输入没有 PlayResX/PlayResY，无法保持原始画布")
+            .with_detail(input.display().to_string())
+    })?;
+    let w = u32::try_from(width).map_err(|_| cli_err(220, "原始画布宽度非法"))?;
+    let h = u32::try_from(height).map_err(|_| cli_err(220, "原始画布高度非法"))?;
+    Canvas::new(w, h)
+}
+
+/// 一次 Profile 的临时输入文件；即使渲染失败也通过 Drop 清理。
+struct PreparedInput {
+    path: PathBuf,
+}
+impl Drop for PreparedInput {
+    fn drop(&mut self) { let _ = std::fs::remove_file(&self.path); }
+}
+
+fn prepare_input(input: &Path, resolved: &Resolved) -> Result<Option<PreparedInput>> {
+    use core_model::loss::LossReport;
+    use core_model::profile::HdrSettings;
+    use transform_time::{PiecewiseSpec, TimeConfig};
+    let p = &resolved.options;
+    if p.offset_ms.is_none() && p.speed_from.is_none() && p.speed_to.is_none()
+        && p.hdr_percent.is_none() && p.hdr_reference_nits.is_none() {
+        return Ok(None);
+    }
+    if p.offset_ms.is_some() && (p.speed_from.is_some() || p.speed_to.is_some()) {
+        return Err(cli_err(221, "不能同时指定时间偏移和变速"));
+    }
+    if p.hdr_percent.is_some() && p.hdr_reference_nits.is_some() {
+        return Err(cli_err(221, "不能同时指定两种 HDR 映射"));
+    }
+    let loaded = pipeline::load_text(input)?;
+    let mut document = codec_ass::AssDocument::parse(&loaded.text);
+    pipeline::check_ass_dialogue_count(&document)?;
+    if let Some(cfg) = if let Some(ms) = p.offset_ms {
+        Some(TimeConfig::offset(ms))
+    } else if let (Some(from), Some(to)) = (&p.speed_from, &p.speed_to) {
+        let from = Fps::from_label(from)?;
+        let to = Fps::from_label(to)?;
+        Some(TimeConfig::speed_scale(from, to))
+    } else if p.speed_from.is_some() || p.speed_to.is_some() {
+        return Err(cli_err(221, "变速必须同时指定源与目标帧率"));
+    } else { None } {
+        pipeline::time_ass(&mut document, &cfg, None, &PiecewiseSpec::new(Vec::new()))?;
+    }
+    let settings = if let Some(percent) = p.hdr_percent {
+        Some(HdrSettings::percentage(percent.checked_mul(100).ok_or_else(|| cli_err(221, "HDR 百分比溢出"))?)?)
+    } else if let Some(nits) = p.hdr_reference_nits {
+        Some(HdrSettings::reference_white(nits)?)
+    } else { None };
+    if let Some(settings) = settings {
+        transform_hdr::apply(&mut document, &settings, &mut LossReport::new())?;
+    }
+    // 不能修改原文件；temp 文件在输出目录外，且带进程内唯一序号。
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = std::env::temp_dir().join("subtitletool-profile-stage");
+    std::fs::create_dir_all(&dir).map_err(StkError::from)?;
+    let path = dir.join(format!("profile-{}-{seq}.ass", std::process::id()));
+    std::fs::write(&path, document.render().as_bytes()).map_err(StkError::from)?;
+    Ok(Some(PreparedInput { path }))
 }
 
 /// 把 profile 派发到与单命令完全相同的执行路径。
@@ -690,7 +787,13 @@ pub fn run_batch_with_cancel(
                 requested == *input && pair.profile == r.profile.name
             }))
             .cloned()
-            .collect();
+            .map(|mut r| {
+                if r.options.canvas.eq_ignore_ascii_case("original") {
+                    r.profile.canvas = original_canvas(input, r.target)?;
+                }
+                Ok(r)
+            })
+            .collect::<Result<Vec<_>>>()?;
         if selected.is_empty() {
             continue;
         }
@@ -818,8 +921,18 @@ pub fn run_batch_with_cancel(
                     }
                 }
                 let skipped = skipped_ref;
+                // 先对输入的私有副本应用这个 Profile 的时间/HDR，再走原单命令链。
+                // 变换身份已加入 job/render 缓存键；不会把别的 Profile 的像素拿来复用。
+                let transformed = match prepare_input(input, r) {
+                    Ok(stage) => stage,
+                    Err(error) => return ProfileOutcome::Failed {
+                        stage: error.code_string(),
+                        message: error.title,
+                    },
+                };
+                let command_input = transformed.as_ref().map(|stage| stage.path.as_path()).unwrap_or(input);
                 let sub = Invocation {
-                    command: command_for(r, input, dll_str.as_deref()),
+                    command: command_for(r, command_input, dll_str.as_deref()),
                     json: false,
                     out: Some(path.clone()),
                     dry_run: dry,
@@ -1196,6 +1309,13 @@ mod inject_key_tests {
             font: "Arial".to_string(),
             renders: true,
             ext: "xml",
+            options: SpecProfile {
+                name: "bdn".to_string(), format: "bdn".to_string(),
+                canvas: "1280x720".to_string(), fps: "25".to_string(),
+                exact_colors: false, min_axis: 8, default_font: None,
+                offset_ms: None, speed_from: None, speed_to: None,
+                hdr_percent: None, hdr_reference_nits: None,
+            },
         }
     }
 

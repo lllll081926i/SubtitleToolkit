@@ -177,6 +177,7 @@ pub fn compile_spec_with_fps(
         include: default_includes(),
         exclude: default_excludes(),
         profiles: compiled,
+        only_pairs: Vec::new(),
         output: SpecOutput {
             dir: Some(output_dir.display().to_string()),
             template: template.to_string(),

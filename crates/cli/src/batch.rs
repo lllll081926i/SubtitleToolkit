@@ -138,6 +138,14 @@ impl Default for SpecRuntime {
     }
 }
 
+/// 精确重试的一个工作单元。空列表表示常规全矩阵批处理。
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct BatchPair {
+    pub input: String,
+    pub profile: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Spec {
@@ -151,6 +159,8 @@ pub struct Spec {
     #[serde(default)]
     pub exclude: Vec<String>,
     pub profiles: Vec<SpecProfile>,
+    #[serde(default)]
+    pub only_pairs: Vec<BatchPair>,
     #[serde(default)]
     pub output: SpecOutput,
     #[serde(default)]
@@ -206,6 +216,9 @@ pub fn load_spec(path: &Path) -> Result<Spec> {
     }
     if spec.profiles.is_empty() {
         return Err(cli_err(154, "batch spec 没有任何输出 profile"));
+    }
+    if spec.only_pairs.iter().any(|p| p.input.trim().is_empty() || p.profile.trim().is_empty()) {
+        return Err(cli_err(218, "only_pairs 不能包含空的输入路径或 Profile 名"));
     }
     Ok(spec)
 }
@@ -612,12 +625,12 @@ pub fn run_batch_with_cancel(
             Err(error) => {
                 let quarantine = state_path.with_extension("jobstate.corrupt");
                 if quarantine.exists() {
-                    return Err(cli_err(166, "旧恢复状态损坏，诊断副本已存在")
+                    return Err(cli_err(219, "旧恢复状态损坏，诊断副本已存在")
                         .with_detail(quarantine.display().to_string())
                         .with_action("请先备份并检查损坏的恢复文件，再重新执行"));
                 }
                 std::fs::rename(&state_path, &quarantine).map_err(|e| {
-                    cli_err(166, "无法保存损坏的恢复状态")
+                    cli_err(219, "无法保存损坏的恢复状态")
                         .with_detail(format!("{}: {e}", state_path.display()))
                 })?;
                 recovery_warning = Some(format!(
@@ -669,6 +682,19 @@ pub fn run_batch_with_cancel(
     let skipped: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
     for input in &found.files {
+        // 精确重试只能执行原来失败的 (input, profile) 配对；不能把两组
+        // 唯一值再做笛卡尔积，否则会重新写入上一轮已成功的产物。
+        let selected: Vec<Resolved> = resolved.iter()
+            .filter(|r| spec.only_pairs.is_empty() || spec.only_pairs.iter().any(|pair| {
+                let requested = resolve(&pair.input);
+                requested == *input && pair.profile == r.profile.name
+            }))
+            .cloned()
+            .collect();
+        if selected.is_empty() {
+            continue;
+        }
+        let resolved = &selected;
         let raw = crate::pipeline::read_bounded(input, crate::pipeline::MAX_BINARY_BYTES, "输入")?;
         let input_sha = sha256_hex(&raw);
         let original_stem = input
@@ -1083,6 +1109,7 @@ pub fn run_batch_with_cancel(
         "outcome": outcome.label(),
         "inputs": found.files.len(),
         "profiles": resolved.len(),
+        "selected_pairs": if spec.only_pairs.is_empty() { serde_json::Value::Null } else { serde_json::json!(&spec.only_pairs) },
         "elapsed_ms": started.elapsed().as_millis() as u64,
         "overwrite": format!("{overwrite:?}"),
         "cache_keys": keys_of(

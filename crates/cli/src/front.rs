@@ -93,6 +93,19 @@ pub(crate) struct Rendered {
 /// 真渲染 + 变化检测。单命令路径与批量路径都只调这一个函数，
 /// 于是"批量重放"与"单发重放"必然是同一份语义（20 §Repro）。
 pub(crate) fn render_to_plan(job: &RenderJob<'_>) -> Result<Rendered> {
+    let dll_path = run::libass_dll(job.dll)?;
+    let host_exe = run::renderer_host_exe_for_dll(&dll_path).ok_or_else(|| {
+        StkError::simple(Domain::Render, 89, "找不到 renderer-host")
+            .with_detail(format!(
+                "找不到与 {} 渲染库匹配的隔离宿主",
+                core_model::pe::arch_of_file(&dll_path)
+                    .map(|arch| arch.label())
+                    .unwrap_or("unknown")
+            ))
+            .with_action(
+                "构建对应架构的 renderer-host 并设置 STK_RENDERER_HOST，或将它放在 CLI 同目录",
+            )
+    })?;
     let loaded = crate::pipeline::load_text(job.input)?;
     let doc = AssDocument::parse(&loaded.text);
     let grid = run::sample_grid(job.fps, run::last_end_ms_of(&doc)?)?;
@@ -105,15 +118,6 @@ pub(crate) fn render_to_plan(job: &RenderJob<'_>) -> Result<Rendered> {
         ));
     }
 
-    let dll_path = match job.dll {
-        Some(p) => p.to_path_buf(),
-        None => run::libass_dll(None)?,
-    };
-    let host_exe = run::renderer_host_exe().ok_or_else(|| {
-        StkError::simple(Domain::Render, 89, "找不到 renderer-host")
-            .with_detail("实际渲染必须通过 subtitletool-render-host.exe 隔离运行")
-            .with_action("构建 renderer-host 并设置 STK_RENDERER_HOST，或将它放在 CLI 同目录")
-    })?;
     let crash = crash_dir();
     let spec = renderer_host::client::HostSpec {
         host_exe: &host_exe,
@@ -373,16 +377,24 @@ pub(crate) fn resolve_cached(
     // key 与 `RenderMemo` 同一口径：输入内容 + 画布 + 帧率 + 默认字体
     // + renderer 二进制哈希 + **宿主二进制哈希** + 注入字体哈希
     // （见 `rendercache` 顶部第一条设计决定）。
-    let dll_hash = job
-        .dll
-        .and_then(|p| std::fs::read(p).ok())
+    let dll_path = run::libass_dll(job.dll)?;
+    let host_path = run::renderer_host_exe_for_dll(&dll_path).ok_or_else(|| {
+        StkError::simple(Domain::Render, 89, "找不到 renderer-host").with_detail(format!(
+            "找不到与 {} 渲染库匹配的隔离宿主",
+            core_model::pe::arch_of_file(&dll_path)
+                .map(|arch| arch.label())
+                .unwrap_or("unknown")
+        ))
+    })?;
+    let dll_hash = std::fs::read(&dll_path)
+        .ok()
         .map(|b| crate::pipeline::sha256_hex(&b))
         .unwrap_or_default();
     // host 身份也要进 key：`STK_RENDERER_HOST` 可以指向另一只宿主（典型是 x86），
     // 而两只宿主对同一个 DLL 的接受度不同。不进 key 就会跨宿主复用缓存，
     // 于是“换成 x86 host”这件事静默无效（实测过，见 key_for 的注释）。
-    let host_hash = run::renderer_host_exe()
-        .and_then(|p| std::fs::read(p).ok())
+    let host_hash = std::fs::read(&host_path)
+        .ok()
         .map(|b| crate::pipeline::sha256_hex(&b))
         .unwrap_or_default();
     let inject_hashes: Vec<String> = job

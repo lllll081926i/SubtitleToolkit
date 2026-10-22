@@ -563,12 +563,9 @@ pub fn run_batch_with_cancel(
         let bytes = std::fs::read(&dll).map_err(|e| {
             cli_err(162, "无法读取 renderer 二进制").with_detail(format!("{dll:?}：{e}"))
         })?;
-        let version =
-            match render_libass::Provider::open(&dll, Canvas::HD720, Canvas::HD720, "Arial") {
-                Ok(p) => format!("0x{:08X}", p.library_version()),
-                // 打开失败也要继续：key 里如实记下"没读到版本号"，而不是编一个
-                Err(e) => format!("unreadable:{}", e.code_string()),
-            };
+        // 绝不在 CLI 主进程里打开 provider：它可能崩溃，且 x86 provider 不能由 x64
+        // 进程加载。DLL 版本必须由隔离 host 提供；当前协议未返回版本时明确记未知。
+        let version = "unknown (not loaded in CLI process)".to_string();
         Some(RenderIdentity {
             provider: "libass".to_string(),
             version,
@@ -585,7 +582,22 @@ pub fn run_batch_with_cancel(
     } else {
         None
     };
-    let renderer_sha = renderer.as_ref().map(|r| r.binary_sha256.clone());
+    let renderer_sha = if let Some(identity) = &renderer {
+        let dll = run::libass_dll(spec.libass_dll.as_deref().map(Path::new))?;
+        let host = run::renderer_host_exe_for_dll(&dll).ok_or_else(|| {
+            cli_err(163, "找不到与渲染库架构匹配的 renderer-host")
+                .with_detail(dll.display().to_string())
+        })?;
+        let host_bytes = std::fs::read(&host).map_err(|e| {
+            cli_err(164, "无法读取 renderer-host").with_detail(format!("{}：{e}", host.display()))
+        })?;
+        // 同一 provider 由不同位数/版本的 host 执行时不能共用渲染缓存。
+        Some(sha256_hex(
+            format!("{}:{}", identity.binary_sha256, sha256_hex(&host_bytes)).as_bytes(),
+        ))
+    } else {
+        None
+    };
     let dll_str = spec.libass_dll.clone();
     let tool = env!("CARGO_PKG_VERSION").to_string();
     let tool_versions = vec![("subtitletool-cli".to_string(), tool.clone())];

@@ -937,9 +937,9 @@ pub(crate) fn libass_dll(explicit: Option<&Path>) -> Result<PathBuf> {
         .or_else(|| {
             let exe = std::env::current_exe().ok()?;
             let executable_dir = exe.parent()?;
-            let dll = bundled_libass_dll(executable_dir)?;
+            let (dll, fontconfig) = bundled_libass_dll(executable_dir)?;
             if std::env::var_os("FONTCONFIG_PATH").is_none() {
-                std::env::set_var("FONTCONFIG_PATH", executable_dir.join("etc/fonts"));
+                std::env::set_var("FONTCONFIG_PATH", fontconfig);
             }
             Some(dll)
         });
@@ -967,25 +967,38 @@ pub(crate) fn libass_dll(explicit: Option<&Path>) -> Result<PathBuf> {
             .with_detail(format!("{}：{e}", path.display()))
             .with_action("确认这是一个真的 Windows DLL，而不是改名或截断的文件")
     })?;
-    // 主程序是 x64（12 §3）。位数不符时现在就报，而不是交给 LoadLibrary 报一个更远的原因。
-    if !arch.is_x64() {
+    // 主程序保持 x64；x86 provider 由隔离的 x86 host 加载。其他架构没有对应 host。
+    if !matches!(
+        arch,
+        core_model::pe::PeArch::X64 | core_model::pe::PeArch::X86
+    ) {
         return Err(cli_err(143, "渲染库的位数与本程序不匹配，加载必然失败")
             .with_detail(format!(
-                "{}：本程序是 x64，该库是 {}",
+                "{}：当前只提供 x64 与 x86 renderer-host，该库是 {}",
                 path.display(),
                 arch.label()
             ))
-            .with_action("换成 x64 的那一份；x86 host 与 x64 host 各自的库不能互换"));
+            .with_action("换成 x64 或 x86 Windows 版本的渲染库"));
     }
     Ok(path)
 }
 
-fn bundled_libass_dll(executable_dir: &Path) -> Option<PathBuf> {
+fn bundled_libass_dll(executable_dir: &Path) -> Option<(PathBuf, PathBuf)> {
     if !executable_dir.join("libass-runtime.flag").is_file() {
         return None;
     }
     let dll = executable_dir.join("libass-9.dll");
-    dll.is_file().then_some(dll)
+    if dll.is_file() {
+        return Some((dll, executable_dir.join("etc/fonts")));
+    }
+    let x86_dir = executable_dir.join("runtime-x86");
+    if x86_dir.join("libass-runtime.flag").is_file() {
+        let x86_dll = x86_dir.join("libass-9.dll");
+        if x86_dll.is_file() {
+            return Some((x86_dll, x86_dir.join("etc/fonts")));
+        }
+    }
+    None
 }
 
 /// 最后一个 Dialogue 事件的结束时刻（向上取整到 ms）。
@@ -2006,20 +2019,54 @@ pub fn renderer_host_exe() -> Option<PathBuf> {
     None
 }
 
+/// 按 provider 的 PE 架构选择隔离宿主。环境变量显式指定时保留诊断/开发覆盖能力。
+pub fn renderer_host_exe_for_dll(dll: &Path) -> Option<PathBuf> {
+    if let Ok(p) = std::env::var("STK_RENDERER_HOST") {
+        let p = PathBuf::from(p);
+        if p.is_file() {
+            return Some(p);
+        }
+    }
+    let arch = core_model::pe::arch_of_file(dll).ok()?;
+    let exe = std::env::current_exe().ok()?;
+    let dir = exe.parent()?;
+    renderer_host_candidates(dir, arch)?
+        .into_iter()
+        .find(|path| path.is_file())
+}
+
+fn renderer_host_candidates(dir: &Path, arch: core_model::pe::PeArch) -> Option<Vec<PathBuf>> {
+    let (suffix, subdir) = match arch {
+        core_model::pe::PeArch::X64 => ("", None),
+        core_model::pe::PeArch::X86 => ("-x86", Some("runtime-x86")),
+        _ => return None,
+    };
+    let host_name = format!(
+        "subtitletool-render-host{suffix}{}",
+        std::env::consts::EXE_SUFFIX
+    );
+    let mut candidates = Vec::with_capacity(2);
+    if let Some(subdir) = subdir {
+        candidates.push(dir.join(subdir).join(&host_name));
+    }
+    candidates.push(dir.join(host_name));
+    Some(candidates)
+}
+
 /// 12 §2 的可用性问题："能不能把第三方渲染 DLL 关在另一个进程里"。
 /// 诊断要回答三件事：host 在哪、位数配不配、握手成没成——而不是只说"有/没有"。
 fn render_host_report() -> serde_json::Value {
-    let Some(exe) = renderer_host_exe() else {
-        return serde_json::json!({
-            "available": false,
-            "reason": "找不到 subtitletool-render-host.exe（设 STK_RENDERER_HOST 指到它）",
-        });
-    };
     let Ok(dll) = libass_dll(None) else {
         return serde_json::json!({
             "available": false,
-            "host": exe.display().to_string(),
             "reason": "没有可用的 libass：给 --libass-dll 或设 STK_LIBASS_DLL",
+        });
+    };
+    let Some(exe) = renderer_host_exe_for_dll(&dll) else {
+        return serde_json::json!({
+            "available": false,
+            "dll": dll.display().to_string(),
+            "reason": format!("找不到与 {} provider 匹配的 renderer-host", core_model::pe::arch_of_file(&dll).map(|a| a.label()).unwrap_or("unknown")),
         });
     };
     let crash = core_model::DataDir::resolve_current_exe().file("host-crashes");
@@ -2128,10 +2175,25 @@ mod tests {
         assert_eq!(bundled_libass_dll(&d), None);
 
         std::fs::write(&marker, b"managed runtime").unwrap();
-        assert_eq!(bundled_libass_dll(&d), Some(dll.clone()));
+        assert_eq!(
+            bundled_libass_dll(&d),
+            Some((dll.clone(), d.join("etc/fonts")))
+        );
 
         std::fs::remove_file(&dll).unwrap();
         assert_eq!(bundled_libass_dll(&d), None);
+    }
+
+    #[test]
+    fn x86_host_resolution_prefers_the_runtime_folder_and_uses_the_packaging_name() {
+        let dir = dir("x86-host-resolution");
+        let candidates = renderer_host_candidates(&dir, core_model::pe::PeArch::X86).unwrap();
+        assert_eq!(
+            candidates[0],
+            dir.join("runtime-x86/subtitletool-render-host-x86.exe")
+        );
+        assert_eq!(candidates[1], dir.join("subtitletool-render-host-x86.exe"));
+        assert!(renderer_host_candidates(&dir, core_model::pe::PeArch::Arm).is_none());
     }
 
     const ASS: &str = "[Script Info]\r\nPlayResX: 1920\r\nPlayResY: 1080\r\n\r\n[V4+ Styles]\r\nFormat: Name, Fontname, Fontsize, Outline, Shadow, MarginV\r\nStyle: Default,Arial,48,3,2,50\r\n\r\n[Events]\r\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\r\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,{\\pos(960,540)\\blur4}你好\r\n";

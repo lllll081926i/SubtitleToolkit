@@ -179,8 +179,8 @@ fn the_x86_fixture_is_really_an_x86_pe_with_readable_exports() {
 /// 考的是**报错位置**：在读到文件之后立刻判，用户看到“位数不对”；
 /// 交给 `LoadLibrary`，用户只看到一句猜不出原因的错。
 #[test]
-fn an_x86_dll_is_rejected_by_name_not_by_a_confusing_loader_error() {
-    let dir = scratch("reject");
+fn an_x86_dll_requires_the_matching_x86_host() {
+    let dir = scratch("route");
     let dll = write_x86_libass_shape(&dir);
     let ass = write_blank_ass(&dir);
 
@@ -193,11 +193,11 @@ fn an_x86_dll_is_rejected_by_name_not_by_a_confusing_loader_error() {
         dir.join("o").to_str().unwrap(),
     ]);
 
-    assert_ne!(code, Some(0), "x86 DLL 在 x64 host 上必须失败");
+    assert_ne!(code, Some(0), "本机未打包 x86 host 时必须失败");
     let all = format!("{stdout}{stderr}");
     assert!(
-        all.contains("位数") || all.contains("x86"),
-        "报错必须点出位数/架构，实际：{all}"
+        all.contains("x86") && all.contains("宿主"),
+        "报错必须点出缺少匹配 x86 宿主，实际：{all}"
     );
     assert!(
         !all.contains("不是有效的 Win32"),
@@ -240,8 +240,8 @@ fn the_arch_check_happens_before_any_load_library() {
     let all = format!("{stdout}{stderr}");
     assert_ne!(code, Some(0));
     assert!(
-        all.contains("位数") || all.contains("x86"),
-        "必须是**我们的**位数判定给出的错误，而不是导出表/加载器的话：{all}"
+        all.contains("x86") && all.contains("宿主"),
+        "必须在加载前报告 x86 host 路由，而不是导出表/加载器的话：{all}"
     );
 }
 

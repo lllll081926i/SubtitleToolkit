@@ -87,36 +87,25 @@ fn err_of(v: &serde_json::Value) -> (String, String, String) {
     )
 }
 
-/// 位数不符的库必须在**加载之前**被拒，且错误里说得出两边各是什么。
-///
-/// 这是 23 §DLL 那条要求的可判定形式：不是"最后失败了"，而是
-/// "以正确的理由、在正确的位置失败"。
+/// x86 DLL 必须被路由到匹配 host；当前测试包未提供 x86 host，因此应明确报缺少 host。
 #[test]
-fn a_dll_of_the_wrong_bitness_is_refused_before_loading() {
-    let d = scratch("wrongbits");
-    let (machine, magic, expect) = if std::env::consts::ARCH == "x86_64" {
-        (0x014Cu16, 0x010Bu16, "x86") // 造一个 32 位库
-    } else {
-        (0x8664, 0x020B, "x64") // 本机不是 x64 时造一个 64 位的
-    };
+fn an_x86_dll_is_routed_to_its_matching_host_before_loading() {
+    let d = scratch("x86-route");
+    let (machine, magic) = (0x014Cu16, 0x010Bu16);
     let dll = d.join("wrong.dll");
     std::fs::write(&dll, pe_bytes(machine, magic)).unwrap();
 
     let v = render(&d, &dll);
-    assert!(!v["ok"].as_bool().unwrap(), "该失败：{v}");
+    assert!(!v["ok"].as_bool().unwrap(), "未安装 x86 host 时该失败：{v}");
     let (code, title, details) = err_of(&v);
-    assert_eq!(code, "STK-INP-0143", "{v}");
-    assert!(title.contains("位数"), "{title}");
-    assert!(
-        details.contains(expect) && details.contains("x64"),
-        "详情要说清两边各是什么：{details}"
+    assert_eq!(
+        code, "STK-RND-0089",
+        "应报告缺少匹配宿主，而非位数不兼容：{v}"
     );
+    assert!(title.contains("renderer-host"), "{title}");
     assert!(
-        v["errors"][0]["action"]
-            .as_str()
-            .unwrap_or_default()
-            .contains("x64"),
-        "要给出能照着做的补法：{v}"
+        details.contains("x86") && details.contains("宿主"),
+        "{details}"
     );
 }
 
@@ -160,7 +149,7 @@ fn a_non_pe_file_is_reported_as_not_a_pe_not_as_a_bitness_mismatch() {
 }
 
 /// 不存在的路径仍走原来那条（0141），不被新检查吞掉。
-/// 三种失败要保持可分：不存在 / 不是 PE / 位数不符。
+/// 不存在路径与非 PE 文件继续保持可分。
 #[test]
 fn the_three_dll_failures_stay_distinguishable() {
     let d = scratch("three");
@@ -175,9 +164,8 @@ fn the_three_dll_failures_stay_distinguishable() {
     let (code, _, _) = err_of(&v);
     assert_eq!(code, "STK-INP-0142", "不是 PE：{v}");
 
-    // 三个码互不相同 —— 这条断言看着平凡，但它正是"可分"的定义
+    // 两个码互不相同 —— 这条断言钉住"可分"的定义。
     assert_ne!("STK-INP-0141", "STK-INP-0142");
-    assert_ne!("STK-INP-0142", "STK-INP-0143");
 }
 
 /// 与本机同位的 PE 要**通过**位数检查，继续往下走到真正的加载。

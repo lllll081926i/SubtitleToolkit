@@ -160,18 +160,30 @@ impl CsriProvider {
             )
             .with_detail(format!("{}：{e}", path.display()))
         })?;
-        if !arch.is_x64() {
+        let expected_arch = if cfg!(target_arch = "x86") {
+            core_model::pe::PeArch::X86
+        } else if cfg!(target_arch = "x86_64") {
+            core_model::pe::PeArch::X64
+        } else {
+            core_model::pe::PeArch::Other(0)
+        };
+        if arch != expected_arch {
             return Err(StkError::simple(
                 codes::ARCH_MISMATCH.0,
                 codes::ARCH_MISMATCH.1,
                 "CSRI provider 的位数与本进程不匹配",
             )
             .with_detail(format!(
-                "{}：本进程是 x64，该库是 {}",
+                "{}：本进程目标是 {}，该库是 {}",
                 path.display(),
+                if cfg!(target_arch = "x86") {
+                    "x86"
+                } else {
+                    "x64"
+                },
                 arch.label()
             ))
-            .with_action("换成 x64 的那一份；12 §3 禁止跨位数加载"));
+            .with_action("换成与 renderer-host 相同位数的那一份；12 §3 禁止跨位数加载"));
         }
 
         // ---- ② 能力（12 §1）----

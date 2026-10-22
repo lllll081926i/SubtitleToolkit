@@ -226,15 +226,14 @@ pub struct CsriFrame {
     pub strides: [isize; 4],
 }
 
-/// x64 下的期望布局。**编译期断言** —— 见模块头部的说明。
-///
-/// `pixfmt` 占 4 字节，后面有 4 字节对齐填充（因为 `planes` 是指针数组，
-/// 指针要求 8 字节对齐），所以 `planes` 从 8 开始。
+/// x86/x64 下的期望布局。**编译期断言** —— 见模块头部的说明。
 const _: () = {
+    let pointer_size = std::mem::size_of::<usize>();
+    let planes_offset = 4_usize.div_ceil(pointer_size) * pointer_size;
     assert!(std::mem::offset_of!(CsriFrame, pixfmt) == 0);
-    assert!(std::mem::offset_of!(CsriFrame, planes) == 8);
-    assert!(std::mem::offset_of!(CsriFrame, strides) == 8 + 4 * 8);
-    assert!(std::mem::size_of::<CsriFrame>() == 8 + 32 + 32);
+    assert!(std::mem::offset_of!(CsriFrame, planes) == planes_offset);
+    assert!(std::mem::offset_of!(CsriFrame, strides) == planes_offset + 4 * pointer_size);
+    assert!(std::mem::size_of::<CsriFrame>() == planes_offset + 8 * pointer_size);
     // csri_fmt 没有填充问题，但一样钉住
     assert!(std::mem::offset_of!(CsriFmt, pixfmt) == 0);
     assert!(std::mem::offset_of!(CsriFmt, width) == 4);
@@ -459,9 +458,17 @@ mod tests {
         // 编译期断言给出"编不过"，运行时断言给出"哪个字段错"。
         // 排查时后者更有用，而前者保证它不可能被绕过。
         assert_eq!(std::mem::offset_of!(CsriFrame, pixfmt), 0);
-        assert_eq!(std::mem::offset_of!(CsriFrame, planes), 8);
-        assert_eq!(std::mem::offset_of!(CsriFrame, strides), 40);
-        assert_eq!(std::mem::size_of::<CsriFrame>(), 72);
+        let pointer_size = std::mem::size_of::<usize>();
+        let planes_offset = 4_usize.div_ceil(pointer_size) * pointer_size;
+        assert_eq!(std::mem::offset_of!(CsriFrame, planes), planes_offset);
+        assert_eq!(
+            std::mem::offset_of!(CsriFrame, strides),
+            planes_offset + 4 * pointer_size
+        );
+        assert_eq!(
+            std::mem::size_of::<CsriFrame>(),
+            planes_offset + 8 * pointer_size
+        );
 
         // planes/strides 是**4** 个元素。写 3 会让 strides 整体前移一个指针宽。
         let f = CsriFrame {

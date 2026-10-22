@@ -602,11 +602,31 @@ pub fn run_batch_with_cancel(
     let tool = env!("CARGO_PKG_VERSION").to_string();
     let tool_versions = vec![("subtitletool-cli".to_string(), tool.clone())];
     let state_path = out_dir.join(".jobstate.json");
-    let mut state = if inv.dry_run {
+    // 损坏的历史恢复文件必须留证据；不能静默当成“从没跑过”。
+    let mut recovery_warning = None;
+    let mut state = if inv.dry_run || !state_path.exists() {
         JobState::new(spec.id.clone(), tool_versions.clone())
     } else {
-        JobState::read_from(&state_path)
-            .unwrap_or_else(|_| JobState::new(spec.id.clone(), tool_versions.clone()))
+        match JobState::read_from(&state_path) {
+            Ok(saved) => saved,
+            Err(error) => {
+                let quarantine = state_path.with_extension("jobstate.corrupt");
+                if quarantine.exists() {
+                    return Err(cli_err(166, "旧恢复状态损坏，诊断副本已存在")
+                        .with_detail(quarantine.display().to_string())
+                        .with_action("请先备份并检查损坏的恢复文件，再重新执行"));
+                }
+                std::fs::rename(&state_path, &quarantine).map_err(|e| {
+                    cli_err(166, "无法保存损坏的恢复状态")
+                        .with_detail(format!("{}: {e}", state_path.display()))
+                })?;
+                recovery_warning = Some(format!(
+                    "旧恢复状态无法解析（{error}），已移至 {}，将重新计算输出",
+                    quarantine.display()
+                ));
+                JobState::new(spec.id.clone(), tool_versions.clone())
+            }
+        }
     };
 
     // 一次批量任务共享一份前半链缓存：key 含输入哈希，所以跨输入不会互相污染
@@ -636,17 +656,32 @@ pub fn run_batch_with_cancel(
         .filter(|s| !s.contains(&spec_name))
         .cloned()
         .collect();
+    if let Some(warning) = recovery_warning {
+        warnings.push(warning);
+    }
+    // 同名字幕在不同目录里很常见：只在碰撞时加路径指纹，不改非碰撞文件的现有命名。
+    let mut stem_counts = std::collections::HashMap::<String, usize>::new();
+    for path in &found.files {
+        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
+        *stem_counts.entry(stem.to_string()).or_default() += 1;
+    }
     // 跨输入累计"因为 skip 策略而没动"的 output，好让报告能解释它
     let skipped: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
     for input in &found.files {
         let raw = crate::pipeline::read_bounded(input, crate::pipeline::MAX_BINARY_BYTES, "输入")?;
         let input_sha = sha256_hex(&raw);
-        let stem = input
+        let original_stem = input
             .file_stem()
             .and_then(|s| s.to_str())
-            .unwrap_or("output")
-            .to_string();
+            .unwrap_or("output");
+        let stem = if stem_counts.get(original_stem).copied().unwrap_or(0) > 1 {
+            let canonical = input.canonicalize().unwrap_or_else(|_| input.clone());
+            let fingerprint = sha256_hex(canonical.to_string_lossy().as_bytes());
+            format!("{original_stem}-{}", &fingerprint[..12])
+        } else {
+            original_stem.to_string()
+        };
         let job = Job {
             id: format!("{}:{}", spec.id, stem),
             input: InputSet {
@@ -952,8 +987,8 @@ pub fn run_batch_with_cancel(
         std::fs::create_dir_all(&out_dir).map_err(|e| {
             cli_err(163, "无法创建输出目录").with_detail(format!("{out_dir:?}：{e}"))
         })?;
-        std::fs::write(&state_path, state.to_json()?).map_err(|e| {
-            cli_err(164, "无法写 .jobstate.json").with_detail(format!("{state_path:?}：{e}"))
+        state.write_to(&state_path).map_err(|e| {
+            cli_err(164, "无法原子提交 .jobstate.json").with_detail(format!("{state_path:?}：{e}"))
         })?;
     }
 

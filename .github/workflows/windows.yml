@@ -1,0 +1,35 @@
+name: Windows Rust checks
+
+on:
+  push:
+    branches: [main, "fix/**"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Windows x64 workspace
+    runs-on: windows-2022
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Unit and integration tests
+        run: cargo test --workspace --lib --tests --no-fail-fast
+      - name: Doctests
+        run: cargo test --workspace --doc --no-fail-fast -j 1
+      - name: Build release executables
+        run: cargo build --workspace --release
+      - name: Audit regressions
+        run: cargo test -p cli --test audit_regressions -- --nocapture

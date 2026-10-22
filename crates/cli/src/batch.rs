@@ -594,8 +594,16 @@ fn prepare_input(input: &Path, resolved: &Resolved) -> Result<Option<PreparedInp
     let dir = std::env::temp_dir().join("subtitletool-profile-stage");
     std::fs::create_dir_all(&dir).map_err(StkError::from)?;
     let path = dir.join(format!("profile-{}-{seq}.{extension}", std::process::id()));
-    std::fs::write(&path, content).map_err(StkError::from)?;
-    Ok(Some(PreparedInput { path }))
+    // create_new 防止可预测的临时文件名覆盖旧文件或跟随本地符号链接。
+    let stage = PreparedInput { path };
+    {
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new().write(true).create_new(true)
+            .open(&stage.path).map_err(StkError::from)?;
+        file.write_all(&content).map_err(StkError::from)?;
+        file.sync_all().map_err(StkError::from)?;
+    }
+    Ok(Some(stage))
 }
 
 /// 把 profile 派发到与单命令完全相同的执行路径。
@@ -794,7 +802,9 @@ pub fn run_batch_with_progress(
 
     // 一次批量任务共享一份前半链缓存：key 含输入哈希，所以跨输入不会互相污染
     let memo = crate::front::RenderMemo::default();
-    let render_profiles = resolved.iter().filter(|r| r.renders).count();
+    let mut render_executions = 0usize;
+    let mut processed_inputs = 0usize;
+    let mut per_input_keys = serde_json::Map::new();
     // 字体环境身份（17 §7）：库只建一次，逐输入算"这个脚本实际用了哪些 face"。
     // 不渲染的 job 根本不建库，也不该被字体环境绑住。
     let inject_flag = if inv.inject_fonts { "on" } else { "off" };
@@ -857,6 +867,8 @@ pub fn run_batch_with_progress(
         if selected.is_empty() {
             continue;
         }
+        processed_inputs += 1;
+        render_executions += selected.iter().filter(|r| r.renders).count();
         let resolved = selected;
         let raw = crate::pipeline::read_bounded(input, crate::pipeline::MAX_BINARY_BYTES, "输入")?;
         let input_sha = sha256_hex(&raw);
@@ -904,6 +916,11 @@ pub fn run_batch_with_progress(
                 )
             })
             .collect();
+        per_input_keys.insert(input_key.clone(), serde_json::json!(
+            resolved.iter().zip(keys.iter()).map(|(r, key)| serde_json::json!({
+                "profile": r.profile.name, "key": key,
+            })).collect::<Vec<_>>()
+        ));
         // 前半链（渲染 + 变化检测）的共享 key：**不含** profile 名，所以同一输入的
         // SUP 与 BDN 会落进同一个 slot——14 §ASS→SUP 那句"共享 render/cache"就是这件事。
         let render_keys: Vec<String> = resolved
@@ -1209,7 +1226,7 @@ pub fn run_batch_with_progress(
     tracing::info!(
         job_id = %spec.id,
         outcome = outcome.label(),
-        inputs = found.files.len(),
+        inputs = processed_inputs,
         profiles = resolved.len(),
         renders = memo.renders(),
         elapsed_ms = started.elapsed().as_millis() as u64,
@@ -1243,13 +1260,13 @@ pub fn run_batch_with_progress(
         "output_ids": output_ids,
         "renderer_id": renderer_id,
         "outcome": outcome.label(),
-        "inputs": found.files.len(),
+        "inputs": processed_inputs,
         "profiles": resolved.len(),
         "elapsed_ms": started.elapsed().as_millis() as u64,
         // 14 §Multi-output 的可核对证据：渲染次数应当少于"渲染型 profile 执行次数"，
         // 相等就等于没共享。三个数一起报出来，谁都能自己算。
         "render_cache": {
-            "executions": render_profiles * found.files.len(),
+            "executions": render_executions,
             "renders": memo.renders(),
             "keys": memo.keys(),
         },
@@ -1292,19 +1309,12 @@ pub fn run_batch_with_progress(
         "output_ids": output_ids,
         "renderer_id": renderer_id,
         "outcome": outcome.label(),
-        "inputs": found.files.len(),
+        "inputs": processed_inputs,
         "profiles": resolved.len(),
         "selected_pairs": if spec.only_pairs.is_empty() { serde_json::Value::Null } else { serde_json::json!(&spec.only_pairs) },
         "elapsed_ms": started.elapsed().as_millis() as u64,
         "overwrite": format!("{overwrite:?}"),
-        "cache_keys": keys_of(
-            &resolved,
-            &found.files,
-            renderer_sha.as_deref(),
-            &tool,
-            &font_envs,
-            inject_flag,
-        ),
+        "cache_keys": per_input_keys,
         "font_env": font_env_report,
         "report": report,
     });
@@ -1326,41 +1336,6 @@ pub fn run_batch_with_progress(
         ));
     }
     Ok(env)
-}
-
-/// data 里的缓存 key 摘要：每个输入 × 每个 profile 一条。
-/// 批量任务被问"你为什么复用了这个文件"时，这是能拿出来的凭据（01 §任务凭据）。
-fn keys_of(
-    resolved: &[Resolved],
-    files: &[PathBuf],
-    renderer_sha: Option<&str>,
-    tool: &str,
-    font_envs: &std::collections::BTreeMap<String, String>,
-    inject: &str,
-) -> serde_json::Value {
-    let mut m = serde_json::Map::new();
-    for f in files {
-        let sha = std::fs::read(f)
-            .ok()
-            .map(|b| sha256_hex(&b))
-            .unwrap_or_default();
-        // 报告里的 key 必须与执行时用的是同一份字体环境；写 "none" 会让报告与真实身份不一致
-        let env = font_envs
-            .get(&f.display().to_string())
-            .cloned()
-            .unwrap_or_else(|| "none".to_string());
-        let rows: Vec<serde_json::Value> = resolved
-            .iter()
-            .map(|r| {
-                serde_json::json!({
-                    "profile": r.profile.name,
-                    "key": job_cache_key(&sha, r, renderer_sha, tool, &env, inject),
-                })
-            })
-            .collect();
-        m.insert(f.display().to_string(), serde_json::Value::Array(rows));
-    }
-    serde_json::Value::Object(m)
 }
 
 #[cfg(test)]

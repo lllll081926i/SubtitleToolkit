@@ -815,7 +815,7 @@ pub fn run_batch_with_cancel(
         if selected.is_empty() {
             continue;
         }
-        let resolved = &selected;
+        let resolved = selected;
         let raw = crate::pipeline::read_bounded(input, crate::pipeline::MAX_BINARY_BYTES, "输入")?;
         let input_sha = sha256_hex(&raw);
         let original_stem = input
@@ -886,7 +886,11 @@ pub fn run_batch_with_cancel(
                     width: r.profile.canvas.width,
                     height: r.profile.canvas.height,
                     fps: r.profile.fps.to_label(),
-                    hdr: "sdr".to_string(),
+                    hdr: match (r.options.hdr_percent, r.options.hdr_reference_nits) {
+                        (Some(p), _) => format!("{p}percent"),
+                        (_, Some(n)) => format!("{n}nit"),
+                        _ => "sdr".to_string(),
+                    },
                     ext: r.ext.to_string(),
                 })?;
                 // 目录型产物（BDN）每个输入独占一层目录：两个输入的 PNG 都从 0000.png

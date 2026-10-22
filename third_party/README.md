@@ -4,7 +4,7 @@
 
 上游源码归档与来源锁的提交和 SHA-256 对应。ass2bdnxml 解压树曾与来源锁 commit 的 codeload 内容逐文件核对；压缩归档哈希单独锁定。codeload commit 包与归档的根目录名和 gzip 封装不同，因此两种归档的压缩包哈希不应相等。
 
-这些文件不是本项目 Rust 源码。源码归档用于研究，不是应用运行时依赖目录；`VSFilterMod.dll` 是未集成的候选文件。libass 主代码采用 ISC，但归档还含 Unlicense、Public Domain、BSD-2-Clause 和 CC0-1.0 文件；ass2bdnxml 主代码采用 GPL-3.0-or-later，其中 `x86inc.asm` 有单独 ISC 声明。分发源码时必须保留各文件的上游许可声明；不要把 GPL/AGPL 实现直接复制或翻译进核心模块。
+这些文件不是本项目 Rust 源码。源码归档用于研究，不是应用运行时依赖目录；`VSFilterMod.dll` 是可供本地测试的第三方候选 DLL，已接入 renderer-host 但不随安装包分发。libass 主代码采用 ISC，但归档还含 Unlicense、Public Domain、BSD-2-Clause 和 CC0-1.0 文件；ass2bdnxml 主代码采用 GPL-3.0-or-later，其中 `x86inc.asm` 有单独 ISC 声明。分发源码时必须保留各文件的上游许可声明；不要把 GPL/AGPL 实现直接复制或翻译进核心模块。
 
 ## libass 分发运行库
 
@@ -23,7 +23,7 @@ cargo test -p cli --test render
 
 ## VSFilterMod 候选
 
-`VSFilterMod.dll` 是随当前工作区提供的 x64 第三方候选二进制，版本资源显示 ProductVersion 2.5.2.2。PE 导出表包含 CSRI 符号，PDB 路径指向 `VSFilterMod` 构建目录；上游 `sorayuki/VSFilterMod` 项目声明 GPL-3.0，仓库更新时间与 DLL 时间戳接近。当前按 GPL-3.0 记录，但尚未把 DLL 哈希对应到官方 release 资产或确定的源码提交。当前项目没有实现 VSFilterMod/CSRI provider 的加载与隔离，也没有真实渲染验证，因此该 DLL 目前只作为项目材料保存，不代表可运行能力或可发布安装包内容。哈希与静态检查记录见来源锁。
+`VSFilterMod.dll` 是随当前工作区提供的 x64 第三方候选二进制，版本资源显示 ProductVersion 2.5.2.2。PE 导出表包含 CSRI 符号，PDB 路径指向 `VSFilterMod` 构建目录；上游 `sorayuki/VSFilterMod` 项目声明 GPL-3.0，仓库更新时间与 DLL 时间戳接近。当前按 GPL-3.0 记录，但尚未把 DLL 哈希对应到官方 release 资产或确定的源码提交。目前已实现 CSRI provider 探测、renderer-host 独立加载和真实 VSFilterMod 端到端渲染，相关证据见 docs/STATUS.md。该 DLL 仍未建立可审计的精确上游源码映射，也不进入安装包；仓库公开分发的许可证与对应源码义务尚待核实，不应把技术跑通等同于许可验收。哈希与静态检查记录见来源锁。
 
 - [来源锁](SOURCE_AUDIT_LOCK.json)
 - [第三方声明](../THIRD_PARTY_NOTICES.md)

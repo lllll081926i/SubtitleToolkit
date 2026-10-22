@@ -20,3 +20,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
 
+
+[features]
+# 仅用于隔离崩溃验收；正式发行不得开启。
+fault-injection = []

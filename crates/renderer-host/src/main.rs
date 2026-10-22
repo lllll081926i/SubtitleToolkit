@@ -615,6 +615,10 @@ fn render_at(
 /// 只有宿主进程自己的环境变量 `STK_HOST_CRASH` 能走到这里。它在 `serve()` 的最早阶段
 /// 被消费，所以发布二进制里没有任何来自控制面的自杀路径（2026-10-09 审查）。
 /// 未知取值直接退出：静默忽略会让测试以为崩溃注入生效了，实际却在正常跑。
+#[cfg(not(any(debug_assertions, feature = "fault-injection")))]
+fn maybe_inject_crash_from_env(_tracker: &renderer_host::crash::Tracker) {}
+
+#[cfg(any(debug_assertions, feature = "fault-injection"))]
 fn maybe_inject_crash_from_env(tracker: &renderer_host::crash::Tracker) {
     let Ok(how) = std::env::var(protocol::CRASH_ENV) else {
         return;
@@ -666,6 +670,10 @@ fn maybe_inject_crash_from_env(tracker: &renderer_host::crash::Tracker) {
 /// 注：这不是在 provider 里真的造一个访问违例（做不到 —— 我们控制不了
 /// 第三方代码）。它复现的是**同一个时序**。规格要求真 provider 的崩溃行为，
 /// 而 §6.2 里写明了为什么那一步仍不算验收。
+#[cfg(not(any(debug_assertions, feature = "fault-injection")))]
+fn crash_during_render_if_asked(_tracker: &renderer_host::crash::Tracker) {}
+
+#[cfg(any(debug_assertions, feature = "fault-injection"))]
 fn crash_during_render_if_asked(tracker: &renderer_host::crash::Tracker) {
     let Ok(how) = std::env::var(protocol::CRASH_ENV) else {
         return;

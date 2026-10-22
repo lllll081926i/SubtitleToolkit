@@ -525,9 +525,8 @@ fn prepare_input(input: &Path, resolved: &Resolved) -> Result<Option<PreparedInp
         return Err(cli_err(221, "不能同时指定两种 HDR 映射"));
     }
     let loaded = pipeline::load_text(input)?;
-    let mut document = codec_ass::AssDocument::parse(&loaded.text);
-    pipeline::check_ass_dialogue_count(&document)?;
-    if let Some(cfg) = if let Some(ms) = p.offset_ms {
+    let input_kind = format_detect::probe_file(input)?.format;
+    let time = if let Some(ms) = p.offset_ms {
         Some(TimeConfig::offset(ms))
     } else if let (Some(from), Some(to)) = (&p.speed_from, &p.speed_to) {
         let from = Fps::from_label(from)?;
@@ -535,24 +534,43 @@ fn prepare_input(input: &Path, resolved: &Resolved) -> Result<Option<PreparedInp
         Some(TimeConfig::speed_scale(from, to))
     } else if p.speed_from.is_some() || p.speed_to.is_some() {
         return Err(cli_err(221, "变速必须同时指定源与目标帧率"));
-    } else { None } {
-        pipeline::time_ass(&mut document, &cfg, None, &PiecewiseSpec::new(Vec::new()))?;
-    }
+    } else { None };
     let settings = if let Some(percent) = p.hdr_percent {
         Some(HdrSettings::percentage(percent.checked_mul(100).ok_or_else(|| cli_err(221, "HDR 百分比溢出"))?)?)
     } else if let Some(nits) = p.hdr_reference_nits {
         Some(HdrSettings::reference_white(nits)?)
     } else { None };
-    if let Some(settings) = settings {
-        transform_hdr::apply(&mut document, &settings, &mut LossReport::new())?;
-    }
+    let (content, extension) = match input_kind {
+        format_detect::SubtitleFormat::Ass | format_detect::SubtitleFormat::Ssa => {
+            let mut document = codec_ass::AssDocument::parse(&loaded.text);
+            pipeline::check_ass_dialogue_count(&document)?;
+            if let Some(cfg) = time {
+                pipeline::time_ass(&mut document, &cfg, None, &PiecewiseSpec::new(Vec::new()))?;
+            }
+            if let Some(settings) = settings {
+                transform_hdr::apply(&mut document, &settings, &mut LossReport::new())?;
+            }
+            (document.render().into_bytes(), "ass")
+        }
+        format_detect::SubtitleFormat::Srt => {
+            if settings.is_some() {
+                return Err(cli_err(222, "SRT 不包含 HDR 颜色属性，不能执行 HDR 映射"));
+            }
+            let (subtitle, _) = codec_srt::parse(&loaded.bytes)?;
+            let subtitle = if let Some(cfg) = time {
+                pipeline::time_srt(&subtitle, &cfg, None, &PiecewiseSpec::new(Vec::new()))?.0
+            } else { subtitle };
+            (codec_srt::write(&subtitle)?, "srt")
+        }
+        _ => return Err(cli_err(222, "此输入格式不支持 batch 时间/HDR 变换")),
+    };
     // 不能修改原文件；temp 文件在输出目录外，且带进程内唯一序号。
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let seq = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let dir = std::env::temp_dir().join("subtitletool-profile-stage");
     std::fs::create_dir_all(&dir).map_err(StkError::from)?;
-    let path = dir.join(format!("profile-{}-{seq}.ass", std::process::id()));
-    std::fs::write(&path, document.render().as_bytes()).map_err(StkError::from)?;
+    let path = dir.join(format!("profile-{}-{seq}.{extension}", std::process::id()));
+    std::fs::write(&path, content).map_err(StkError::from)?;
     Ok(Some(PreparedInput { path }))
 }
 

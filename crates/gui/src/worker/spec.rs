@@ -66,7 +66,7 @@ pub fn compile_profile(p: &OutputProfile) -> CompiledProfile {
 }
 
 pub fn compile_profile_with_fps(p: &OutputProfile, default_fps: &str) -> CompiledProfile {
-    let mut notes = Vec::new();
+    let notes = Vec::new();
 
     // 时间与 HDR 作为可重放字段写入 batch spec，由 CLI 在渲染前真实应用。
     let (offset_ms, speed_from, speed_to) = match p.time_adjust {

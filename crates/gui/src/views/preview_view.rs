@@ -20,7 +20,7 @@ pub fn view<'a>(state: &'a PreviewState) -> Element<'a, Message> {
     );
 
     let top_bar = row![
-        text("实时单帧渲染预览 (Live Preview)").size(15),
+        text("预览").size(15),
         Space::with_width(Length::Fill),
         // 像素来源必须一直可见：占位色块与真渲染在画面上分辨不出来，
         // 而它们的含义完全不同（前者是我们编的颜色，后者是可交付的根据）。
@@ -38,20 +38,13 @@ pub fn view<'a>(state: &'a PreviewState) -> Element<'a, Message> {
     ]
     .align_y(Alignment::Center);
 
-    // A/B 打开时把“B 侧到底做了什么”写在画面上。
-    //
-    // 这不是装饰：Profile 是 SDR 且画布相同时两侧**应该**一模一样，
-    // 而用户看到两张相同的图很容易以为对比坏了。说清楚它为什么一样，
-    // 比让用户去猜要好。
     let ab_caption: Option<Element<'a, Message>> = if state.is_split_ab {
         Some(
             row![
-                text("左：原版（SDR / 原尺寸）").size(11),
-                Space::with_width(Length::Fixed(10.0)),
-                text("中：分界线").size(11),
+                text("原版").size(11),
                 Space::with_width(Length::Fixed(10.0)),
                 text(format!(
-                    "右：当前 Profile —— {}",
+                    "变换后：{}",
                     state.ab_note.as_deref().unwrap_or("等待渲染")
                 ))
                 .size(11),
@@ -96,10 +89,8 @@ pub fn view<'a>(state: &'a PreviewState) -> Element<'a, Message> {
                 .center_y(Length::Fill)
                 .into()
         }
-        // A/B 开着但对照帧还没到：说清楚在等什么，
-        // 而不是把 A 侧当完整画面显示（那会让人以为对比已经生效）。
         (None, _) if state.is_split_ab && state.is_rendering => {
-            container(text("正在渲染 A/B 对照帧（左侧原版 / 右侧变换后）...").size(13))
+            container(text("正在渲染对比帧…").size(13))
                 .width(Length::Fill)
                 .height(Length::Fill)
                 .center_x(Length::Fill)
@@ -107,16 +98,12 @@ pub fn view<'a>(state: &'a PreviewState) -> Element<'a, Message> {
                 .into()
         }
         _ => container(
-            column![
-                text(if state.is_rendering {
-                    "正在通过 renderer-host 渲染单帧..."
-                } else {
-                    "暂无预览画面（选择左侧输入文件并定位时间轴）"
-                })
-                .size(13),
-                text("16:9 逻辑画布保障 | 毫秒级单帧返回").size(11),
-            ]
-            .spacing(6)
+            column![text(if state.is_rendering {
+                "正在渲染…"
+            } else {
+                "选择字幕查看预览"
+            })
+            .size(13),]
             .align_x(Alignment::Center),
         )
         .width(Length::Fill)
@@ -154,25 +141,6 @@ pub fn view<'a>(state: &'a PreviewState) -> Element<'a, Message> {
     ]
     .align_y(Alignment::Center);
 
-    // 底部字体诊断卡片
-    let font_card = container(
-        row![
-            icons::activity(12.0),
-            text("字体诊断:").size(11),
-            text(if state.font_health_summary.is_empty() {
-                "等待载入字体检查..."
-            } else {
-                "系统字体完整就绪，无缺字"
-            })
-            .size(11),
-            Space::with_width(Length::Fill),
-            text("DirectWrite 真实字符覆盖核准").size(10),
-        ]
-        .spacing(6)
-        .align_y(Alignment::Center),
-    )
-    .padding(6);
-
     // 说明行插在画面与控件之间（在画面上方太挤，在下面会被控件挤走）
     let content = match ab_caption {
         Some(c) => column![
@@ -182,7 +150,6 @@ pub fn view<'a>(state: &'a PreviewState) -> Element<'a, Message> {
                 .width(Length::Fill)
                 .height(Length::Fill),
             controls,
-            font_card,
         ]
         .spacing(10),
         None => column![
@@ -191,7 +158,6 @@ pub fn view<'a>(state: &'a PreviewState) -> Element<'a, Message> {
                 .width(Length::Fill)
                 .height(Length::Fill),
             controls,
-            font_card,
         ]
         .spacing(10),
     };

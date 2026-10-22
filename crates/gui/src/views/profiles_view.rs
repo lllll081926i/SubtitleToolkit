@@ -26,7 +26,7 @@ const HDRS: &[HdrMode] = &[
 
 pub fn view<'a>(state: &'a ProfilesState) -> Element<'a, Message> {
     let header = row![
-        text("输出 Profile 矩阵").size(16),
+        text("输出配置").size(16),
         Space::with_width(Length::Fill),
         button(
             row![icons::plus(12.0), text("新建 Profile").size(12)]
@@ -101,14 +101,10 @@ pub fn view<'a>(state: &'a ProfilesState) -> Element<'a, Message> {
                 ]
                 .align_y(Alignment::Center),
                 row![
-                    text("合规指示:").size(11).width(Length::Fixed(70.0)),
-                    // 原来是两句写死的话（“Basic PGS: 具备（自适应量化）” 等），
-                    // 它们会无条件这么说——包括 2160p + 严格蓝光的那个组合，
-                    // 而那正是 AT-BD-001 要求必须**明确解释**被拒原因的情形。
-                    // 现在按 `problem()` 的真实判定显示。
+                    text("状态:").size(11).width(Length::Fixed(70.0)),
                     text(match profile.problem() {
-                        None => "符合 09 §6 的硬规则",
-                        Some(_) => "不合规：看下方说明",
+                        None => "可用",
+                        Some(_) => "超过蓝光画布上限",
                     })
                     .size(11),
                 ]
@@ -119,14 +115,12 @@ pub fn view<'a>(state: &'a ProfilesState) -> Element<'a, Message> {
             card_content = card_content.push(options_col);
         }
 
-        // AT-BD-001：“UI 明确解释”——而不是只把选项置灰或只说声“无效”。
-        // 用户得知道**为什么**不行、以及可以怎么改。
-        //
-        // 只在展开编辑时显示：收起状态下卡片应当只报一个事实
-        // （“不合规”），展开才需要完整的理由与改法。
         if let Some(why) = profile.problem() {
-            let warn =
-                column![text("⚠ 这个 Profile 跑不了").size(12), text(why).size(11),].spacing(4);
+            let warn = column![
+                text("此配置无法运行").size(12),
+                text(why.lines().next().unwrap_or("画布超出蓝光上限").to_string()).size(11),
+            ]
+            .spacing(4);
 
             card_content = card_content.push(
                 container(warn)
@@ -165,9 +159,9 @@ impl std::fmt::Display for CanvasMode {
 impl std::fmt::Display for HdrMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Sdr => write!(f, "SDR (原样保持)"),
-            Self::ReferenceWhite(n) => write!(f, "参考白 ({} nit 近似)", n),
-            Self::Percentage(p) => write!(f, "线性光缩放 ({}%)", p),
+            Self::Sdr => write!(f, "SDR"),
+            Self::ReferenceWhite(n) => write!(f, "参考白 {} nit", n),
+            Self::Percentage(p) => write!(f, "线性缩放 {}%", p),
         }
     }
 }

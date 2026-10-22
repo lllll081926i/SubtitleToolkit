@@ -1,8 +1,8 @@
 # Windows 构建、安装、签名与发布
 
-本文件是发布阶段的目标清单，不是当前发行物清单。当前 workspace 只定义 CLI 与 x64 `subtitletool-render-host.exe`；GUI、x86 host、安装包、签名和更新器均未实现。只有经过实际构建与验收的产物才能加入支持矩阵。
+本文件是发布阶段的目标清单，不是当前发行物清单。当前 workspace 已定义 CLI、Iced GUI 与 x64 `subtitletool-render-host.exe`；x86 host 可单独构建，portable 包和 Inno Setup 安装器已有交付记录。Authenticode 签名仍暂缓；all-users 安装模式、x86 DLL 路由和第三方 DLL 分发仍未完成验收。只有经过实际构建与验收的产物才能加入支持矩阵。
 
-**已落地（2026-10-17）**：根目录许可证正文 `LICENSE-MIT` / `LICENSE-APACHE`（此前为缺失状态）；`tools/make_portable.ps1` 产出自包含 portable zip（含 `SHA256SUMS.txt`、许可/第三方声明副本、`sbom.cdx.json` 与 `portable.flag`）。已实测：解包后三个可执行文件可运、`data_dir.kind=portable`、缓存落在包内 `data/`、包内 9 个文件的哈希全部与 `SHA256SUMS.txt` 一致。安装器与 Authenticode 签名仍未完成。
+**已落地（2026-10-17）**：根目录许可证正文、portable 包和 Inno Setup 安装器。Portable 解包后可运行，`data_dir.kind=portable`，文件哈希与清单一致。Authenticode 签名暂缓；all-users 模式尚未实机验证。
 
 **SBOM（2026-10-17）**：`tools/notices.py` 现在同时产出 `sbom.cdx.json`（CycloneDX 1.5，529 个组件）。
 决策与纪律：
@@ -141,8 +141,7 @@ x86 host **已能构建**且与 x64 输出逐字节一致，但**尚未随包分
 未知字段往返不丢、`init` 拒绝覆盖、5 种非法取值全被拒且不落文件、
 坏文件降级并保留证据、设置确实落在 `DataDir` 内。
 
-仍未实现：**Preset（36 §1 第四层）** 卡在 TOML 依赖审批（ISSUES E4）。
-ToolDefaults 的**存储、求值与接入都已实现**（见 36 §1）——
+Preset（36 §1）已实现 CLI 管理命令；GUI 尚无 preset 入口。ToolDefaults 的**存储、求值与接入都已实现**（见 36 §1）——
 `pgs encode`/`render`/`mkv`/`font subset` 在用户没给参数时确实会查它，
 报告里的 `resolved_from` 会报出每一项的来源
 （[接入层裁决](../reviews/2026-10-17-tool-defaults-wiring.md)）。

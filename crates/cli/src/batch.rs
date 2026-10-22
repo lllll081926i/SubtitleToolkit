@@ -9,8 +9,8 @@
 //!    成功产物原样留着，报告逐个说清是谁在哪一步坏的。
 //! 3. **恢复状态只记真的落过盘的东西**：dry-run 既不读也不写 `.jobstate.json`，
 //!    否则下一次运行会"复用"一个从来没存在过的文件。
-//! 4. **spec 是 JSON 不是 TOML**：`--preset` 要用的 TOML 依赖还没批（ISSUES E4），
-//!    批量描述不能因此等下去。`serde_json` 已在依赖表里，字段一律
+//! 4. **spec 是 JSON 不是 TOML**：Preset 是可移植的目标配置，batch spec 是冻结的
+//!    执行输入；两者职责不同。`serde_json` 已在依赖表里，字段一律
 //!    `deny_unknown_fields`——写错 key 直接报错，而不是被静默忽略。
 
 use std::path::{Path, PathBuf};
@@ -548,6 +548,14 @@ pub fn run_batch_with_cancel(
             )),
         );
     }
+    tracing::info!(
+        job_id = %spec.id,
+        inputs = found.files.len(),
+        profiles = resolved.len(),
+        render_profiles = resolved.iter().filter(|profile| profile.renders).count(),
+        dry_run = inv.dry_run,
+        "批处理已解析"
+    );
 
     // 只有真的需要渲染时才要 renderer：纯文本批量任务不该被"没装 libass"卡住
     let renderer: Option<RenderIdentity> = if resolved.iter().any(|r| r.renders) {
@@ -834,6 +842,30 @@ pub fn run_batch_with_cancel(
         }
         for (name, o) in &executed.outcomes {
             let (status, detail) = describe(o);
+            match o {
+                ProfileOutcome::Failed { stage, message } => tracing::error!(
+                    job_id = %spec.id,
+                    input = %stem,
+                    profile = %name,
+                    stage = %stage,
+                    error = %message,
+                    "批处理 profile 失败"
+                ),
+                ProfileOutcome::Cancelled { stage } => tracing::warn!(
+                    job_id = %spec.id,
+                    input = %stem,
+                    profile = %name,
+                    stage = %stage,
+                    "批处理 profile 已取消"
+                ),
+                _ => tracing::debug!(
+                    job_id = %spec.id,
+                    input = %stem,
+                    profile = %name,
+                    status = %status,
+                    "批处理 profile 完成"
+                ),
+            }
             lines.push(ProfileLine {
                 input: input.display().to_string(),
                 profile: name.clone(),
@@ -916,6 +948,15 @@ pub fn run_batch_with_cancel(
     // classify 的规则是"没成功就是失败"，而 dry-run 什么都没写：
     // 直接把 WouldWrite 交给它，一次演练就会被判成 failed——那等于没人敢用 --dry-run 检查任务。
     let outcome = judge(&all, inv.dry_run);
+    tracing::info!(
+        job_id = %spec.id,
+        outcome = outcome.label(),
+        inputs = found.files.len(),
+        profiles = resolved.len(),
+        renders = memo.renders(),
+        elapsed_ms = started.elapsed().as_millis() as u64,
+        "批处理结束"
+    );
     // 22 §2 的三层 id。
     //
     // `job_id` 是**用户给的** spec id（“我这次任务叫什么”），而 `corr_id` 是

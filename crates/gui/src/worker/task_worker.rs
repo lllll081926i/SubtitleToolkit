@@ -59,6 +59,13 @@ pub fn run(
     cancel: Arc<AtomicBool>,
     mut emit: impl FnMut(Progress),
 ) -> Result<(), (String, String, String)> {
+    tracing::info!(
+        job_id = %spec.id,
+        input_count = spec.roots.len(),
+        profile_count = spec.profiles.len(),
+        output_dir = %output_dir.display(),
+        "GUI 批处理开始"
+    );
     let job_id = spec.id.clone();
     let spec_path = output_dir.join(format!("{job_id}.spec.json"));
     let text = super::spec::spec_to_json(spec);
@@ -113,6 +120,13 @@ pub fn run(
         match cli::batch::run_batch_with_cancel(&inv, &spec_path, "batch", Some(&cancel_token)) {
             Ok(env) => env,
             Err(e) => {
+                tracing::error!(
+                    job_id = %job_id,
+                    code = %e.code_string(),
+                    title = %e.title,
+                    details = ?e.details,
+                    "GUI 批处理启动失败"
+                );
                 let triple = (
                     e.code_string(),
                     e.title.clone(),
@@ -142,11 +156,23 @@ pub fn run(
                 .unwrap_or("")
                 .to_string()
         };
+        let input = s("input");
+        let profile = s("profile");
+        let status = s("status");
+        let detail = s("detail");
+        tracing::debug!(
+            job_id = %job_id,
+            input = %Path::new(&input).file_name().and_then(|name| name.to_str()).unwrap_or(""),
+            profile = %profile,
+            status = %status,
+            detail = %detail,
+            "GUI 批处理条目完成"
+        );
         emit(Progress::Row {
-            input: s("input"),
-            profile: s("profile"),
-            status: s("status"),
-            detail: s("detail"),
+            input,
+            profile,
+            status,
+            detail,
         });
     }
 
@@ -157,6 +183,7 @@ pub fn run(
         .and_then(|v| v.as_str())
         .unwrap_or("failed")
         .to_string();
+    tracing::info!(job_id = %job_id, outcome = %outcome, "GUI 批处理结束");
     // 报告里的 error 是"任务级判定不是成功"（比如 partial-success），
     // 转成抽屉里的失败说明；成功的任务这里是空的。
     let error = env

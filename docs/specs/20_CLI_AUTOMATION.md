@@ -4,7 +4,7 @@
 
 ## 1. 当前可执行文件
 
-当前工作区生成 `subtitletool-cli.exe` 和 `subtitletool-render-host.exe`。桌面 GUI `subtitletool.exe` 尚未实现。
+当前工作区定义 CLI、Iced GUI `subtitletoolkit-gui.exe` 与 x64 `subtitletool-render-host.exe`。已构建或验收范围见[功能矩阵](03_FEATURE_MATRIX.md)。
 
 当前已实现命令：
 
@@ -51,4 +51,4 @@
 
 ## 4. 配置与 GUI 重放
 
-[`36_PRESET_CONFIG_SCHEMA.md`](36_PRESET_CONFIG_SCHEMA.md) 是规划中的配置 schema，不代表 CLI 已能读取或写入 preset。GUI 尚未实现；未来 GUI 应复用 CLI 的任务模型，并能导出可重放的命令或任务规格。
+[`36_PRESET_CONFIG_SCHEMA.md`](36_PRESET_CONFIG_SCHEMA.md) 描述已实现的 CLI preset 管理命令和配置合同；Preset 尚不能直接作为 batch spec。GUI 已接通 CLI batch 执行，但当前没有 preset/设置入口；GUI 状态见[功能矩阵](03_FEATURE_MATRIX.md)。

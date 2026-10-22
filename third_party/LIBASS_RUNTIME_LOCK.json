@@ -1,12 +1,12 @@
 {
-  "verified_at": "2026-10-08",
-  "purpose": "用户授权补齐的 MSYS2 UCRT64 开发期 libass 运行库；不代表安装包许可审计完成",
+  "verified_at": "2026-10-22",
+  "purpose": "用户提供的完整 MSYS2 UCRT64 libass 发行运行库；所有 DLL 与官方包哈希逐一核对，并随便携包和安装包分发。",
   "provided_package_directory": "D:/xia/mingw-w64-ucrt-x86_64-libass-0.17.5-1-any.pkg",
   "provider_package_page": "https://packages.msys2.org/packages/mingw-w64-ucrt-x86_64-libass",
   "provider_package_sha256_verified": "4385fd47a77784478878f0f03f2d9afa59a5ac71facb7cad1dfe19c555e75762",
   "dependency_version_basis": "用户提供的 .BUILDINFO；按实际 PE 导入图复制 DLL 闭包，未复制无关 EXE/静态库",
   "verification_boundary": "官方 libass 包 SHA-256 与页面公布值一致，用户 DLL 与包内文件一致；依赖从官方 HTTPS 仓库按版本获取并锁实际哈希，未验证包 detached signature",
-  "license_boundary": "package_license_declarations 保留包声明，不作为逐 DLL 最终许可表达式；许可证材料和包元数据见 third_party/licenses/msys2；公开分发仍需逐文件及对应源码义务复核",
+  "license_boundary": "每个二进制均对应官方包归档 SHA-256；包内附各包的 .PKGINFO/.BUILDINFO 和许可证正文及源码包 URL。LGPL/Freetype/GCC runtime 许可见随包 licenses/msys2/；运行库以独立 DLL 形式提供，允许替换。",
   "runtime_probe": "libass 0x01705000；DirectWrite (with GDI)；FriBidi 1.0.16；HarfBuzz-ng 14.2.1",
   "runtime_tests": {
     "renderer_host_isolation": "5/5 通过",
@@ -47,7 +47,9 @@
         "libunibreak-7.dll"
       ],
       "download_url": "https://repo.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-libass-0.17.5-1-any.pkg.tar.zst",
-      "package_sha256": "4385fd47a77784478878f0f03f2d9afa59a5ac71facb7cad1dfe19c555e75762"
+      "package_sha256": "4385fd47a77784478878f0f03f2d9afa59a5ac71facb7cad1dfe19c555e75762",
+      "source_url": "https://mirror.msys2.org/mingw/sources/mingw-w64-libass-0.17.5-1.src.tar.zst",
+      "package_page": "https://packages.msys2.org/packages/mingw-w64-ucrt-x86_64-libass"
     },
     {
       "name": "libbrotlicommon.dll",
@@ -68,7 +70,9 @@
         "api-ms-win-crt-string-l1-1-0.dll"
       ],
       "download_url": "https://repo.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-brotli-1.2.0-1-any.pkg.tar.zst",
-      "package_sha256": "9cc89665496ea504751476eafba15c71c554aaf3004babc2004f7c07ffd60514"
+      "package_sha256": "9cc89665496ea504751476eafba15c71c554aaf3004babc2004f7c07ffd60514",
+      "source_url": "https://mirror.msys2.org/mingw/sources/mingw-w64-brotli-1.2.0-1.src.tar.zst",
+      "package_page": "https://packages.msys2.org/packages/mingw-w64-ucrt-x86_64-brotli"
     },
     {
       "name": "libbrotlidec.dll",
@@ -91,17 +95,19 @@
         "libbrotlicommon.dll"
       ],
       "download_url": "https://repo.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-brotli-1.2.0-1-any.pkg.tar.zst",
-      "package_sha256": "9cc89665496ea504751476eafba15c71c554aaf3004babc2004f7c07ffd60514"
+      "package_sha256": "9cc89665496ea504751476eafba15c71c554aaf3004babc2004f7c07ffd60514",
+      "source_url": "https://mirror.msys2.org/mingw/sources/mingw-w64-brotli-1.2.0-1.src.tar.zst",
+      "package_page": "https://packages.msys2.org/packages/mingw-w64-ucrt-x86_64-brotli"
     },
     {
       "name": "libbz2-1.dll",
       "path": "third_party/libbz2-1.dll",
-      "sha256": "669a4bf9266d5f020e843aa5fd75b93ce8ebde27014d5ac466a8b3cf39d8aba7",
+      "sha256": "1790bf6473c9d48db14c1f0ee8124142327556d281299ea2a72ee361118ee01a",
       "size_bytes": 78774,
-      "package": "bzip2-1.0.8-3",
+      "package": "bzip2-1.0.8-4",
       "license": "custom",
       "package_license_declarations": [
-        "custom"
+        "spdx:custom"
       ],
       "imports": [
         "KERNEL32.dll",
@@ -115,15 +121,17 @@
         "api-ms-win-crt-time-l1-1-0.dll",
         "api-ms-win-crt-utility-l1-1-0.dll"
       ],
-      "download_url": "https://repo.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-bzip2-1.0.8-3-any.pkg.tar.zst",
-      "package_sha256": "932da2c63b23e6a4448757eb36fb198a9e51121874408270afe2c91bada513c7"
+      "download_url": "https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-bzip2-1.0.8-4-any.pkg.tar.zst",
+      "package_sha256": "f03a2174034ddd2d96cecd34f617c5f8e2ef86c812b8d2bb3b8875257f2c8bfa",
+      "source_url": "https://mirror.msys2.org/mingw/sources/mingw-w64-bzip2-1.0.8-4.src.tar.zst",
+      "package_page": "https://packages.msys2.org/packages/mingw-w64-ucrt-x86_64-bzip2"
     },
     {
       "name": "libexpat-1.dll",
       "path": "third_party/libexpat-1.dll",
-      "sha256": "2b8f2c669a062c4d0ee1011de51330ec26c2be51c8237312f68714902427f68c",
+      "sha256": "8a10cf7e89524b621d5f74bd4aedc659c47c7ce397d489f323a1065ba695027a",
       "size_bytes": 234709,
-      "package": "expat-2.8.1-2",
+      "package": "expat-2.9.0-1",
       "license": "MIT",
       "package_license_declarations": [
         "spdx:MIT"
@@ -141,18 +149,20 @@
         "api-ms-win-crt-string-l1-1-0.dll",
         "api-ms-win-crt-utility-l1-1-0.dll"
       ],
-      "download_url": "https://repo.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-expat-2.8.1-2-any.pkg.tar.zst",
-      "package_sha256": "2dcbe67eeb08ac32644161d0e3f4ada758fff13abf049b7f65d0ec4818a4f076"
+      "download_url": "https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-expat-2.9.0-1-any.pkg.tar.zst",
+      "package_sha256": "f52364dc874009316e1ee1fe46ee89784594b80d10cbcc1cc856945d575308e0",
+      "source_url": "https://mirror.msys2.org/mingw/sources/mingw-w64-expat-2.9.0-1.src.tar.zst",
+      "package_page": "https://packages.msys2.org/packages/mingw-w64-ucrt-x86_64-expat"
     },
     {
       "name": "libfontconfig-1.dll",
       "path": "third_party/libfontconfig-1.dll",
-      "sha256": "e97e4a41142dd99b25b22f2ce116bc0215d7e4222e72c6f20f02726ddfa350e3",
+      "sha256": "be30a200fa4000d0a7a1d3911391969627440148f01d0028a319bcb9fa112202",
       "size_bytes": 384012,
-      "package": "fontconfig-2.18.1-1",
+      "package": "fontconfig-2.18.3-1",
       "license": "custom",
       "package_license_declarations": [
-        "custom"
+        "spdx:custom"
       ],
       "imports": [
         "libgcc_s_seh-1.dll",
@@ -174,15 +184,17 @@
         "libexpat-1.dll",
         "libfreetype-6.dll"
       ],
-      "download_url": "https://repo.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-fontconfig-2.18.1-1-any.pkg.tar.zst",
-      "package_sha256": "99ee0a6593012a0cd119a8f2a73d307e599d09b9ba8757d7d9e18dec1a393471"
+      "download_url": "https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-fontconfig-2.18.3-1-any.pkg.tar.zst",
+      "package_sha256": "d0b364f3ee37e3b6f6c136688ce8fa909bb6d8a69df7e08de1aa40870d9e1d60",
+      "source_url": "https://mirror.msys2.org/mingw/sources/mingw-w64-fontconfig-2.18.3-1.src.tar.zst",
+      "package_page": "https://packages.msys2.org/packages/mingw-w64-ucrt-x86_64-fontconfig"
     },
     {
       "name": "libfreetype-6.dll",
       "path": "third_party/libfreetype-6.dll",
-      "sha256": "a3271784f8366b3c6412e0c35474884fa12899c392bacb08bc8eac00f4be7e64",
+      "sha256": "19604dde573cbb8a13053fc231eee99b91cd972e0e9a3e1465f44ad6985e83ee",
       "size_bytes": 791593,
-      "package": "freetype-2.14.3-1",
+      "package": "freetype-2.15.0-1",
       "license": "GPL-2.0-or-later OR FTL",
       "package_license_declarations": [
         "spdx:GPL-2.0-or-later OR FTL"
@@ -203,15 +215,17 @@
         "libpng16-16.dll",
         "zlib1.dll"
       ],
-      "download_url": "https://repo.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-freetype-2.14.3-1-any.pkg.tar.zst",
-      "package_sha256": "f502bdf9ed07aa95e223e1aba17ce8cb2d975aab5066eec17a2d7dc4fb8a1c20"
+      "download_url": "https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-freetype-2.15.0-1-any.pkg.tar.zst",
+      "package_sha256": "a9a691f71d1a553099c54ca666e611abfb2b4ff08dae24f2a5af72e22a7e5feb",
+      "source_url": "https://mirror.msys2.org/mingw/sources/mingw-w64-freetype-2.15.0-1.src.tar.zst",
+      "package_page": "https://packages.msys2.org/packages/mingw-w64-ucrt-x86_64-freetype"
     },
     {
       "name": "libfribidi-0.dll",
       "path": "third_party/libfribidi-0.dll",
-      "sha256": "73a712fd51fa0085e8660084743a821ae7388de138069cd6cd8c171d4487da84",
+      "sha256": "14bd0ed4c24d0068434bc23cd4f39e8dc0edcf56f2c9996b6fe39b39ffc54673",
       "size_bytes": 155504,
-      "package": "fribidi-1.0.16-1",
+      "package": "fribidi-1.0.17-1",
       "license": "LGPL-2.1-or-later",
       "package_license_declarations": [
         "spdx:LGPL-2.1-or-later"
@@ -228,18 +242,20 @@
         "api-ms-win-crt-time-l1-1-0.dll",
         "api-ms-win-crt-utility-l1-1-0.dll"
       ],
-      "download_url": "https://repo.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-fribidi-1.0.16-1-any.pkg.tar.zst",
-      "package_sha256": "c7fe0850b68dea80c430df8c2c9baacf361b2564dd9edea1b0f13d6da22dac08"
+      "download_url": "https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-fribidi-1.0.17-1-any.pkg.tar.zst",
+      "package_sha256": "3581ee03cf83a9bb0e98bf688c4f532a29553500e317532d90746de295b0f8a8",
+      "source_url": "https://mirror.msys2.org/mingw/sources/mingw-w64-fribidi-1.0.17-1.src.tar.zst",
+      "package_page": "https://packages.msys2.org/packages/mingw-w64-ucrt-x86_64-fribidi"
     },
     {
       "name": "libgcc_s_seh-1.dll",
       "path": "third_party/libgcc_s_seh-1.dll",
-      "sha256": "ff139cfe956709283f7b70a06af8bc8bb9d1c3bef60ec1bc8d363c91351cfeb2",
+      "sha256": "791ebf66e99c7c1b4ed3666468cec45a0172b4c8942ac6c84c3e9cab3e1b5270",
       "size_bytes": 153412,
-      "package": "gcc-libs-16.1.0-5",
-      "license": "GPL-3.0-or-later WITH GCC-exception-3.1 AND LGPL-2.1-or-later",
+      "package": "libgcc-16.2.0-6",
+      "license": "GPL-3.0-or-later WITH GCC-exception-3.1 AND GFDL-1.3-or-later",
       "package_license_declarations": [
-        "spdx:GPL-3.0-or-later WITH GCC-exception-3.1 AND LGPL-2.1-or-later"
+        "spdx:GPL-3.0-or-later WITH GCC-exception-3.1 AND GFDL-1.3-or-later"
       ],
       "imports": [
         "KERNEL32.dll",
@@ -250,15 +266,17 @@
         "api-ms-win-crt-string-l1-1-0.dll",
         "libwinpthread-1.dll"
       ],
-      "download_url": "https://repo.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-gcc-libs-16.1.0-5-any.pkg.tar.zst",
-      "package_sha256": "4dab54c95756da3e18ca375ae4c7fdeb709fc04bf209eb131c120e27704fb5b3"
+      "download_url": "https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-libgcc-16.2.0-6-any.pkg.tar.zst",
+      "package_sha256": "80b2497f019977dd9528b1abc8621b1328a0115ab1f724047ccbb56bf323f11d",
+      "source_url": "https://mirror.msys2.org/mingw/sources/mingw-w64-gcc-16.2.0-6.src.tar.zst",
+      "package_page": "https://packages.msys2.org/packages/mingw-w64-ucrt-x86_64-libgcc"
     },
     {
       "name": "libglib-2.0-0.dll",
       "path": "third_party/libglib-2.0-0.dll",
-      "sha256": "75164119231988002ef0c809b7b5b249d81b8b044d8cbda7e5848f9fccd12944",
+      "sha256": "3a1abec0184b238db54399cb9243393d9436d96b8fdb9bd9f2875da207c5b458",
       "size_bytes": 1563484,
-      "package": "glib2-2.88.1-1",
+      "package": "glib2-2.90.1-1",
       "license": "LGPL-2.1-or-later",
       "package_license_declarations": [
         "spdx:LGPL-2.1-or-later"
@@ -286,8 +304,10 @@
         "WS2_32.dll",
         "libpcre2-8-0.dll"
       ],
-      "download_url": "https://repo.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-glib2-2.88.1-1-any.pkg.tar.zst",
-      "package_sha256": "acdd349636d53c03739f584f1a23c96de28f0f5fc26a24f4386970efdbca48ac"
+      "download_url": "https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-glib2-2.90.1-1-any.pkg.tar.zst",
+      "package_sha256": "9a7826349279bcca0c935b01880d812be9de9609aef2205be68fd7a6128c1695",
+      "source_url": "https://mirror.msys2.org/mingw/sources/mingw-w64-glib2-2.90.1-1.src.tar.zst",
+      "package_page": "https://packages.msys2.org/packages/mingw-w64-ucrt-x86_64-glib2"
     },
     {
       "name": "libgraphite2.dll",
@@ -311,14 +331,16 @@
         "libstdc++-6.dll"
       ],
       "download_url": "https://repo.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-graphite2-1.3.15-1-any.pkg.tar.zst",
-      "package_sha256": "34ca1f88bff10ef182a6b1c8e5622d5029f13b05748e361af13b552b422ea849"
+      "package_sha256": "34ca1f88bff10ef182a6b1c8e5622d5029f13b05748e361af13b552b422ea849",
+      "source_url": "https://mirror.msys2.org/mingw/sources/mingw-w64-graphite2-1.3.15-1.src.tar.zst",
+      "package_page": "https://packages.msys2.org/packages/mingw-w64-ucrt-x86_64-graphite2"
     },
     {
       "name": "libharfbuzz-0.dll",
       "path": "third_party/libharfbuzz-0.dll",
-      "sha256": "2e1523eddd3a7c5be5fb8ad9a8e8eee819664356752d18c56f7c8f5896126ddb",
+      "sha256": "842d73ce2dd9ee506ef68f4d3e9ca29b62c87e34999cd2720505bf3c9d3f575c",
       "size_bytes": 1540489,
-      "package": "harfbuzz-14.2.1-1",
+      "package": "harfbuzz-14.6.0-1",
       "license": "MIT",
       "package_license_declarations": [
         "spdx:MIT"
@@ -347,8 +369,10 @@
         "USER32.dll",
         "USP10.dll"
       ],
-      "download_url": "https://repo.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-harfbuzz-14.2.1-1-any.pkg.tar.zst",
-      "package_sha256": "23513a331116a4596e0cd70a46f9c3006d9bb6ea9c38d594ee8212b83c060c90"
+      "download_url": "https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-harfbuzz-14.6.0-1-any.pkg.tar.zst",
+      "package_sha256": "8781d486c864bf91f482768cc5bd7267e49331636583d9f855af3974e6378e69",
+      "source_url": "https://mirror.msys2.org/mingw/sources/mingw-w64-harfbuzz-14.6.0-1.src.tar.zst",
+      "package_page": "https://packages.msys2.org/packages/mingw-w64-ucrt-x86_64-harfbuzz"
     },
     {
       "name": "libiconv-2.dll",
@@ -373,7 +397,9 @@
         "api-ms-win-crt-utility-l1-1-0.dll"
       ],
       "download_url": "https://repo.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-libiconv-1.19-1-any.pkg.tar.zst",
-      "package_sha256": "9a500f38c2b91808741c62fae746b3e9110b33a1ecf5c30fa0c66dbedddf7e16"
+      "package_sha256": "9a500f38c2b91808741c62fae746b3e9110b33a1ecf5c30fa0c66dbedddf7e16",
+      "source_url": "https://mirror.msys2.org/mingw/sources/mingw-w64-libiconv-1.19-1.src.tar.zst",
+      "package_page": "https://packages.msys2.org/packages/mingw-w64-ucrt-x86_64-libiconv"
     },
     {
       "name": "libintl-8.dll",
@@ -402,14 +428,16 @@
         "api-ms-win-crt-utility-l1-1-0.dll"
       ],
       "download_url": "https://repo.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-gettext-runtime-1.0-1-any.pkg.tar.zst",
-      "package_sha256": "ba693dda4ac375af76ce481ff3a6e7481286546cc7dc6d56c7021dae34084157"
+      "package_sha256": "ba693dda4ac375af76ce481ff3a6e7481286546cc7dc6d56c7021dae34084157",
+      "source_url": "https://mirror.msys2.org/mingw/sources/mingw-w64-gettext-1.0-1.src.tar.zst",
+      "package_page": "https://packages.msys2.org/packages/mingw-w64-ucrt-x86_64-gettext-runtime"
     },
     {
       "name": "libpcre2-8-0.dll",
       "path": "third_party/libpcre2-8-0.dll",
-      "sha256": "52ccc7e4ec5ad0aecf307c0328826340f5d504aa59f7c4143b9a1b9fff16ccda",
+      "sha256": "1f609cde2ce432efb7d2b0c7b84a14a6dbfc9622d1ac1a3cbadf51c5b0b4dada",
       "size_bytes": 718625,
-      "package": "pcre2-10.47-1",
+      "package": "pcre2-10.49-1",
       "license": "BSD-3-Clause",
       "package_license_declarations": [
         "spdx:BSD-3-Clause"
@@ -423,18 +451,20 @@
         "api-ms-win-crt-string-l1-1-0.dll",
         "api-ms-win-crt-utility-l1-1-0.dll"
       ],
-      "download_url": "https://repo.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-pcre2-10.47-1-any.pkg.tar.zst",
-      "package_sha256": "839bc4642f94c44e94e331c9092c6d186b1edc54dfdf6a81cb2062f638417023"
+      "download_url": "https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-pcre2-10.49-1-any.pkg.tar.zst",
+      "package_sha256": "63172179db724ac71e2439a7981134c1bcab8049bdddfd349b32b8f76ed52d1e",
+      "source_url": "https://mirror.msys2.org/mingw/sources/mingw-w64-pcre2-10.49-1.src.tar.zst",
+      "package_page": "https://packages.msys2.org/packages/mingw-w64-ucrt-x86_64-pcre2"
     },
     {
       "name": "libpng16-16.dll",
       "path": "third_party/libpng16-16.dll",
-      "sha256": "5c1dd5410af563f4a3c4aee10d1f749aa71e0d7fb3b4fac240eb9e96cadebd26",
+      "sha256": "7f425fd2b41d83869bb31bf761b4fb315f11040d55540661f96e582e1ec79a36",
       "size_bytes": 258972,
-      "package": "libpng-1.6.58-1",
+      "package": "libpng-1.6.59-1",
       "license": "custom",
       "package_license_declarations": [
-        "custom"
+        "spdx:custom"
       ],
       "imports": [
         "KERNEL32.dll",
@@ -451,18 +481,20 @@
         "api-ms-win-crt-utility-l1-1-0.dll",
         "zlib1.dll"
       ],
-      "download_url": "https://repo.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-libpng-1.6.58-1-any.pkg.tar.zst",
-      "package_sha256": "bbfb6eb6246b01df90d82d6cff84f0a4e98dad029a4a2753898c96fcaadb66c7"
+      "download_url": "https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-libpng-1.6.59-1-any.pkg.tar.zst",
+      "package_sha256": "7f8448e06eceba8f8ce130390addea49f767bdf8f6b7e7eede8ca6d595e3d3a8",
+      "source_url": "https://mirror.msys2.org/mingw/sources/mingw-w64-libpng-1.6.59-1.src.tar.zst",
+      "package_page": "https://packages.msys2.org/packages/mingw-w64-ucrt-x86_64-libpng"
     },
     {
       "name": "libstdc++-6.dll",
       "path": "third_party/libstdc++-6.dll",
-      "sha256": "d9a58184f6bb27936ef03c3a3286950e4aa61c66a9f74dfa94a532b1433b368d",
+      "sha256": "4e4822dc4aaa99383f581dae7ab9464ae89346c5ca742f7efbcdebe20b0fe7b5",
       "size_bytes": 2667044,
-      "package": "gcc-libs-16.1.0-5",
-      "license": "GPL-3.0-or-later WITH GCC-exception-3.1 AND LGPL-2.1-or-later",
+      "package": "libstdc++-16.2.0-6",
+      "license": "GPL-3.0-or-later WITH GCC-exception-3.1 AND GFDL-1.3-or-later",
       "package_license_declarations": [
-        "spdx:GPL-3.0-or-later WITH GCC-exception-3.1 AND LGPL-2.1-or-later"
+        "spdx:GPL-3.0-or-later WITH GCC-exception-3.1 AND GFDL-1.3-or-later"
       ],
       "imports": [
         "libgcc_s_seh-1.dll",
@@ -481,8 +513,10 @@
         "api-ms-win-crt-utility-l1-1-0.dll",
         "libwinpthread-1.dll"
       ],
-      "download_url": "https://repo.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-gcc-libs-16.1.0-5-any.pkg.tar.zst",
-      "package_sha256": "4dab54c95756da3e18ca375ae4c7fdeb709fc04bf209eb131c120e27704fb5b3"
+      "download_url": "https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-libstdc%2B%2B-16.2.0-6-any.pkg.tar.zst",
+      "package_sha256": "33c5e58a85a538cf843a8672991cce591f0231d66da3b66a57629712d64be17f",
+      "source_url": "https://mirror.msys2.org/mingw/sources/mingw-w64-gcc-16.2.0-6.src.tar.zst",
+      "package_page": "https://packages.msys2.org/packages/mingw-w64-ucrt-x86_64-libstdc%2B%2B"
     },
     {
       "name": "libunibreak-7.dll",
@@ -504,17 +538,19 @@
         "api-ms-win-crt-utility-l1-1-0.dll"
       ],
       "download_url": "https://repo.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-libunibreak-7.0-1-any.pkg.tar.zst",
-      "package_sha256": "de657828b41248a2fd67fa6e8348402a61ef130b0444f1f006c6545c43ad86d8"
+      "package_sha256": "de657828b41248a2fd67fa6e8348402a61ef130b0444f1f006c6545c43ad86d8",
+      "source_url": "https://mirror.msys2.org/mingw/sources/mingw-w64-libunibreak-7.0-1.src.tar.zst",
+      "package_page": "https://packages.msys2.org/packages/mingw-w64-ucrt-x86_64-libunibreak"
     },
     {
       "name": "libwinpthread-1.dll",
       "path": "third_party/libwinpthread-1.dll",
-      "sha256": "36d6e2e68c705141e7c4de7842ed00e1a5b9a8b0de235b5b13a5617f42c9da1f",
+      "sha256": "817e5b2636f532666e8f255e225af75e9d0c41b141512fde45264070a65b1c92",
       "size_bytes": 64702,
-      "package": "libwinpthread-14.0.0.r98.g19f5121a2-1",
-      "license": "MIT AND BSD-3-Clause-Clear",
+      "package": "libwinpthread-14.0.0.r495.g63ebe6cdb-2",
+      "license": "MIT AND BSD-3-Clause",
       "package_license_declarations": [
-        "spdx:MIT AND BSD-3-Clause-Clear"
+        "spdx:MIT AND BSD-3-Clause"
       ],
       "imports": [
         "KERNEL32.dll",
@@ -526,8 +562,10 @@
         "api-ms-win-crt-string-l1-1-0.dll",
         "api-ms-win-crt-utility-l1-1-0.dll"
       ],
-      "download_url": "https://repo.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-libwinpthread-14.0.0.r98.g19f5121a2-1-any.pkg.tar.zst",
-      "package_sha256": "13adabf058d83b01bf504773081cdc9813aa85a9401dad62188cd513d4c56a8a"
+      "download_url": "https://mirror.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-libwinpthread-14.0.0.r495.g63ebe6cdb-2-any.pkg.tar.zst",
+      "package_sha256": "0cee80308aec93607165be8c8655c1c3884389e0c2829b022643de7988d8b1f9",
+      "source_url": "https://mirror.msys2.org/mingw/sources/mingw-w64-winpthreads-14.0.0.r495.g63ebe6cdb-2.src.tar.zst",
+      "package_page": "https://packages.msys2.org/packages/mingw-w64-ucrt-x86_64-libwinpthread"
     },
     {
       "name": "zlib1.dll",
@@ -551,7 +589,308 @@
         "api-ms-win-crt-utility-l1-1-0.dll"
       ],
       "download_url": "https://repo.msys2.org/mingw/ucrt64/mingw-w64-ucrt-x86_64-zlib-1.3.2-2-any.pkg.tar.zst",
-      "package_sha256": "841401182976d2f9e17e5c0ebaac51f2a8014140ea53d67625e91c8fb3c85ea0"
+      "package_sha256": "841401182976d2f9e17e5c0ebaac51f2a8014140ea53d67625e91c8fb3c85ea0",
+      "source_url": "https://mirror.msys2.org/mingw/sources/mingw-w64-zlib-1.3.2-2.src.tar.zst",
+      "package_page": "https://packages.msys2.org/packages/mingw-w64-ucrt-x86_64-zlib"
     }
+  ],
+  "support_files": [
+    {
+      "sha256": "f141c1b89b172d22f213531646c21e288f0ebf3ec46484698896e1b33c626756",
+      "path": "etc/fonts/fonts.conf"
+    },
+    {
+      "sha256": "d138eca2bac3f78d45ff7cfb649ad792caa4a6e61f73cea7cf0ea54b091f1ef4",
+      "path": "etc/fonts/conf.d/10-hinting-slight.conf"
+    },
+    {
+      "sha256": "df8e99abb6f82384c61978906a45a95794940545da95790d87f01d9391e0894b",
+      "path": "etc/fonts/conf.d/10-scale-bitmap-fonts.conf"
+    },
+    {
+      "sha256": "0f00b5cf0ce07062ec65b9b340aa888f6c5fbc215aafebd26781be2d5a13ff6a",
+      "path": "etc/fonts/conf.d/10-sub-pixel-none.conf"
+    },
+    {
+      "sha256": "e6d82a642d1b37f7d24dc37f938b999f00ff7aa4303b2602d04164d53f221005",
+      "path": "etc/fonts/conf.d/10-yes-antialias.conf"
+    },
+    {
+      "sha256": "76aec9d8dac48faabe1bbde9e887cfb09fa45f30be5f8826e945a394a0097e48",
+      "path": "etc/fonts/conf.d/11-lcdfilter-default.conf"
+    },
+    {
+      "sha256": "278732c68c16177f2aa3c7e4ea318b9f720aee13a433c32eb15ba626806c609d",
+      "path": "etc/fonts/conf.d/20-unhint-small-vera.conf"
+    },
+    {
+      "sha256": "3baf25c82e1a14c606d45c212296852be06ae9795d60e84aab573226151450a2",
+      "path": "etc/fonts/conf.d/30-metric-aliases.conf"
+    },
+    {
+      "sha256": "f5f15e22979e2c98b8446706a24b44a904ef46e369052f9d3e738cd6e864a4d7",
+      "path": "etc/fonts/conf.d/40-nonlatin.conf"
+    },
+    {
+      "sha256": "63fc016a6ef6ad5a6df2caab714822c0cee9a5317c38237e9fbf6cd42f52f514",
+      "path": "etc/fonts/conf.d/45-generic.conf"
+    },
+    {
+      "sha256": "b46e539c25dfd5531c8fcf4f22c3d156b09272ffbc6f8a83a8eeb7431c09aee5",
+      "path": "etc/fonts/conf.d/45-latin.conf"
+    },
+    {
+      "sha256": "f6048ea7d8ed97cc4efef847b98c71ea9d20f16835feb43860b221d40770508e",
+      "path": "etc/fonts/conf.d/48-guessfamily.conf"
+    },
+    {
+      "sha256": "4395913fda6088c968f3145f5d41374cfe7b020e99445f56d81de91a1b361135",
+      "path": "etc/fonts/conf.d/48-spacing.conf"
+    },
+    {
+      "sha256": "35b1d7dac8bb9f61a19f5a9f5e16fc6ddff1d0844ac04503a85a54b232a35c67",
+      "path": "etc/fonts/conf.d/49-sansserif.conf"
+    },
+    {
+      "sha256": "bc6e31684e4f5e0176200e558a250ff63e9ab0773300f47071223edc320c4c5e",
+      "path": "etc/fonts/conf.d/50-user.conf"
+    },
+    {
+      "sha256": "dca9d917e1f66f73bfa495943b4d1eaab2d93810a51bc8e600cf4d4e9df03e67",
+      "path": "etc/fonts/conf.d/51-local.conf"
+    },
+    {
+      "sha256": "540302fe1576a6de20a3194b64e8090a816ba70cfdb66d61ddbe770aff6e4c23",
+      "path": "etc/fonts/conf.d/60-generic.conf"
+    },
+    {
+      "sha256": "a4b23d19e5348750ec0c2883b0cbb3f31367b22debe63c4113af389a719484a5",
+      "path": "etc/fonts/conf.d/60-latin.conf"
+    },
+    {
+      "sha256": "c675fab143a3638346874798be45f51f6878ebec591b4362d83cfffb828ec4ca",
+      "path": "etc/fonts/conf.d/65-fonts-persian.conf"
+    },
+    {
+      "sha256": "2a0232e5423f38023efb29b67a95bae982da3c474ec5ec7bbf5b418f42357a50",
+      "path": "etc/fonts/conf.d/65-nonlatin.conf"
+    },
+    {
+      "sha256": "fa97c0cf5f79d70e2dc3dc48155d4c9220cd7c6a8bc95b89c4ebcc517f97479e",
+      "path": "etc/fonts/conf.d/69-unifont.conf"
+    },
+    {
+      "sha256": "bb5df65896bf3011b2f2935b63ab12db1ecf078674ff73a533123445f122a92b",
+      "path": "etc/fonts/conf.d/70-no-bitmaps-except-emoji.conf"
+    },
+    {
+      "sha256": "34f27b7fe9cd83b2b6d46f16ef9c477412f2d7ef63634f86b9b38b79bc4f81ad",
+      "path": "etc/fonts/conf.d/80-delicious.conf"
+    },
+    {
+      "sha256": "cdd0aac7840c664a7127b64db66bdfe8dc22be3774d10bc22f4a41c98de5d85e",
+      "path": "etc/fonts/conf.d/90-synthetic.conf"
+    },
+    {
+      "sha256": "41cea02077ac14623f8d10f12dbc95444200718f3ec18c8a945c99438548eb10",
+      "path": "etc/fonts/conf.d/README"
+    },
+    {
+      "sha256": "7dae5045441ce7ab4ce9ee0ccbee84e2ae90daee9cfd2ac64cd887ee85c528df",
+      "path": "share/fontconfig/conf.avail/05-reset-dirs-sample.conf"
+    },
+    {
+      "sha256": "f04d1737c2a85925a6294f4b966597d03a30c9e4c551c7a8c270eaad514b2689",
+      "path": "share/fontconfig/conf.avail/09-autohint-if-no-hinting.conf"
+    },
+    {
+      "sha256": "9ae4308a18941969ea42f5881c202be052fe12da3fb1fb4fc4b940642ec74db0",
+      "path": "share/fontconfig/conf.avail/10-autohint.conf"
+    },
+    {
+      "sha256": "aa01699d6a43a1be2996233e67daf1570b9000bd1a59763463d3a12b852cdc3a",
+      "path": "share/fontconfig/conf.avail/10-hinting-full.conf"
+    },
+    {
+      "sha256": "f0eaec3db6879f3460bd0e1ef3e09dd965168ca460a79d098eb0648c6740095d",
+      "path": "share/fontconfig/conf.avail/10-hinting-medium.conf"
+    },
+    {
+      "sha256": "5970fa53c69874ee51349300ef3412592e46e7f133c06074befcf6ab2a3ef6e2",
+      "path": "share/fontconfig/conf.avail/10-hinting-none.conf"
+    },
+    {
+      "sha256": "d138eca2bac3f78d45ff7cfb649ad792caa4a6e61f73cea7cf0ea54b091f1ef4",
+      "path": "share/fontconfig/conf.avail/10-hinting-slight.conf"
+    },
+    {
+      "sha256": "75412c70f3a78ad090c79a9dc63cce6aae41b2cfc2f67f4a1a1b533526216d2e",
+      "path": "share/fontconfig/conf.avail/10-no-antialias.conf"
+    },
+    {
+      "sha256": "df8e99abb6f82384c61978906a45a95794940545da95790d87f01d9391e0894b",
+      "path": "share/fontconfig/conf.avail/10-scale-bitmap-fonts.conf"
+    },
+    {
+      "sha256": "719006f7887a958da8efe5ad010a2cde689313074607ae20f0be4cd9e8bfffad",
+      "path": "share/fontconfig/conf.avail/10-sub-pixel-bgr.conf"
+    },
+    {
+      "sha256": "0f00b5cf0ce07062ec65b9b340aa888f6c5fbc215aafebd26781be2d5a13ff6a",
+      "path": "share/fontconfig/conf.avail/10-sub-pixel-none.conf"
+    },
+    {
+      "sha256": "e4cfc04f5fc5093d2ba20c40f8709c9dfc099997313d0f96bc8256597a15d057",
+      "path": "share/fontconfig/conf.avail/10-sub-pixel-rgb.conf"
+    },
+    {
+      "sha256": "15178eb45f3206433bace02053214d5750b9d74a4ece727f48c7fbc8f8c9adb3",
+      "path": "share/fontconfig/conf.avail/10-sub-pixel-vbgr.conf"
+    },
+    {
+      "sha256": "049680ed134d34c560be493a47301bf6542050e7e89c27d3df25145b41f8133e",
+      "path": "share/fontconfig/conf.avail/10-sub-pixel-vrgb.conf"
+    },
+    {
+      "sha256": "dca27a149268da3aeaa3416dc236fd1d76e2f997b1ba91e1292297e78c9281d4",
+      "path": "share/fontconfig/conf.avail/10-unhinted.conf"
+    },
+    {
+      "sha256": "e6d82a642d1b37f7d24dc37f938b999f00ff7aa4303b2602d04164d53f221005",
+      "path": "share/fontconfig/conf.avail/10-yes-antialias.conf"
+    },
+    {
+      "sha256": "76aec9d8dac48faabe1bbde9e887cfb09fa45f30be5f8826e945a394a0097e48",
+      "path": "share/fontconfig/conf.avail/11-lcdfilter-default.conf"
+    },
+    {
+      "sha256": "0768fd57ae0a50d54f2f2e5efae98437ae8623573b652f246ac22e574d5f38b0",
+      "path": "share/fontconfig/conf.avail/11-lcdfilter-legacy.conf"
+    },
+    {
+      "sha256": "0708443f97406b100a5ccfa67ea8a1c1473ff60ff03848e536bc62e2b2ddcea3",
+      "path": "share/fontconfig/conf.avail/11-lcdfilter-light.conf"
+    },
+    {
+      "sha256": "8c2b7c2db7bf8e54fb4f449e726ad97d824195085f97a5c19d75914ad7b4b074",
+      "path": "share/fontconfig/conf.avail/11-lcdfilter-none.conf"
+    },
+    {
+      "sha256": "278732c68c16177f2aa3c7e4ea318b9f720aee13a433c32eb15ba626806c609d",
+      "path": "share/fontconfig/conf.avail/20-unhint-small-vera.conf"
+    },
+    {
+      "sha256": "8b8c05318fb3f4893a9522e7989dd9280d14233adbc21be867bd173add4a0d5c",
+      "path": "share/fontconfig/conf.avail/25-unhint-nonlatin.conf"
+    },
+    {
+      "sha256": "3baf25c82e1a14c606d45c212296852be06ae9795d60e84aab573226151450a2",
+      "path": "share/fontconfig/conf.avail/30-metric-aliases.conf"
+    },
+    {
+      "sha256": "a60a78d8062e14099fae11adad575baf3ef2e55204f06161ae434361e8d700d1",
+      "path": "share/fontconfig/conf.avail/35-lang-normalize.conf"
+    },
+    {
+      "sha256": "f5f15e22979e2c98b8446706a24b44a904ef46e369052f9d3e738cd6e864a4d7",
+      "path": "share/fontconfig/conf.avail/40-nonlatin.conf"
+    },
+    {
+      "sha256": "63fc016a6ef6ad5a6df2caab714822c0cee9a5317c38237e9fbf6cd42f52f514",
+      "path": "share/fontconfig/conf.avail/45-generic.conf"
+    },
+    {
+      "sha256": "b46e539c25dfd5531c8fcf4f22c3d156b09272ffbc6f8a83a8eeb7431c09aee5",
+      "path": "share/fontconfig/conf.avail/45-latin.conf"
+    },
+    {
+      "sha256": "f6048ea7d8ed97cc4efef847b98c71ea9d20f16835feb43860b221d40770508e",
+      "path": "share/fontconfig/conf.avail/48-guessfamily.conf"
+    },
+    {
+      "sha256": "4395913fda6088c968f3145f5d41374cfe7b020e99445f56d81de91a1b361135",
+      "path": "share/fontconfig/conf.avail/48-spacing.conf"
+    },
+    {
+      "sha256": "35b1d7dac8bb9f61a19f5a9f5e16fc6ddff1d0844ac04503a85a54b232a35c67",
+      "path": "share/fontconfig/conf.avail/49-sansserif.conf"
+    },
+    {
+      "sha256": "bc6e31684e4f5e0176200e558a250ff63e9ab0773300f47071223edc320c4c5e",
+      "path": "share/fontconfig/conf.avail/50-user.conf"
+    },
+    {
+      "sha256": "dca9d917e1f66f73bfa495943b4d1eaab2d93810a51bc8e600cf4d4e9df03e67",
+      "path": "share/fontconfig/conf.avail/51-local.conf"
+    },
+    {
+      "sha256": "540302fe1576a6de20a3194b64e8090a816ba70cfdb66d61ddbe770aff6e4c23",
+      "path": "share/fontconfig/conf.avail/60-generic.conf"
+    },
+    {
+      "sha256": "a4b23d19e5348750ec0c2883b0cbb3f31367b22debe63c4113af389a719484a5",
+      "path": "share/fontconfig/conf.avail/60-latin.conf"
+    },
+    {
+      "sha256": "c675fab143a3638346874798be45f51f6878ebec591b4362d83cfffb828ec4ca",
+      "path": "share/fontconfig/conf.avail/65-fonts-persian.conf"
+    },
+    {
+      "sha256": "a3db9db91befc851ad20a1f913c26d90dda45ab2f8470de50523e3ca3770bb1d",
+      "path": "share/fontconfig/conf.avail/65-khmer.conf"
+    },
+    {
+      "sha256": "2a0232e5423f38023efb29b67a95bae982da3c474ec5ec7bbf5b418f42357a50",
+      "path": "share/fontconfig/conf.avail/65-nonlatin.conf"
+    },
+    {
+      "sha256": "fa97c0cf5f79d70e2dc3dc48155d4c9220cd7c6a8bc95b89c4ebcc517f97479e",
+      "path": "share/fontconfig/conf.avail/69-unifont.conf"
+    },
+    {
+      "sha256": "313260028904353a026faa457bacea58df88ceff7dc97b269e526130dc797a7e",
+      "path": "share/fontconfig/conf.avail/70-no-bitmaps-and-emoji.conf"
+    },
+    {
+      "sha256": "bb5df65896bf3011b2f2935b63ab12db1ecf078674ff73a533123445f122a92b",
+      "path": "share/fontconfig/conf.avail/70-no-bitmaps-except-emoji.conf"
+    },
+    {
+      "sha256": "5994ce306887448ec29b2d6624696bb2dd7e333dd51cc5818f9ebe72abc077da",
+      "path": "share/fontconfig/conf.avail/70-no-bitmaps.conf"
+    },
+    {
+      "sha256": "46fb68f9ec27605f880379b753c1afcc1cacfc75021e3a288f4cf62c945e394f",
+      "path": "share/fontconfig/conf.avail/70-yes-bitmaps.conf"
+    },
+    {
+      "sha256": "34f27b7fe9cd83b2b6d46f16ef9c477412f2d7ef63634f86b9b38b79bc4f81ad",
+      "path": "share/fontconfig/conf.avail/80-delicious.conf"
+    },
+    {
+      "sha256": "cdd0aac7840c664a7127b64db66bdfe8dc22be3774d10bc22f4a41c98de5d85e",
+      "path": "share/fontconfig/conf.avail/90-synthetic.conf"
+    }
+  ],
+  "license_packages": [
+    "brotli-1.2.0-1",
+    "bzip2-1.0.8-4",
+    "expat-2.9.0-1",
+    "fontconfig-2.18.3-1",
+    "freetype-2.15.0-1",
+    "fribidi-1.0.17-1",
+    "libgcc-16.2.0-6",
+    "glib2-2.90.1-1",
+    "graphite2-1.3.15-1",
+    "harfbuzz-14.6.0-1",
+    "libass-0.17.5-1",
+    "libiconv-1.19-1",
+    "gettext-runtime-1.0-1",
+    "libpng-1.6.59-1",
+    "libstdc++-16.2.0-6",
+    "libunibreak-7.0-1",
+    "libwinpthread-14.0.0.r495.g63ebe6cdb-2",
+    "pcre2-10.49-1",
+    "zlib-1.3.2-2"
   ]
 }

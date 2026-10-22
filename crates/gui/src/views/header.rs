@@ -14,17 +14,9 @@ pub fn view<'a>() -> Element<'a, Message> {
     .on_press(Message::OpenDoctorDialog)
     .padding([5, 12]);
 
-    let env_indicator = row![
-        icons::activity(14.0),
-        text("libass: 已隔离就绪 | ffprobe: 正常").size(12),
-    ]
-    .spacing(6)
-    .align_y(Alignment::Center);
-
     let content = row![
         title,
         Space::with_width(Length::Fixed(24.0)),
-        env_indicator,
         Space::with_width(Length::Fill),
         doc_btn,
     ]

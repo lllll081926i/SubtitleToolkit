@@ -10,6 +10,9 @@ tools/**/*.log
 __pycache__/
 .trash/
 
+# 该快捷方式记录本机仓库路径；其他克隆请直接运行 .\dev.ps1
+/SubtitleToolkit 开发模式.lnk
+
 # 门禁运行产生的日志（与 target/ 同类：是运行痕迹不是源）
 audit/
 

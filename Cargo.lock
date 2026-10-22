@@ -1572,6 +1572,7 @@ dependencies = [
  "sha2",
  "task-engine",
  "tokio",
+ "tracing",
  "transform-hdr",
  "transform-resolution",
  "transform-time",

@@ -61,7 +61,7 @@ use render_csri::provider::CsriProvider;
 /// 仓库根。
 ///
 /// **不能用“从当前 exe 往上退 N 层”** —— 本仓的 `CARGO_TARGET_DIR`
-/// 在另一个盘（`D:\rust\target`），所以从 `<target>/debug/deps` 往上退
+/// 在另一个盘，所以从 `<target>/debug/deps` 往上退
 /// 永远退不到仓库。**而且那个写法会让用例安静地全跳过**：
 /// 找不到文件→`return`→`test result: ok`，看起来全绿。
 /// 第一版就是这样，是被 `--nocapture` 里满屏的“跳过”抳出来的。

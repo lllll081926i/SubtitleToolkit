@@ -122,7 +122,7 @@ CSRI_F__BGR,      // 0x103
 真 provider 用例的第一版**全部静默跳过**，而 `test result: ok`。
 
 原因：我用"从当前 exe 往上退 4 层"找仓库根，而本仓的 `CARGO_TARGET_DIR`
-在**另一个盘**（`D:\rust\target`），从 `<target>/debug/deps` 往上退
+在 Cargo 目标目录，从 `<target>/debug/deps` 往上退
 永远退不到仓库。找不到文件 → `return` → 用例"通过"。
 
 **抳出它的方式**：跑 `--nocapture`，看到满屏的"跳过"。

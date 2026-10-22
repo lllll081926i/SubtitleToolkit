@@ -3,6 +3,7 @@
 //! GUI 与 CLI 必须共用同一条流水线（36 §5），所以这里只放无 UI 依赖的部分：
 //! 读文本、编码判定、ASS↔SRT、ASS 时间/HDR/分辨率改写、原子写出。
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use codec_ass::{parse_overrides, AssDocument, EntryKind, OverrideToken, SectionKind};
@@ -158,8 +159,25 @@ pub(crate) fn read_bounded(path: &Path, limit: u64, what: &str) -> Result<Vec<u8
             ))
             .with_action("确认选对了文件；本工具处理字幕，不处理视频/音频容器"));
     }
-    std::fs::read(path)
-        .map_err(|e| cli_err(110, "无法读取输入文件").with_detail(format!("{:?}：{e}", path)))
+    // metadata 只是快速拒绝的第一道检查；文件可能在 stat 后增长。最多读取 limit+1，
+    // 确保并发替换/追加不会绕过上限并把超大文件整份装入内存。
+    let file = std::fs::File::open(path)
+        .map_err(|e| cli_err(110, "无法读取输入文件").with_detail(format!("{:?}：{e}", path)))?;
+    let mut bytes = Vec::new();
+    file.take(limit.saturating_add(1))
+        .read_to_end(&mut bytes)
+        .map_err(|e| cli_err(110, "无法读取输入文件").with_detail(format!("{:?}：{e}", path)))?;
+    if bytes.len() as u64 > limit {
+        return Err(cli_err(113, &format!("{what}输入超过本工具的处理上限"))
+            .with_detail(format!(
+                "{}：至少 {} 字节，上限 {} 字节",
+                path.display(),
+                bytes.len(),
+                limit
+            ))
+            .with_action("确认选对了文件；本工具处理字幕，不处理视频/音频容器"));
+    }
+    Ok(bytes)
 }
 
 /// 读入并解码。UTF-8（含 BOM）与 UTF-16（BOM 声明，或无 BOM 但结构可判）都接受；

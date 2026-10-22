@@ -33,14 +33,14 @@ fn libass() -> Option<PathBuf> {
 }
 
 fn arial() -> Option<PathBuf> {
-    [
-        r"C:\Windows\Fonts\arial.ttf",
-        r"C:\Windows\Fonts\ARIAL.TTF",
-        r"C:\Users\lllll\AppData\Local\Microsoft\Windows\Fonts\ARIAL_0.TTF",
-    ]
-    .into_iter()
-    .map(PathBuf::from)
-    .find(|p| p.is_file())
+    let mut candidates = vec![
+        PathBuf::from(r"C:\Windows\Fonts\arial.ttf"),
+        PathBuf::from(r"C:\Windows\Fonts\ARIAL.TTF"),
+    ];
+    if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+        candidates.push(PathBuf::from(local_app_data).join("Microsoft/Windows/Fonts/ARIAL_0.TTF"));
+    }
+    candidates.into_iter().find(|p| p.is_file())
 }
 
 fn workspace(tag: &str) -> PathBuf {

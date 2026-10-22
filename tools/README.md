@@ -9,7 +9,7 @@ Cargo 配置将编译子进程的临时目录固定为仓库 `target/tmp/`。初
 | 工具 | 用途 |
 |---|---|
 | `set_build_cache.ps1` | 初始化开发会话的非 C 盘缓存与临时目录 |
-| `make_portable.ps1` | 把已验收的 release 产物打成 portable zip（含 `SHA256SUMS.txt`、许可正文、`sbom.cdx.json` 与 `portable.flag`）；不含第三方 DLL、不签名 |
+| `make_portable.ps1` | 把已验收的 release 产物打成 portable zip（含 `SHA256SUMS.txt`、libass 运行库、许可证正文、`sbom.cdx.json` 与 `portable.flag`）；不签名 |
 | `make_installer.ps1` | 用 Inno Setup 编出 `SubtitleToolkit-<版本>-setup.exe`（28 §3）；找不到 ISCC 或编译失败均退非零 |
 | `verify_installer.ps1` | 把 28 §3 的五条要求真跑一遍（静默装卸载、查注册表与用户数据），逐项报 PASS/FAIL |
 | `check_all.ps1` / `check_all.sh` | Windows 入口与完整验证；严格模式不允许缺依赖跳过 |
@@ -45,7 +45,7 @@ $env:STK_MKVTOOLNIX_DIR = 'D:/dependencies/mkvtoolnix'
 .\tools\make_portable.ps1 -NoBuild   # 只打包现有产物
 ```
 
-产出 zip 位于 Cargo 目标目录的 `portable/`。包内为 CLI、renderer-host 与 GUI 三个可执行文件，加上 `LICENSE-MIT`/`LICENSE-APACHE`/`THIRD_PARTY_NOTICES.md`/`sbom.cdx.json`/`README.md`、`portable.flag` 与 `SHA256SUMS.txt`。
+产出 zip 位于 Cargo 目标目录的 `portable/`。包内为 CLI、renderer-host 与 GUI 三个可执行文件、20 个 libass 运行库 DLL、fontconfig 配置、逐包许可证材料，加上 `LICENSE-MIT`/`LICENSE-APACHE`/`THIRD_PARTY_NOTICES.md`/`sbom.cdx.json`/`README.md`、`portable.flag` 与 `SHA256SUMS.txt`。
 
 ## 安装器
 
@@ -66,7 +66,7 @@ pwsh -NoProfile -File .\tools\verify_installer.ps1   # 把 28 §3 跑一遍
 
 边界（不要把它们当成已完成）：
 
-- **不包含第三方运行库 DLL**。libass 那组 MSYS2 DLL 的分发义务仍在审计中（21 §3、`third_party/README.md`），未完成前不进发行物；渲染依赖由用户在目标机上设 `STK_LIBASS_DLL`。
+- 安装包包含通过 `third_party/LIBASS_RUNTIME_LOCK.json` 核验的 20 个 libass DLL、fontconfig 配置、各 MSYS2 包元数据和许可证正文。需要更新 DLL 时，先更新来源锁与许可材料，再运行打包脚本；脚本拒绝哈希不符或文件缺失的运行库。
 - **未签名**。Authenticode（28 §5）尚未实现；未签名的 `setup.exe` 在 SmartScreen 上会警告。
 - **安装器用 Inno Setup 6.7.3 编译**，不是 28 §3 推荐的 7（用到的特性 6 均有，已编译且实跑通过）。
 - **all-users 模式只核对了静态声明**，未做实机 UAC 验证（静默环境应答不了 UAC，且提权安装会真写 `HKLM` 与 `%ProgramFiles%`）。

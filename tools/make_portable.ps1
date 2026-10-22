@@ -3,9 +3,7 @@
 # 立场（写清楚，避免把"能打 zip"当成"已发布"）：
 # * 本脚本只把**已经构建好并通过验收**的产物收进一个自包含目录，再打成 zip；
 #   它不做签名、不做安装器、不动注册表（那些是 28 §3/§5，尚未实现）。
-# * 默认**不打包任何第三方运行库 DLL**。libass 那组 MSYS2 DLL 的来源/许可/分发义务
-#   仍在审计中（third_party/README.md），未完成前不许混进发行物。要用本机 DLL 做渲染，
-#   由用户在目标机上自行设置 STK_LIBASS_DLL。
+# * 随包提供已逐包核验来源、哈希和许可材料的 libass UCRT64 运行库。
 # * 打包前重新验证内容哈希，并生成 SHA256SUMS.txt；第三方声明原样复制进包。
 #
 # 用法：
@@ -46,7 +44,7 @@ try {
     }
 
     # --- 3. 收集产物（缺一个就失败，不产出"看起来像发布包"的残缺 zip）----------------
-    # 只收 CLI 与 renderer-host：GUI 尚未接通真实执行链，不进发行物（STATUS.md）。
+    # 收集 CLI、renderer-host 与已接通真实 batch 执行链的 GUI。
     $wanted = @(
         'subtitletool-cli.exe',
         'subtitletool-render-host.exe',
@@ -94,6 +92,9 @@ try {
         Copy-Item -LiteralPath $src -Destination (Join-Path $stage $d.Name) -Force
     }
 
+    # Runtime loader only accepts the colocated DLL when this marker is present.
+    & (Join-Path $PSScriptRoot 'copy_libass_runtime.ps1') -StageDir $stage
+
     # 28 §4：便携包默认就带上 portable.flag，让解包即用、不往用户机器上的
     # %LOCALAPPDATA% 写任何东西。数据落在同目录的 data/（core-model::DataDir 负责解析）。
     # 删掉这个文件就会退回安装版行为——这是用户的显式选择，不是我们替他决定的事。
@@ -113,11 +114,12 @@ try {
     # 覆盖**包内所有文件**，不只是 exe：许可正文、第三方声明与 portable.flag
     # 都属于"这东西是不是我要的那一份"的一部分，漏了它们就等于校验和无法证明整包完整。
     $sumsPath = Join-Path $stage 'SHA256SUMS.txt'
-    $sumLines = Get-ChildItem -LiteralPath $stage -File |
+    $sumLines = Get-ChildItem -LiteralPath $stage -File -Recurse |
         Where-Object { $_.Name -ne 'SHA256SUMS.txt' } |
         ForEach-Object {
             $h = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
-            "$h  $($_.Name)"
+            $relativePath = [IO.Path]::GetRelativePath($stage, $_.FullName).Replace('\', '/')
+            "$h  $relativePath"
         }
     # 用 LF 与 ASCII，让校验和文件在跨平台工具里也能直接用
     [System.IO.File]::WriteAllText($sumsPath, (($sumLines -join "`n") + "`n"), [System.Text.UTF8Encoding]::new($false))
@@ -135,11 +137,13 @@ try {
     Write-Host "  zip SHA-256: $zipHash"
     Write-Host ""
     Write-Host "  包内文件：" -ForegroundColor Cyan
-    Get-ChildItem -LiteralPath $stage -File | ForEach-Object { Write-Host "    $($_.Name)" }
+    Get-ChildItem -LiteralPath $stage -File -Recurse | ForEach-Object {
+        Write-Host "    $([IO.Path]::GetRelativePath($stage, $_.FullName).Replace('\', '/'))"
+    }
     Write-Host ""
-    Write-Host "  说明：本包不含第三方运行库 DLL。需要渲染时在目标机上设置 STK_LIBASS_DLL。" -ForegroundColor Yellow
+    Write-Host "  说明：本包包含已核验的 libass DLL、fontconfig 配置及随附许可证材料。" -ForegroundColor Yellow
     Write-Host "  便携：包内自带 portable.flag，数据（字体库缓存等）落在同级 data/，不写 %LOCALAPPDATA%。" -ForegroundColor Yellow
-    Write-Host "  未完成项：Authenticode 签名与安装器见 28 节。" -ForegroundColor Yellow
+    Write-Host "  未完成项：Authenticode 签名见 28 节；运行库来源和哈希见包内 licenses/LIBASS_RUNTIME_LOCK.json。" -ForegroundColor Yellow
 }
 finally {
     Pop-Location

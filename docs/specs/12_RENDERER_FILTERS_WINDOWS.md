@@ -7,7 +7,7 @@
 - Windows 构建优先使用 DirectWrite font provider。
 - 不承诺所有 VSFilterMod 私有特效像素等价。
 
-当前 Rust 绑定已实现；运行仍需要外部 native DLL。2026-10-08 已纳入用户提供的 `third_party/libass-9.dll` 与其 UCRT64 依赖，并通过真实 host/像素测试，见[运行库说明](../../third_party/README.md#libass-开发期运行库)。这不表示产品安装包已完成许可审计。
+当前 Rust 绑定已实现；便携包和安装包随附由 MSYS2 UCRT64 提供的 libass DLL 依赖闭包及 fontconfig 配置。每个 DLL 的来源、哈希和许可证材料由[运行库锁](../../third_party/LIBASS_RUNTIME_LOCK.json)记录；真实 host/像素测试见[运行库说明](../../third_party/README.md)。
 
 #### libass 初始化硬要求（源码审计新增）
 在第一次 render 前至少：
@@ -129,7 +129,7 @@ subtitletool-cli render x.ass --libass-dll VSFilterMod.dll
 
 接收端在分配负载之前拒绝未知消息标签。JSON 消息必须是合法 UTF-8；非法字节直接报错，不替换字符后继续处理路径或请求。
 
-当前未实现：CSRI/VSFilterMod provider、x86 host、heartbeat、任务取消、minidump 和 provider pool。位数不匹配时拒绝启动，不宣称自动路由到 x86。新增 provider 前必须补 capability probe、真实 provider 测试和许可记录。
+状态（2026-10-17）：CSRI/VSFilterMod 已接入 renderer-host，并以真实 provider 验收崩溃隔离；x86 host 可构建，但真实 x86 DLL 路由未验收。仍未实现或未闭环：heartbeat、host 任务取消、真 minidump 和 provider pool。位数不匹配时拒绝启动，不宣称 x86 自动路由已就绪。新增 provider 仍须补 capability probe、真实测试和许可记录。
 
 ## 3. x86/x64
 主程序 x64。读取 PE Machine：

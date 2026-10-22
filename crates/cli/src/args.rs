@@ -101,8 +101,8 @@ diagnose [--include-input F]…      22 §5：打出诊断包 zip（**默认不�
          / --no-render-cache（37 §2：不用磁盘渲染缓存，每次都真渲染）
          / --inject-fonts（17 §7：把解析到的字体字节交给 libass，让渲染用的就是那份字节）
 覆盖策略默认 rename：目标已存在就换个名字写，绝不直接截断原文件（15 §6、AT-OUT-001）
-尚未实现（返回 STK-INP-0060 并指明所属 Phase，不会假装成功）：
-  --preset FILE                        等 TOML 依赖按 21 §1 批准（ISSUES E4）；现在会明确报错
+尚未实现的命令与当前不支持的选项（会明确报错，不会假装成功）：
+  --preset FILE                        STK-INP-0060：命令暂不接受 preset；批处理使用 JSON --spec
 ";
 
 /// 20 §Commands 的全部命令名（`pgs` 的三个子命令分开列，因为它们是三条不同的承诺）。
@@ -643,8 +643,7 @@ pub fn parse(argv: &[String]) -> Result<Invocation, ArgError> {
             },
             "--preset" => {
                 return Err(ArgError::value(
-                    "--preset 需要 TOML 解析依赖（21 §1 的宽松许可原则允许，但按 ISSUES E 段等确认）；\
-                     当前请直接在命令行给出参数",
+                    "当前命令不支持 --preset；请直接提供命令行参数。TOML Preset 文件可用 `preset show` 或 `preset validate` 检查，批处理使用 JSON --spec",
                 ));
             }
             _ => tokens.push(a.to_string()),
@@ -2228,12 +2227,12 @@ mod tests {
     }
 
     #[test]
-    fn preset_is_refused_until_the_toml_dependency_is_confirmed() {
+    fn command_level_preset_option_is_refused_with_current_usage() {
         let e = parse(&argv(&[
             "convert", "--preset", "a.toml", "--to", "srt", "x.ass",
         ]))
         .unwrap_err();
-        assert!(e.message.contains("TOML"), "{}", e.message);
+        assert!(e.message.contains("不支持 --preset"), "{}", e.message);
     }
 
     #[test]

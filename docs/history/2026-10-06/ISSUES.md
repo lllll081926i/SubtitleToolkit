@@ -20,7 +20,7 @@
 | # | 问题 | 现象与取证 | 处理 | 状态 | 优先级 |
 |---|---|---|---|---|---|
 | B1 | 选哪个镜像 | 探测：`index.crates.io` 200/0.59s；`rsproxy.cn/index/config.json` 200/0.32s 且 `dl=https://rsproxy.cn/api/v1/crates`（索引+crate 文件都在境内）；`mirrors.tuna` 200/0.19s 但 `dl` 仍指向 `static.crates.io`（只有索引出境内）；`mirrors.ustc` **429 Rate limited** | 主源定为 **rsproxy sparse**，TUNA 作为命名备用源写入配置；USTC 排除 | 已解决 | P0 |
-| B2 | 全局生效 + 工程可复现 | `~/.cargo/config.toml` 原不存在 | 已写 `C:\Users\Administrator\.cargo\config.toml`（用户级）与工程内 `.cargo/config.toml`（提交进仓库，CI/新机同样走镜像） | 已解决 | P0 |
+| B2 | 全局生效 + 工程可复现 | `~/.cargo/config.toml` 原不存在 | 已写入用户级 Cargo 配置与工程内 `.cargo/config.toml`（提交进仓库，CI/新机同样走镜像） | 已解决 | P0 |
 | B3 | 实证镜像真的在用 | `cargo add serde_json` + `cargo fetch` 输出：`Downloaded serde_json v1.0.151 (registry 'rsproxy-sparse')` 等 8 个包，3.7s | 同时验证文档点名的依赖可用性：`iced 0.14`、`oxideav-ass 0.0.9`、`ass-rs 3.0.0`、`zhhz 0.8.2`、`rfd 0.17.2`、`libass 0.2.0` 均可解析；`assfonts` **不在 crates.io** | 已解决 | P1 |
 
 ## C. 文档存疑项与我的处理决定

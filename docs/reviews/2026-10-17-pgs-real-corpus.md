@@ -7,7 +7,7 @@
 
 | 项 | 值 |
 |---|---|
-| 文件 | `D:\lllll\Videos\挽救计划.Project.Hail.Mary.2026.1080p.SDR.简英双语特效@KKYY.sup` |
+| 文件 | 用户提供的第三方商业 SUP 语料（文件名与本机路径已脱敏） |
 | 大小 | 103,778,137 字节（98.97 MB） |
 | SHA-256 | `694f2e0d5d7c3e5368b85f5b42330e0c8eccbd44de2a89984e0383481ba9ad31` |
 | 画布 | 1920x1080 |
@@ -180,7 +180,7 @@ AT-PGS-002 要求“Forced-only Fast Path 不重编码”、AT-PGS-003 要求“
 . .\tools\set_build_cache.ps1
 cargo build --release -p cli
 .\target\release\subtitletool-cli.exe pgs validate `
-  'D:\lllll\Videos\挽救计划.Project.Hail.Mary.2026.1080p.SDR.简英双语特效@KKYY.sup' `
+  $env:STK_TEST_SUP `
   --level standard --json
 ```
 

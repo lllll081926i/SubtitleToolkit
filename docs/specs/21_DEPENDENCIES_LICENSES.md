@@ -8,7 +8,7 @@ Iced：锁版本并在发布前再次核对 license/dependency tree。
 
 ## 3. ASS
 - libass：ISC，可作为 native core：https://github.com/libass/libass
-- 当前 MSYS2 UCRT64 开发期 DLL 与运行依赖已纳入[来源锁](../../third_party/LIBASS_RUNTIME_LOCK.json)并真实测试；依赖包含 LGPL 等声明，不能把整组二进制统一归为 ISC。公开打包义务仍需逐文件复核。
+- MSYS2 UCRT64 libass DLL 闭包已纳入[运行库锁](../../third_party/LIBASS_RUNTIME_LOCK.json)，每个 DLL 对应官方包归档 SHA-256、包声明、来源页、源码包地址和许可证正文；真实测试通过。安装器与便携包仅从锁定文件复制，并附带 LGPL、FreeType、GCC runtime 等许可证材料。libass 本体 ISC 不代表整组 DLL 都是 ISC。
 - ass-rs / oxideav-ass：作为 parser bake-off 候选；进入 hard dep 前要跑 corpus。
 
 ## 4. PGS

@@ -7,7 +7,7 @@ use iced::{Alignment, Element, Length};
 pub fn view<'a>(state: &'a TaskDrawerState, total_plan: usize) -> Element<'a, Message> {
     let action_btn = if state.is_running {
         button(
-            row![icons::stop(14.0), text("取消正在执行的任务").size(13)]
+            row![icons::stop(14.0), text("取消").size(13)]
                 .spacing(6)
                 .align_y(Alignment::Center),
         )
@@ -17,7 +17,7 @@ pub fn view<'a>(state: &'a TaskDrawerState, total_plan: usize) -> Element<'a, Me
         button(
             row![
                 icons::play(14.0),
-                text(format!("开始执行队列 (共 {} 个任务)", total_plan)).size(13)
+                text(format!("开始处理（{} 项）", total_plan)).size(13)
             ]
             .spacing(6)
             .align_y(Alignment::Center),
@@ -37,7 +37,7 @@ pub fn view<'a>(state: &'a TaskDrawerState, total_plan: usize) -> Element<'a, Me
             button(
                 row![
                     icons::play(14.0),
-                    text(format!("重试失败的 {retry_count} 个")).size(13)
+                    text(format!("重试失败项（{retry_count}）")).size(13)
                 ]
                 .spacing(6)
                 .align_y(Alignment::Center),
@@ -50,7 +50,7 @@ pub fn view<'a>(state: &'a TaskDrawerState, total_plan: usize) -> Element<'a, Me
         None
     };
 
-    let dir_text = format!("输出目录: {}", state.output_dir.display());
+    let dir_text = format!("输出: {}", state.output_dir.display());
 
     let dir_controls = row![
         text(dir_text).size(12),
@@ -100,7 +100,7 @@ pub fn view<'a>(state: &'a TaskDrawerState, total_plan: usize) -> Element<'a, Me
         dir_controls,
         Space::with_width(Length::Fill),
         text(format!(
-            "已完成: {} / 失败: {}",
+            "完成 {} · 失败 {}",
             state.completed_tasks(),
             state.failed_tasks()
         ))
@@ -143,8 +143,7 @@ pub fn view<'a>(state: &'a TaskDrawerState, total_plan: usize) -> Element<'a, Me
         }
 
         if state.tasks.is_empty() {
-            task_list = task_list
-                .push(text("暂无任务历史，配置左侧输入与右侧Profile后点击开始。").size(12));
+            task_list = task_list.push(text("暂无任务").size(12));
         } else {
             for task in &state.tasks {
                 // 状态文字直接取自 `TaskStatus::label()` 与 `detail()`：

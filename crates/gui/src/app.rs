@@ -66,6 +66,14 @@ impl SubtitleApp {
         // （SDR / 原始尺寸）”。若让 A 也跟着目标画布，两个画面就只剩色调差异，
         // “缩放导致的版面变化”就看不到了 —— 而那是用户开对比的一半理由。
         let (canvas_a, canvas_b, hdr, has_hdr) = self.ab_plan();
+        tracing::debug!(
+            input = %path.file_name().and_then(|name| name.to_str()).unwrap_or(""),
+            time_ms = time,
+            ab = self.preview.is_split_ab,
+            canvas_a = ?canvas_a,
+            canvas_b = ?canvas_b,
+            "请求预览渲染"
+        );
         // 闭包要 `'static`：在它**外面**把两个画布拷成局部值，
         // 而不是靠在闭包里再取（那样会借到 `canvas_a` 本身）。
         let (ca_w, ca_h) = canvas_a;
@@ -231,6 +239,7 @@ impl SubtitleApp {
                         crate::state::preview::FrameSource::Failed { code } => code,
                         _ => "未提供错误码".to_string(),
                     };
+                    tracing::error!(code = %code, "A/B 预览渲染失败");
                     self.preview.clear_frame(code);
                 } else {
                     let provider = match &source {
@@ -256,6 +265,7 @@ impl SubtitleApp {
                         crate::state::preview::FrameSource::Failed { code } => code,
                         _ => "未提供错误码".to_string(),
                     };
+                    tracing::error!(code = %code, "单帧预览渲染失败");
                     self.preview.clear_frame(code);
                 } else {
                     match source {
@@ -549,6 +559,7 @@ impl SubtitleApp {
                 }
             }
             Message::CancelQueue => {
+                tracing::info!("用户请求取消批处理");
                 // 真的把令牌置位：worker 在每个 (输入, profile) 之前检查它。
                 // 只改 is_running 而不置位，就是“按钮能点但没用”。
                 self.cancel
@@ -624,7 +635,7 @@ impl SubtitleApp {
     }
 
     pub fn theme(&self) -> Theme {
-        Theme::Dark
+        Theme::Light
     }
 }
 
@@ -657,7 +668,7 @@ fn doctor_view(report: Option<&Result<serde_json::Value, String>>) -> iced::Elem
 
     let close = button(text("关闭").size(12)).on_press(Message::CloseDialog);
     let panel = column![
-        text("环境自检（与 subtitletool-cli doctor 同一份实现）").size(14),
+        text("环境自检").size(14),
         Space::with_height(Length::Fixed(6.0)),
         body,
         Space::with_height(Length::Fixed(8.0)),

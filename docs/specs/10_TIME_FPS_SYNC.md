@@ -42,8 +42,7 @@
 校验（每条都指认第几个点/段）：至少 2 个点；source 严格递增；每段斜率 > 0；
 映射后不得出现负时间（拒绝而非钳零）。
 
-仍然**不做**的：自动检测剪辑点；与视频帧做内容对齐；多段映射的持久化（预设）——
-`--preset` 等 TOML 依赖批准（ISSUES E4）。
+仍然**不做**的：自动检测剪辑点；与视频帧做内容对齐；多段映射暂不写入可搬运 preset。TOML preset 已实现通用输出目标配置，但当前 schema 不包含 PiecewiseMap；见[Preset 配置规格](36_PRESET_CONFIG_SCHEMA.md)。
 
 ## 6. PGS Fast Path：展示时间与解码调度要分开
 源码审计 SupMover 发现，其 `--resync/--delay` 直接改 PGS segment header 的 PTS；这是非常实用的播放器向 Fast Path，但不能把这种实现直接等同于严格 authoring。

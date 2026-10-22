@@ -6,7 +6,7 @@ use iced::{Alignment, Element, Length};
 
 pub fn view<'a>(state: &'a InputsState) -> Element<'a, Message> {
     let header = row![
-        text("输入字幕列表").size(16),
+        text("字幕").size(16),
         Space::with_width(Length::Fill),
         button(
             row![icons::plus(12.0), text("添加文件").size(12)]
@@ -36,12 +36,9 @@ pub fn view<'a>(state: &'a InputsState) -> Element<'a, Message> {
     if state.items.is_empty() {
         list_col = list_col.push(
             container(
-                column![
-                    text("拖拽 ASS / SRT / SUP 文件到此处").size(13),
-                    text("或点击右上角添加文件").size(11),
-                ]
-                .spacing(4)
-                .align_x(Alignment::Center),
+                column![text("拖入字幕，或点击添加文件").size(13),]
+                    .spacing(4)
+                    .align_x(Alignment::Center),
             )
             .padding(30)
             .center_x(Length::Fill),

@@ -277,7 +277,7 @@ pub struct Stage {
     pub shared_by: Vec<usize>,
 }
 
-/// Planner 产出的不可变 DAG，必须能导出 JSON 供 bug report 与 CLI 重放（07 §4、20）。
+/// 预留给 Planner 的阶段列表模型。当前没有依赖边，也未接入生产规划流程。
 #[derive(Clone, Debug, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Plan {
     pub stages: Vec<Stage>,

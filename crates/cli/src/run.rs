@@ -929,15 +929,26 @@ fn pgs_adjust(
     )
 }
 
-/// libass 只从命令参数或明确的环境变量读取路径，不在磁盘上搜索 DLL（23 §安全）。
+/// libass 优先读取命令参数与环境变量；发行包仅在自身目录存在运行库标记时读取并列 DLL。
 pub(crate) fn libass_dll(explicit: Option<&Path>) -> Result<PathBuf> {
     let path = explicit
         .map(Path::to_path_buf)
-        .or_else(|| std::env::var_os("STK_LIBASS_DLL").map(PathBuf::from));
+        .or_else(|| std::env::var_os("STK_LIBASS_DLL").map(PathBuf::from))
+        .or_else(|| {
+            let exe = std::env::current_exe().ok()?;
+            let executable_dir = exe.parent()?;
+            let dll = bundled_libass_dll(executable_dir)?;
+            if std::env::var_os("FONTCONFIG_PATH").is_none() {
+                std::env::set_var("FONTCONFIG_PATH", executable_dir.join("etc/fonts"));
+            }
+            Some(dll)
+        });
     let Some(path) = path else {
         return Err(cli_err(141, "渲染任务需要 libass，但没有给出 DLL 路径")
-            .with_detail("传入 --libass-dll PATH，或设置 STK_LIBASS_DLL")
-            .with_action("构建或安装本机 libass DLL 后重试"));
+            .with_detail(
+                "传入 --libass-dll PATH、设置 STK_LIBASS_DLL，或使用包含完整运行库的发行包",
+            )
+            .with_action("安装 libass 运行库后重试"));
     };
     if !path.is_file() {
         return Err(cli_err(141, "指定的 libass DLL 不存在或不是文件")
@@ -967,6 +978,14 @@ pub(crate) fn libass_dll(explicit: Option<&Path>) -> Result<PathBuf> {
             .with_action("换成 x64 的那一份；x86 host 与 x64 host 各自的库不能互换"));
     }
     Ok(path)
+}
+
+fn bundled_libass_dll(executable_dir: &Path) -> Option<PathBuf> {
+    if !executable_dir.join("libass-runtime.flag").is_file() {
+        return None;
+    }
+    let dll = executable_dir.join("libass-9.dll");
+    dll.is_file().then_some(dll)
 }
 
 /// 最后一个 Dialogue 事件的结束时刻（向上取整到 ms）。
@@ -2098,6 +2117,21 @@ mod tests {
                 .any(|detail| detail.contains(&path.display().to_string())),
             "错误必须指出无效路径：{err}"
         );
+    }
+
+    #[test]
+    fn bundled_libass_requires_distribution_marker_and_sibling_dll() {
+        let d = dir("bundled-libass");
+        let dll = d.join("libass-9.dll");
+        let marker = d.join("libass-runtime.flag");
+        std::fs::write(&dll, b"test dll").unwrap();
+        assert_eq!(bundled_libass_dll(&d), None);
+
+        std::fs::write(&marker, b"managed runtime").unwrap();
+        assert_eq!(bundled_libass_dll(&d), Some(dll.clone()));
+
+        std::fs::remove_file(&dll).unwrap();
+        assert_eq!(bundled_libass_dll(&d), None);
     }
 
     const ASS: &str = "[Script Info]\r\nPlayResX: 1920\r\nPlayResY: 1080\r\n\r\n[V4+ Styles]\r\nFormat: Name, Fontname, Fontsize, Outline, Shadow, MarginV\r\nStyle: Default,Arial,48,3,2,50\r\n\r\n[Events]\r\nFormat: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\r\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,{\\pos(960,540)\\blur4}你好\r\n";

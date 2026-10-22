@@ -8,9 +8,9 @@
 //! | --- | --- | --- |
 //! | AppSettings | 全局偏好（日志级别、界面语言…） | 已实现 |
 //! | **ToolDefaults** | **每个工具的默认参数（本模块）** | **本模块** |
-//! | Preset | 用户可命名、导入导出（TOML） | 未实现（依赖未获批） |
+//! | Preset | 用户可命名、导入导出（TOML） | 已实现；GUI 入口未实现 |
 //! | JobSnapshot | 一次执行的完整冻结参数 | 已实现（JSON batch spec） |
-//! | Plan | Planner 解析后的 stage DAG | 已实现 |
+//! | Plan | Planner 生成的 stage DAG | 未实现；当前只有无依赖边的被动阶段列表 |
 //!
 //! 分工是：**AppSettings 管"两个前端共用的显示/运行偏好"，ToolDefaults 管
 //! "某个子命令不写参数时用什么值"**。两者的区别不是重要性，而是**使用范围**：

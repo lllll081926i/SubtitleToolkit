@@ -50,7 +50,7 @@ CARGO_HOME = Path(os.environ.get("CARGO_HOME", Path.home() / ".cargo"))
 # 21 §1 之外的组件：不是 crates.io 依赖，但会随包/随验证出现，必须单独交代
 EXTRA = [
     ("libass", "ISC", "https://github.com/libass/libass",
-     "third_party/libass-9.dll（用户授权纳入 MSYS2 开发期运行库；真实渲染已验证，产品分发审计仍待完成）"),
+     "随便携包与安装包分发；逐 DLL 来源、哈希、包元数据和许可证正文见包内 licenses/LIBASS_RUNTIME_LOCK.json 与 licenses/msys2/"),
     ("VSFilterMod.dll", "GPL-3.0（按上游项目推定；本 DLL 的源码映射未核实）", "https://github.com/sorayuki/VSFilterMod",
      "third_party/VSFilterMod.dll（项目内候选文件；未接入产品或安装包）"),
     ("Pillow", "MIT-CMU", "https://python-pillow.org",
@@ -543,7 +543,7 @@ def main(argv: list[str]) -> int:
         "## 更新策略",
         "",
         "- crates.io 依赖：锁 `Cargo.lock`；升级运行受影响的 Rust 行为测试与工作区检查，可选综合门阶不替代真实依赖验证；",
-        "- native provider：常规本机构建产物不入库；用户明确纳入的运行库登记来源、版本、SHA-256 与许可状态，libass 的逐 DLL/包锁见 `third_party/LIBASS_RUNTIME_LOCK.json`；产品分发仍需独立审计；",
+        "- native provider：libass 运行库随便携包与安装包分发；逐 DLL 来源、版本、SHA-256 和许可证材料由 `third_party/LIBASS_RUNTIME_LOCK.json` 锁定，构建时逐项校验；",
         "- 外部可执行文件（ffprobe/ffmpeg 已锁；mkvtoolnix 尚未接入，接的那天要同样锁哈希）：不自动更新，随版本锁定并记录 build 来源与配置（21 §8/§9）。",
         "",
     ]

@@ -70,12 +70,11 @@ segment length、RLE decode、palette/object id、dimensions 全 checked；避�
 - `JobSnapshot` 里的 `arch` 从**二进制 PE 头**读，不再写死：写死会让
   “当时用了哪个二进制”那句变成谎话，而那是 JobSnapshot 的全部用途（20 §Repro）。
 - **未实现**：可选 hash allowlist（当前靠绝对路径 + SHA-256 进报告，没做白名单强制）；
-  DLL 搜索路径加固已有（只接受 `--libass-dll` / `STK_LIBASS_DLL` 给的绝对路径，
-  不做当前目录搜索），但没有写成一条专门的测试。
+  DLL 搜索路径加固已有：`--libass-dll` 和 `STK_LIBASS_DLL` 优先；发行包仅在可执行文件同目录存在 `libass-runtime.flag` 时加载同目录 `libass-9.dll`，不搜索任意当前目录或 PATH。
 
 renderer-host 与 Job Object 提供崩溃隔离、超时收尾与资源管理，不构成权限沙箱。插件仍可能访问当前用户可访问的文件与网络。当前未实现受限令牌或完整性级别隔离，产品不得宣称恶意 DLL 安全执行。
 
-当前 libass 采用绝对路径、受控 DLL 搜索与 provider 身份核对。ABI 导出匹配只证明存在候选接口；真实加载与画面测试分别报告。新增 provider 必须定义依赖 DLL 搜索策略，不能靠放宽到任意 PATH 目录掩盖缺失依赖。
+当前 libass 采用绝对路径、发行包标记约束的同目录运行库与 provider 身份核对。ABI 导出匹配只证明存在候选接口；真实加载与画面测试分别报告。新增 provider 必须定义依赖 DLL 搜索策略，不能靠放宽到任意 PATH 目录掩盖缺失依赖。
 
 ## 外部进程
 使用绝对路径；参数数组而非 shell string；Job Object；timeout；限制输出文件位置。

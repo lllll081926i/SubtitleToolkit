@@ -14,7 +14,7 @@
 | `tools/make_installer.ps1` | 找 ISCC、读版本、搭 stage、编译、报哈希。**编译不出就退非零** |
 | `tools/verify_installer.ps1` | 把 28 §3 的五条要求真的跑一遍，逐项报 PASS/FAIL |
 
-产物：`D:\rust\target\installer\SubtitleToolkit-0.1.0-setup.exe`，6.15 MiB。
+产物：Cargo 目标目录下的 `installer/SubtitleToolkit-0.1.0-setup.exe`，6.15 MiB。
 
 `make_installer.ps1` 的两条硬要求：
 

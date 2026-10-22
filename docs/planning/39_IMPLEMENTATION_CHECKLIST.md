@@ -34,16 +34,16 @@
 
 - `crates/cli/tests/batch.rs::at_batch_001_hundred_inputs_by_three_profiles_partial_failure_is_contained`：补齐 AT-BATCH-001 的容量验收（此前只有 2×2 的小样本）。同时锁定两条真实契约：非 UTF-8 输入报 `failed` + `STK-INP-0112`；默认 rename 不覆盖既有输出。
 
-### 仍未覆盖（依赖外部素材或未实现产物）
+### 当前仍未覆盖（截至 2026-10-17 的状态记录）
 
 下列项**不因本页已核验 Phase 0–2 而变为通过**：
 
-- **AT-PGS-001**：需可合法使用的第三方真盘 SUP。仓库内无此类素材（仅本项目自产流），保持未覆盖。
-- **AT-RENDER-002**：需真实 VSFilterMod provider 二进制。当前仅能用宿主故障/超时证明隔离，不能代替 provider 崩溃结论。
-- **AT-RENDER-003**：x86 renderer host 产物不存在，不验收自动路由。
+- **AT-PGS-001/002/003**：已于 2026-10-17 用真实第三方 SUP 执行并通过；设备级兼容仍未覆盖。证据见[真实 SUP 互操作裁决](../reviews/2026-10-17-pgs-real-corpus.md)。
+- **AT-RENDER-002**：已于 2026-10-17 用真实 VSFilterMod provider 崩溃验收 host 隔离、崩溃现场和重试；GUI 仅重试失败及未执行项。证据见[真实崩溃裁决](../reviews/2026-10-17-at-render-002-real-crash.md)。
+- **AT-RENDER-003**：x86 host 已可构建；x86 DLL 自动路由仍需真实 x86 libass DLL，尚未验收。
 - **AT-MKV-001**：已实现并执行通过（2026-10-17，真实 MKVToolNix v102.0，23/23 断言；见[裁决](../reviews/2026-10-17-mkv-container-helper.md)）。未覆盖：第 7 层设备语料、逐包内容 diff。
 - **AT-FONT-003（子集渲染等价）**：已执行并通过（2026-10-17）。同一 ASS/canvas/fps 下，整份 Arial 与子集各经 `--inject-fonts` 注入真 libass 渲染，**2 帧 PNG 逐像素一致**（1,045,720 → 29,240 字节）。入口 `crates/cli/tests/subset_render.rs`。未覆盖：非拉丁文字、合字序列、TTC/OTC、variable font（当前一律回退整份）。见[子集裁决](../reviews/2026-10-17-font-subset.md)。
-- **AT-UI-001**：**部分完成**（2026-10-17）。已接通：GUI 把输入×Profile 编译成真 batch spec、交 `cli::batch::run_batch` 执行、逐行回收状态；阻塞 IO 与渲染都在 `spawn_blocking` 里；取消令牌与引擎共享同一份 `Arc`（已断言）。**未完成**：60 秒持续响应的**实测**需真人操作与录屏，当前只有结构证据，不声称通过。见[GUI 接通裁决](../reviews/2026-10-17-gui-backend-wiring.md)。
+- **AT-UI-001**：后台响应与取消链已有实测；真人键盘、IME、DPI 交互仍未验收。设置/预设入口不是 AT-UI-001 的响应验收项，另列为 GUI 产品计划缺口。证据见[GUI 接通裁决](../reviews/2026-10-17-gui-backend-wiring.md)。
 - **AT-BD-001 的 GUI 部分**：UI 禁用解释留到 GUI 阶段。
 
 ## 开工前

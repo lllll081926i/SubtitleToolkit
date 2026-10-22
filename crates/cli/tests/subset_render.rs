@@ -30,13 +30,14 @@ fn libass() -> Option<PathBuf> {
 
 /// 找一份真正的 Arial。没有就返回 None（明确跳过）。
 fn arial() -> Option<PathBuf> {
-    let candidates = [
-        r"C:\Windows\Fonts\arial.ttf",
-        r"C:\Users\lllll\AppData\Local\Microsoft\Windows\Fonts\ARIAL_0.TTF",
-        r"C:\Windows\Fonts\ARIAL.TTF",
+    let mut candidates = vec![
+        PathBuf::from(r"C:\Windows\Fonts\arial.ttf"),
+        PathBuf::from(r"C:\Windows\Fonts\ARIAL.TTF"),
     ];
-    for c in candidates {
-        let p = PathBuf::from(c);
+    if let Some(local_app_data) = std::env::var_os("LOCALAPPDATA") {
+        candidates.push(PathBuf::from(local_app_data).join("Microsoft/Windows/Fonts/ARIAL_0.TTF"));
+    }
+    for p in candidates {
         if p.is_file() {
             return Some(p);
         }

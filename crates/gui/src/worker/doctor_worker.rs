@@ -18,6 +18,7 @@ use std::path::PathBuf;
 ///
 /// 失败时返回**给人看的说明**而不是黑箱：拿不到自检结果本身就是要报告的事。
 pub fn run() -> Result<serde_json::Value, String> {
+    tracing::debug!("GUI 环境自检开始");
     let inv = cli::args::Invocation {
         command: cli::args::Command::Doctor,
         json: true,
@@ -30,8 +31,14 @@ pub fn run() -> Result<serde_json::Value, String> {
         render_cache: true,
     };
     match cli::run::execute(&inv) {
-        Ok(env) => Ok(env.data.unwrap_or(serde_json::Value::Null)),
-        Err(e) => Err(format!("{}：{}", e.code_string(), e.title)),
+        Ok(env) => {
+            tracing::debug!("GUI 环境自检完成");
+            Ok(env.data.unwrap_or(serde_json::Value::Null))
+        }
+        Err(e) => {
+            tracing::error!(code = %e.code_string(), error = %e.title, details = ?e.details, "GUI 环境自检失败");
+            Err(format!("{}：{}", e.code_string(), e.title))
+        }
     }
 }
 

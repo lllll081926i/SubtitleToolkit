@@ -3,7 +3,7 @@
   "specVersion": "1.5",
   "version": 1,
   "metadata": {
-    "timestamp": "2026-10-18T07:54:48Z",
+    "timestamp": "2026-10-22T04:05:54Z",
     "tools": [
       {
         "vendor": "SubtitleToolkit",
@@ -23,7 +23,7 @@
       }
     ]
   },
-  "serialNumber": "urn:stk:sbom:610b3850f4387bce20c317f2562eab2f",
+  "serialNumber": "urn:stk:sbom:e7608985c1ab4909b0cde3c78c74b96c",
   "components": [
     {
       "type": "library",
@@ -14705,7 +14705,22 @@
       "licenses": [
         {
           "license": {
-            "id": "包声明：ISC"
+            "id": "MSYS2"
+          }
+        },
+        {
+          "license": {
+            "id": "package"
+          }
+        },
+        {
+          "license": {
+            "id": "declaration:"
+          }
+        },
+        {
+          "license": {
+            "id": "ISC"
           }
         }
       ],
@@ -14738,7 +14753,22 @@
       "licenses": [
         {
           "license": {
-            "id": "包声明：MIT"
+            "id": "MSYS2"
+          }
+        },
+        {
+          "license": {
+            "id": "package"
+          }
+        },
+        {
+          "license": {
+            "id": "declaration:"
+          }
+        },
+        {
+          "license": {
+            "id": "MIT"
           }
         }
       ],
@@ -14771,7 +14801,22 @@
       "licenses": [
         {
           "license": {
-            "id": "包声明：MIT"
+            "id": "MSYS2"
+          }
+        },
+        {
+          "license": {
+            "id": "package"
+          }
+        },
+        {
+          "license": {
+            "id": "declaration:"
+          }
+        },
+        {
+          "license": {
+            "id": "MIT"
           }
         }
       ],
@@ -14799,12 +14844,27 @@
     {
       "type": "library",
       "name": "libbz2-1.dll",
-      "version": "bzip2-1.0.8-3",
+      "version": "bzip2-1.0.8-4",
       "scope": "required",
       "licenses": [
         {
           "license": {
-            "id": "包声明：custom"
+            "id": "MSYS2"
+          }
+        },
+        {
+          "license": {
+            "id": "package"
+          }
+        },
+        {
+          "license": {
+            "id": "declaration:"
+          }
+        },
+        {
+          "license": {
+            "id": "custom"
           }
         }
       ],
@@ -14819,25 +14879,40 @@
         },
         {
           "name": "stk:measured-sha256",
-          "value": "669a4bf9266d5f020e843aa5fd75b93ce8ebde27014d5ac466a8b3cf39d8aba7"
+          "value": "1790bf6473c9d48db14c1f0ee8124142327556d281299ea2a72ee361118ee01a"
         }
       ],
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "669a4bf9266d5f020e843aa5fd75b93ce8ebde27014d5ac466a8b3cf39d8aba7"
+          "content": "1790bf6473c9d48db14c1f0ee8124142327556d281299ea2a72ee361118ee01a"
         }
       ]
     },
     {
       "type": "library",
       "name": "libexpat-1.dll",
-      "version": "expat-2.8.1-2",
+      "version": "expat-2.9.0-1",
       "scope": "required",
       "licenses": [
         {
           "license": {
-            "id": "包声明：MIT"
+            "id": "MSYS2"
+          }
+        },
+        {
+          "license": {
+            "id": "package"
+          }
+        },
+        {
+          "license": {
+            "id": "declaration:"
+          }
+        },
+        {
+          "license": {
+            "id": "MIT"
           }
         }
       ],
@@ -14852,25 +14927,40 @@
         },
         {
           "name": "stk:measured-sha256",
-          "value": "2b8f2c669a062c4d0ee1011de51330ec26c2be51c8237312f68714902427f68c"
+          "value": "8a10cf7e89524b621d5f74bd4aedc659c47c7ce397d489f323a1065ba695027a"
         }
       ],
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "2b8f2c669a062c4d0ee1011de51330ec26c2be51c8237312f68714902427f68c"
+          "content": "8a10cf7e89524b621d5f74bd4aedc659c47c7ce397d489f323a1065ba695027a"
         }
       ]
     },
     {
       "type": "library",
       "name": "libfontconfig-1.dll",
-      "version": "fontconfig-2.18.1-1",
+      "version": "fontconfig-2.18.3-1",
       "scope": "required",
       "licenses": [
         {
           "license": {
-            "id": "包声明：custom"
+            "id": "MSYS2"
+          }
+        },
+        {
+          "license": {
+            "id": "package"
+          }
+        },
+        {
+          "license": {
+            "id": "declaration:"
+          }
+        },
+        {
+          "license": {
+            "id": "custom"
           }
         }
       ],
@@ -14885,25 +14975,40 @@
         },
         {
           "name": "stk:measured-sha256",
-          "value": "e97e4a41142dd99b25b22f2ce116bc0215d7e4222e72c6f20f02726ddfa350e3"
+          "value": "be30a200fa4000d0a7a1d3911391969627440148f01d0028a319bcb9fa112202"
         }
       ],
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "e97e4a41142dd99b25b22f2ce116bc0215d7e4222e72c6f20f02726ddfa350e3"
+          "content": "be30a200fa4000d0a7a1d3911391969627440148f01d0028a319bcb9fa112202"
         }
       ]
     },
     {
       "type": "library",
       "name": "libfreetype-6.dll",
-      "version": "freetype-2.14.3-1",
+      "version": "freetype-2.15.0-1",
       "scope": "required",
       "licenses": [
         {
           "license": {
-            "id": "包声明：GPL-2.0-or-later"
+            "id": "MSYS2"
+          }
+        },
+        {
+          "license": {
+            "id": "package"
+          }
+        },
+        {
+          "license": {
+            "id": "declaration:"
+          }
+        },
+        {
+          "license": {
+            "id": "GPL-2.0-or-later"
           }
         },
         {
@@ -14923,25 +15028,40 @@
         },
         {
           "name": "stk:measured-sha256",
-          "value": "a3271784f8366b3c6412e0c35474884fa12899c392bacb08bc8eac00f4be7e64"
+          "value": "19604dde573cbb8a13053fc231eee99b91cd972e0e9a3e1465f44ad6985e83ee"
         }
       ],
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "a3271784f8366b3c6412e0c35474884fa12899c392bacb08bc8eac00f4be7e64"
+          "content": "19604dde573cbb8a13053fc231eee99b91cd972e0e9a3e1465f44ad6985e83ee"
         }
       ]
     },
     {
       "type": "library",
       "name": "libfribidi-0.dll",
-      "version": "fribidi-1.0.16-1",
+      "version": "fribidi-1.0.17-1",
       "scope": "required",
       "licenses": [
         {
           "license": {
-            "id": "包声明：LGPL-2.1-or-later"
+            "id": "MSYS2"
+          }
+        },
+        {
+          "license": {
+            "id": "package"
+          }
+        },
+        {
+          "license": {
+            "id": "declaration:"
+          }
+        },
+        {
+          "license": {
+            "id": "LGPL-2.1-or-later"
           }
         }
       ],
@@ -14956,25 +15076,40 @@
         },
         {
           "name": "stk:measured-sha256",
-          "value": "73a712fd51fa0085e8660084743a821ae7388de138069cd6cd8c171d4487da84"
+          "value": "14bd0ed4c24d0068434bc23cd4f39e8dc0edcf56f2c9996b6fe39b39ffc54673"
         }
       ],
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "73a712fd51fa0085e8660084743a821ae7388de138069cd6cd8c171d4487da84"
+          "content": "14bd0ed4c24d0068434bc23cd4f39e8dc0edcf56f2c9996b6fe39b39ffc54673"
         }
       ]
     },
     {
       "type": "library",
       "name": "libgcc_s_seh-1.dll",
-      "version": "gcc-libs-16.1.0-5",
+      "version": "libgcc-16.2.0-6",
       "scope": "required",
       "licenses": [
         {
           "license": {
-            "id": "包声明：GPL-3.0-or-later"
+            "id": "MSYS2"
+          }
+        },
+        {
+          "license": {
+            "id": "package"
+          }
+        },
+        {
+          "license": {
+            "id": "declaration:"
+          }
+        },
+        {
+          "license": {
+            "id": "GPL-3.0-or-later"
           }
         },
         {
@@ -14984,7 +15119,7 @@
         },
         {
           "license": {
-            "id": "LGPL-2.1-or-later"
+            "id": "GFDL-1.3-or-later"
           }
         }
       ],
@@ -14999,25 +15134,40 @@
         },
         {
           "name": "stk:measured-sha256",
-          "value": "ff139cfe956709283f7b70a06af8bc8bb9d1c3bef60ec1bc8d363c91351cfeb2"
+          "value": "791ebf66e99c7c1b4ed3666468cec45a0172b4c8942ac6c84c3e9cab3e1b5270"
         }
       ],
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "ff139cfe956709283f7b70a06af8bc8bb9d1c3bef60ec1bc8d363c91351cfeb2"
+          "content": "791ebf66e99c7c1b4ed3666468cec45a0172b4c8942ac6c84c3e9cab3e1b5270"
         }
       ]
     },
     {
       "type": "library",
       "name": "libglib-2.0-0.dll",
-      "version": "glib2-2.88.1-1",
+      "version": "glib2-2.90.1-1",
       "scope": "required",
       "licenses": [
         {
           "license": {
-            "id": "包声明：LGPL-2.1-or-later"
+            "id": "MSYS2"
+          }
+        },
+        {
+          "license": {
+            "id": "package"
+          }
+        },
+        {
+          "license": {
+            "id": "declaration:"
+          }
+        },
+        {
+          "license": {
+            "id": "LGPL-2.1-or-later"
           }
         }
       ],
@@ -15032,13 +15182,13 @@
         },
         {
           "name": "stk:measured-sha256",
-          "value": "75164119231988002ef0c809b7b5b249d81b8b044d8cbda7e5848f9fccd12944"
+          "value": "3a1abec0184b238db54399cb9243393d9436d96b8fdb9bd9f2875da207c5b458"
         }
       ],
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "75164119231988002ef0c809b7b5b249d81b8b044d8cbda7e5848f9fccd12944"
+          "content": "3a1abec0184b238db54399cb9243393d9436d96b8fdb9bd9f2875da207c5b458"
         }
       ]
     },
@@ -15050,7 +15200,22 @@
       "licenses": [
         {
           "license": {
-            "id": "包声明：LGPL-2.1-or-later"
+            "id": "MSYS2"
+          }
+        },
+        {
+          "license": {
+            "id": "package"
+          }
+        },
+        {
+          "license": {
+            "id": "declaration:"
+          }
+        },
+        {
+          "license": {
+            "id": "LGPL-2.1-or-later"
           }
         }
       ],
@@ -15078,12 +15243,27 @@
     {
       "type": "library",
       "name": "libharfbuzz-0.dll",
-      "version": "harfbuzz-14.2.1-1",
+      "version": "harfbuzz-14.6.0-1",
       "scope": "required",
       "licenses": [
         {
           "license": {
-            "id": "包声明：MIT"
+            "id": "MSYS2"
+          }
+        },
+        {
+          "license": {
+            "id": "package"
+          }
+        },
+        {
+          "license": {
+            "id": "declaration:"
+          }
+        },
+        {
+          "license": {
+            "id": "MIT"
           }
         }
       ],
@@ -15098,13 +15278,13 @@
         },
         {
           "name": "stk:measured-sha256",
-          "value": "2e1523eddd3a7c5be5fb8ad9a8e8eee819664356752d18c56f7c8f5896126ddb"
+          "value": "842d73ce2dd9ee506ef68f4d3e9ca29b62c87e34999cd2720505bf3c9d3f575c"
         }
       ],
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "2e1523eddd3a7c5be5fb8ad9a8e8eee819664356752d18c56f7c8f5896126ddb"
+          "content": "842d73ce2dd9ee506ef68f4d3e9ca29b62c87e34999cd2720505bf3c9d3f575c"
         }
       ]
     },
@@ -15116,7 +15296,22 @@
       "licenses": [
         {
           "license": {
-            "id": "包声明：LGPL-2.1-or-later;"
+            "id": "MSYS2"
+          }
+        },
+        {
+          "license": {
+            "id": "package"
+          }
+        },
+        {
+          "license": {
+            "id": "declaration:"
+          }
+        },
+        {
+          "license": {
+            "id": "LGPL-2.1-or-later;"
           }
         },
         {
@@ -15154,7 +15349,22 @@
       "licenses": [
         {
           "license": {
-            "id": "包声明：GPL-3.0-or-later"
+            "id": "MSYS2"
+          }
+        },
+        {
+          "license": {
+            "id": "package"
+          }
+        },
+        {
+          "license": {
+            "id": "declaration:"
+          }
+        },
+        {
+          "license": {
+            "id": "GPL-3.0-or-later"
           }
         },
         {
@@ -15187,12 +15397,27 @@
     {
       "type": "library",
       "name": "libpcre2-8-0.dll",
-      "version": "pcre2-10.47-1",
+      "version": "pcre2-10.49-1",
       "scope": "required",
       "licenses": [
         {
           "license": {
-            "id": "包声明：BSD-3-Clause"
+            "id": "MSYS2"
+          }
+        },
+        {
+          "license": {
+            "id": "package"
+          }
+        },
+        {
+          "license": {
+            "id": "declaration:"
+          }
+        },
+        {
+          "license": {
+            "id": "BSD-3-Clause"
           }
         }
       ],
@@ -15207,25 +15432,40 @@
         },
         {
           "name": "stk:measured-sha256",
-          "value": "52ccc7e4ec5ad0aecf307c0328826340f5d504aa59f7c4143b9a1b9fff16ccda"
+          "value": "1f609cde2ce432efb7d2b0c7b84a14a6dbfc9622d1ac1a3cbadf51c5b0b4dada"
         }
       ],
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "52ccc7e4ec5ad0aecf307c0328826340f5d504aa59f7c4143b9a1b9fff16ccda"
+          "content": "1f609cde2ce432efb7d2b0c7b84a14a6dbfc9622d1ac1a3cbadf51c5b0b4dada"
         }
       ]
     },
     {
       "type": "library",
       "name": "libpng16-16.dll",
-      "version": "libpng-1.6.58-1",
+      "version": "libpng-1.6.59-1",
       "scope": "required",
       "licenses": [
         {
           "license": {
-            "id": "包声明：custom"
+            "id": "MSYS2"
+          }
+        },
+        {
+          "license": {
+            "id": "package"
+          }
+        },
+        {
+          "license": {
+            "id": "declaration:"
+          }
+        },
+        {
+          "license": {
+            "id": "custom"
           }
         }
       ],
@@ -15240,25 +15480,40 @@
         },
         {
           "name": "stk:measured-sha256",
-          "value": "5c1dd5410af563f4a3c4aee10d1f749aa71e0d7fb3b4fac240eb9e96cadebd26"
+          "value": "7f425fd2b41d83869bb31bf761b4fb315f11040d55540661f96e582e1ec79a36"
         }
       ],
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "5c1dd5410af563f4a3c4aee10d1f749aa71e0d7fb3b4fac240eb9e96cadebd26"
+          "content": "7f425fd2b41d83869bb31bf761b4fb315f11040d55540661f96e582e1ec79a36"
         }
       ]
     },
     {
       "type": "library",
       "name": "libstdc++-6.dll",
-      "version": "gcc-libs-16.1.0-5",
+      "version": "libstdc++-16.2.0-6",
       "scope": "required",
       "licenses": [
         {
           "license": {
-            "id": "包声明：GPL-3.0-or-later"
+            "id": "MSYS2"
+          }
+        },
+        {
+          "license": {
+            "id": "package"
+          }
+        },
+        {
+          "license": {
+            "id": "declaration:"
+          }
+        },
+        {
+          "license": {
+            "id": "GPL-3.0-or-later"
           }
         },
         {
@@ -15268,7 +15523,7 @@
         },
         {
           "license": {
-            "id": "LGPL-2.1-or-later"
+            "id": "GFDL-1.3-or-later"
           }
         }
       ],
@@ -15283,13 +15538,13 @@
         },
         {
           "name": "stk:measured-sha256",
-          "value": "d9a58184f6bb27936ef03c3a3286950e4aa61c66a9f74dfa94a532b1433b368d"
+          "value": "4e4822dc4aaa99383f581dae7ab9464ae89346c5ca742f7efbcdebe20b0fe7b5"
         }
       ],
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "d9a58184f6bb27936ef03c3a3286950e4aa61c66a9f74dfa94a532b1433b368d"
+          "content": "4e4822dc4aaa99383f581dae7ab9464ae89346c5ca742f7efbcdebe20b0fe7b5"
         }
       ]
     },
@@ -15301,7 +15556,22 @@
       "licenses": [
         {
           "license": {
-            "id": "包声明：Zlib"
+            "id": "MSYS2"
+          }
+        },
+        {
+          "license": {
+            "id": "package"
+          }
+        },
+        {
+          "license": {
+            "id": "declaration:"
+          }
+        },
+        {
+          "license": {
+            "id": "Zlib"
           }
         }
       ],
@@ -15329,17 +15599,32 @@
     {
       "type": "library",
       "name": "libwinpthread-1.dll",
-      "version": "libwinpthread-14.0.0.r98.g19f5121a2-1",
+      "version": "libwinpthread-14.0.0.r495.g63ebe6cdb-2",
       "scope": "required",
       "licenses": [
         {
           "license": {
-            "id": "包声明：MIT"
+            "id": "MSYS2"
           }
         },
         {
           "license": {
-            "id": "BSD-3-Clause-Clear"
+            "id": "package"
+          }
+        },
+        {
+          "license": {
+            "id": "declaration:"
+          }
+        },
+        {
+          "license": {
+            "id": "MIT"
+          }
+        },
+        {
+          "license": {
+            "id": "BSD-3-Clause"
           }
         }
       ],
@@ -15354,13 +15639,13 @@
         },
         {
           "name": "stk:measured-sha256",
-          "value": "36d6e2e68c705141e7c4de7842ed00e1a5b9a8b0de235b5b13a5617f42c9da1f"
+          "value": "817e5b2636f532666e8f255e225af75e9d0c41b141512fde45264070a65b1c92"
         }
       ],
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "36d6e2e68c705141e7c4de7842ed00e1a5b9a8b0de235b5b13a5617f42c9da1f"
+          "content": "817e5b2636f532666e8f255e225af75e9d0c41b141512fde45264070a65b1c92"
         }
       ]
     },
@@ -15372,7 +15657,22 @@
       "licenses": [
         {
           "license": {
-            "id": "包声明：Zlib"
+            "id": "MSYS2"
+          }
+        },
+        {
+          "license": {
+            "id": "package"
+          }
+        },
+        {
+          "license": {
+            "id": "declaration:"
+          }
+        },
+        {
+          "license": {
+            "id": "Zlib"
           }
         }
       ],
@@ -15499,7 +15799,7 @@
       "properties": [
         {
           "name": "stk:role",
-          "value": "third_party/libass-9.dll（用户授权纳入 MSYS2 开发期运行库；真实渲染已验证，产品分发审计仍待完成）"
+          "value": "随便携包与安装包分发；逐 DLL 来源、哈希、包元数据和许可证正文见包内 licenses/LIBASS_RUNTIME_LOCK.json 与 licenses/msys2/"
         }
       ]
     },

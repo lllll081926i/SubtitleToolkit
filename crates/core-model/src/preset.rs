@@ -8,7 +8,7 @@
 //! | ToolDefaults | 每个工具的默认参数 | 已实现 |
 //! | **Preset** | **用户可命名、导入导出（本模块，TOML）** | **本模块** |
 //! | JobSnapshot | 一次执行的完整冻结参数 | 已实现（JSON batch spec） |
-//! | Plan | Planner 解析后的 stage DAG | 已实现 |
+//! | Plan | Planner 生成的 stage DAG | 未实现；当前只有无依赖边的被动阶段列表 |
 //!
 //! 四层的分工不是重要性，而是**作用范围与寿命**：
 //!

@@ -13,7 +13,7 @@
 - AT-PROBE-001：目标视频只填建议，不自动应用 speed conversion。
 - AT-RENDER-001：设置 `STK_LIBASS_DLL` 后，真实 libass 经 renderer-host 输出正确 RGBA；故障只影响 host。
 - AT-RENDER-002：取得可用 VSFilterMod provider 后，证明其崩溃只终止 renderer-host，GUI 可重试；自伤 `Poison` 测试不能代替该 provider 测试。
-- AT-RENDER-003：仅在 x86 host 产物加入支持矩阵后，验证 x86 DLL 路由；当前缺少该产物，不验收自动路由。
+- AT-RENDER-003：x86 renderer-host 已可构建；验证 x86 DLL 自动路由仍需真实 x86 libass DLL。拒绝 x64 DLL 只证明位数检查，不构成路由验收。
 - AT-PGS-001：对可合法使用的第三方 SUP 执行 +1000ms，ODS payload hash 完全一致；自制流往返不能代替外部样本。
 - AT-PGS-002：Forced-only Fast Path 不重编码。
 - AT-PGS-003：palette dim 只改 PDS，结构验证通过。
@@ -43,7 +43,7 @@
 
 **AT-ASS-001 / WBS-F021**：使用 `codec-ass/tests/fixtures/` 中 simple、unknown_tags、crlf、mixed_eol、comments_blanks、fonts 与 broken_lines。执行 parse→write，逐字节比较；BOM、换行、未知标签、注释与附件均不得变化。入口：`cargo test -p codec-ass --test roundtrip`；异常原文保留不表示输入语义有效。
 
-**AT-PGS-001–004 / WBS-P002/P003/P004**：授权外部 SUP 与自制边界流分别登记。偏移、Forced、palette 操作各执行一次，断言白名单以外段字段不变，ODS payload 摘要与分片顺序不变。Basic 编码覆盖空帧、透明条目、引用与大 ODS 分片；独立解码 RGBA 对照不能用本项目 writer/reader 往返代替。现有入口为 `codec-pgs/tests/differential.rs`、`security.rs` 与 `cli/tests/cli.rs`；外部样本和设备报告不足时保持未覆盖。
+**AT-PGS-001–004 / WBS-P002/P003/P004**：授权外部 SUP 与自制边界流分别登记。AT-PGS-001/002/003 已用真实第三方 SUP 执行并通过；第 7 层设备语料仍未覆盖。Basic 编码覆盖空帧、透明条目、引用与大 ODS 分片；独立解码 RGBA 对照不能用本项目 writer/reader 往返代替。入口为 `codec-pgs/tests/differential.rs`、`security.rs` 与 `cli/tests/cli.rs`。
 
 > 2026-10-17 更新：已获得一份真实第三方商业 SUP（98.97 MB，SHA-256 `694f2e0d…9ad31`）并执行
 > **解析、校验与 Fast Path（时间平移 / Forced / 调色板）**：`standard` 层 `error=0`；
@@ -73,7 +73,7 @@
 
 **AT-RENDER-001 / WBS-R001/R011**：固定 DLL 与字体环境，设置 `STK_LIBASS_DLL` 和 `STK_REQUIRE_LIBASS=1`，运行 `renderer-host/tests/host_isolation.rs`。真实 host 与直接调用输出 RGBA 逐字节一致，尺寸、非透明像素、身份和收尾正确。`render-libass/tests/render_real.rs` 另验文字、时间与字体注入。缺依赖不得提前返回后记通过。
 
-**AT-RENDER-002/003 / WBS-R020/R012**：外部 provider 与 x86 路由需要实际产物。现有 libass host 的 Poison、timeout 和 x86 拒绝测试仅支持宿主故障/拒绝结论，不代替 VSFilterMod 崩溃行为或 x86 自动路由。
+**AT-RENDER-002/003 / WBS-R020/R012**：AT-RENDER-002 已用真实 VSFilterMod provider 的访问违例验收进程隔离、崩溃现场和重试；GUI 只重试失败与未执行项。AT-RENDER-003 的 x86 host 已能构建，但没有真实 x86 libass DLL，自动路由仍未验收。
 
 **AT-BDN-001 / WBS-B002**：真实 CLI 输出 XML+PNG，用独立 PNG 头解析核对尺寸，核对 XML 引用、事件顺序与 frame timecode。入口：`cargo test -p cli --test render`；这些断言不构成 authoring 消费者兼容认证。
 
@@ -91,4 +91,4 @@
 
 **AT-SEC-001 / WBS-P004/SEC01**：对极端长度、RLE 截断、引用与尺寸运行现有 `codec-pgs/tests/security.rs`；断言错误、分配上限和无崩溃。PGS 文件测试不证明第三方 DLL 是权限沙箱。
 
-**AT-MKV-001 / WBS-A002、AT-UI-001 / WBS-QA002**：当前未实现。MKV 验收使用真实工具逐轨核对 metadata/附件与源文件摘要；GUI 验收持续操作、取消、键盘、IME 与 DPI，不以设计文档或自制返回值替代。加入可执行模块后再记录真实证据。
+**AT-MKV-001 / WBS-A002、AT-UI-001 / WBS-QA002**：AT-MKV-001 已用真实 MKVToolNix 执行并记录 23/23 断言通过（见上方 2026-10-17 记录）。AT-UI-001 的后台响应和取消链已有实测；键盘、IME、DPI 真人交互仍未验收。GUI 计划中的设置/预设入口也尚未实现，见[功能矩阵](03_FEATURE_MATRIX.md)。

@@ -10,11 +10,11 @@ subtitletool-cli.exe
  ├─ subtitletool-render-host.exe  <-- 当前 libass 动态库唯一加载位置
  └─ ffprobe process adapter
 
-SubtitleToolkit.exe (Iced, planned)
+subtitletoolkit-gui.exe (Iced, implemented)
  └─ reuses the same core crates and job/report schema
 ```
 
-CLI 的 render/pgs encode 通过 renderer-host 渲染。GUI 尚未实现。CSRI、VSFilterMod、x86 host、MKVToolNix adapter 目前都未交付，不能按上图中的目标结构当成现有能力。
+CLI 的 render/pgs encode 通过 renderer-host 渲染。Iced GUI、CSRI/VSFilterMod host 和 MKVToolNix adapter 已有实现记录；x86 host 可构建但 DLL 自动路由未验收。图中其余尚未交付的组件仍是目标结构，不能据此推定为现有能力。
 
 ## 2. 当前 Workspace
 

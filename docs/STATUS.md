@@ -1,12 +1,12 @@
 # 当前项目状态
 
-核对日期：2026-10-17。本文描述当前工作区源码和实际执行的验证，不引用历史门阶结果充当本轮通过证据。
+文档整理日期：2026-10-22。前部完成度快照按 2026-10-17 记录，作为历史基线保留；2026-10-22 本轮已重新运行工作区测试、Clippy、doctest、Debug 检查和最终 Release 打包。后续条目是按时间排列的实施日志；日志中的“未完成”描述当时状态，当前状态以本文“项目边界/已有实现/未交付或未裁决”和[功能矩阵](specs/03_FEATURE_MATRIX.md)为准。
 
 同日后续更新：
 
 ## 产品完成度快照（2026-10-17 收盘）
 
-**交付形态全部就位**（均在 `D:\rust\target\`）：CLI `subtitletool-cli.exe`、
+**交付形态全部就位**（均在 Cargo 目标目录）：CLI `subtitletool-cli.exe`、
 渲染宿主 `subtitletool-render-host.exe`、GUI `subtitletoolkit-gui.exe`、
 安装器 `installer\SubtitleToolkit-0.1.0-setup.exe`、便携包 `portable\*.zip`。
 
@@ -36,20 +36,28 @@ CSRI 链接进 `renderer-host`；36 §1 第三层 **Preset（TOML）** 交付并
 AT-RENDER-003 的**路由判定**部分已验（端到端仍需真 x86 libass）；
 **校验规则双向覆盖 15 条未覆盖 → 0**（AK17，`rule_coverage.py` 量出来的）。
 
-**仍未完成（外部依赖或外部决策，非代码可解）**：
+**当前主要未闭环项（含代码、验收和外部依赖）**：
 Authenticode 签名（需证书，用户 2026-10-17 明确暂缓）；
 AT-RENDER-003 的**x86 DLL 路由**（需真 x86 libass 样本）；
 第 7 层设备语料（需真机/播放器）；
 subset corpus 的 golden 图像比较（需固定语料字体，先撞许可审计）；
-DirectWrite fallback 链（需 COM，ISSUES AG1）；真 minidump（把数据与可靠性权衡，见裁决）。
+DirectWrite fallback 链（需 COM，ISSUES AG1）；真 minidump（把数据与可靠性权衡，见裁决）；
+通用 Planner stage DAG（当前只有被动数据模型）；GUI 设置/预设入口。
+
+## 2026-10-22 本轮复核
+
+- 后端复核修正了 `read_bounded` 的并发增长边界：初始 `metadata()` 仍用于快速拒绝，实际读取再限制为上限加 1 字节，避免文件在检查后增长并突破内存上限。`input_limits` 的恰好上限、超限与真实 CLI 用例通过。
+- 批处理共享渲染已有真 libass 验收：`batch_shares_one_render_between_sup_and_bdn_profiles` 断言同一 ASS 的两个渲染 profile 实际只渲染一次，并验证五种产物都落盘；不同帧率不共享也有单独反例。移除下方功能矩阵中已过时的“待验收”状态。
+- 根目录新增 PowerShell Debug 启动脚本与快捷方式；GUI 使用项目结构化日志，记录启动/退出、预览失败、环境自检、批处理阶段与 profile 结果。日志由 `STK_LOG` 控制并落在 `target/dev-data/logs/`。
+- 本轮验证：workspace 单元/集成测试、GUI 38 个单元测试及 UI/预览集成测试、串行 doctest、`clippy -D warnings`、格式检查均通过；最终便携包在本记录完成后构建并核验。
 
 
 - 维护文档已按[38 项建议采纳记录](planning/AUDIT_ADOPTION_20261008.md)优化。新增用户提供的 libass 运行库与真实验证见[追加记录](reviews/2026-10-08-docs.md)。
 - 2026-10-09 完成了全项目深度审查、测试过度防御修复与纯 Rust 前端规格重构，详见[2026-10-09 审查报告](reviews/2026-10-09-code-audit-defense.md)。
 - 2026-10-16 落地了该审查的四项代码建议（IPC 自残后门、字体缓存坏就用坏即弃、Strict 不再被未实现层阻断、XML 加固幅述校正），证据与未做项见[审查报告第五节](reviews/2026-10-09-code-audit-defense.md)。新增 GUI crate（`crates/gui`，Iced 工作台）。
-  **（2026-10-17 更新）**：这一条当时的结论“任务执行链未接通真实引擎、无测试”已**失效**——GUI 现已编译真实 batch spec 并交给 `cli::batch::run_batch` 执行，有 `gui_cli_replay.rs`（4 条）与 `task_e2e.rs`（4 条）两类端到端用例，且已进 portable 包。当前 GUI 的未完成项是 AT-UI-001 的 60 秒响应实测、A/B 对比渲染与设置持久化，见[GUI 接通裁决](reviews/2026-10-17-gui-backend-wiring.md)。
+  **（2026-10-17 更新）**：这一条当时的结论“任务执行链未接通真实引擎、无测试”已失效——GUI 已编译真实 batch spec 并交给 `cli::batch::run_batch` 执行，有 `gui_cli_replay.rs` 与 `task_e2e.rs` 两类端到端用例，且已进 portable 包。该日记录的响应实测与 A/B 对比缺口后来已完成；当前 GUI 缺口是设置/预设入口和键盘、IME、DPI 真人交互验收，见[功能矩阵](specs/03_FEATURE_MATRIX.md)。
 - 2026-10-16 核验了 Phase 0–2 的退出条件（均满足），并补齐 AT-BATCH-001 的 100×3 容量用例；仍未覆盖项与证据见[实施检查表](planning/39_IMPLEMENTATION_CHECKLIST.md)。
-- 2026-10-17 **交付 ToolDefaults（36 §1 第二层）**：新增 `crates/core-model/src/tool_defaults.rs` + CLI `tool-defaults show|init|set`；文件是 `DataDir` 里的 `tool-defaults.json`，`STK_TOOL_DEFAULTS` 可指独立路径。四条边界：① **只登记少数几项，不给“任意键值对”开口子**（4 个工具各一个白名单）——把 CLI 参数全存一遗会与 CLI 默认值分叉，且把每个新增参数变成一次 schema 变更；② **`show` 报的是实际生效取值（`effective`）而不是“文件里有什么”** ——用户问的是“我设的生效了吗”；③ **拼错的键在写入前就拒**（`STK-INP-0218`），允许写进去会存得下来但不生效；④ **不补 CLI 的默认值**，否则造出第二份定义而它会分叉。与 AppSettings **共用纪律不共用代码**。验证：真二进制 8 种输入逐一实测；。12 个单元用例 + 8 个集成用例（后者核“设置不漏到别的工具”与“拼错的键真的没写进去”）。裁决：[tool-defaults](reviews/2026-10-17-tool-defaults.md)。**未完成（关键）**：CLI 命令**尚未**在“用户没给参数时”去查 ToolDefaults —— 接入需把各命令参数字段改成 `Option<T>` 再按 `用户值 → ToolDefaults → 编译期默认` 求值，是一次跨多个命令的改动，故与存储层分开做；Preset 仍卡在 TOML 依赖审批（ISSUES E4，外部决策）；GUI 无入口。
+- 2026-10-17 **交付 ToolDefaults（36 §1 第二层）**：新增 `crates/core-model/src/tool_defaults.rs` + CLI `tool-defaults show|init|set`；文件是 `DataDir` 里的 `tool-defaults.json`，`STK_TOOL_DEFAULTS` 可指独立路径。该次交付先实现存储层，命令参数接入与 Preset 随后于同日完成（分别见下方接入记录与 Preset 交付记录）；GUI 设置/预设入口目前仍未实现。
 - 2026-10-17 **交付更新检查（28 §6 第一版）**：新增 `crates/cli/src/update.rs` + 子命令 `check-updates`（`--manifest FILE` / `--release-url URL`）。实现**比第一版还保守**：不下载、不安装、不提权，且**不出网**（不引任何 HTTP 客户端，清单由调用方提供）——更新检查是本项目唯一会主动出网的功能，也是供应链攻击的经典入口，一个不下载任何东西的检查把攻击面限在“解析一个 JSON”。
   三条刻意的行为：① **不假装检查过了**——没 `--manifest` 就报 `verdict=unknown` 并说明“无法判断”，因为**一条静默报“已是最新”的更新检查比没有这个功能更坏**；② **解析不了就 `unknown`** 并说清是哪个字符串（宽松解析会把清单的格式错误变成看似成功的比较，而“假阳性”比“假阴性”更坏）；③ 比较用**数值**不用字符串（`9.0.0` < `10.0.0`）。
   **本条抳出两个真缺陷**：① 第一版用 `scan()` 解析参数，而它的签名要求返回一个位置输入文件 —— 本命令没有输入文件，空参数时报“缺少输入文件”，**看起来像命令根本没被识别**（排查时我先怀疑“分支顺序错了”与“二进制是旧的”，都被证据否掉）；照 `diagnose` 自己遍历 `rest` 后修好；② 初版错误码用了 `Domain::Input, 60/61`，而 `STK-INP-0060` 已被“尚未实现的命令”占用 —— **跨 crate 唯一性测试当场报出**，改成 `210/211`。
@@ -116,7 +124,7 @@ DirectWrite fallback 链（需 COM，ISSUES AG1）；真 minidump（把数据与
   **本机真实字体实测**：CFF（`MiSans-Regular.otf`）与 variable（`bahnschrift.ttf`）**都能正确子集**（等价检查已过）；TTC 走回退分支并带原因；复合字形子集正常。
   **如实保留**：variable font 的**轴保真未证明**——本项目的等价比较是“同批字符给出相同字形数+advance”，不覆盖轴实例化后的轮廓差异；用例把这一点**打印出来**而不假装证明。另：规格要的 “rendered RGBA golden 条件” **仍缺**（需要固定语料字体与参考图，而选语料先把问题带到许可审计 21 §6）——当前用 shaping 等价作替代，比不查强但**比规格要求的弱**。另写了一条“账本”用例把 11 项列成**可执行**的覆盖表（清单最容易被“做了一部分、剩下的忘了”）。裁决：[subset-corpus](reviews/2026-10-17-subset-corpus.md)。
 - 2026-10-17 **ToolDefaults 接入完成（36 §1）**：新增 `crates/cli/src/defaults.rs`，把 `用户值 → ToolDefaults → 编译期默认` 的求值收在一处（于是可单独测试的纯函数，16 个单元用例）。覆盖 `pgs encode`/`render`/`mkv`/`font subset`；**`batch` 明确不接**（spec 是 JobSnapshot 层，让它查用户设置会破坏“可重放”）。两个关键选择：① 解析阶段只记“用户给了什么”（那几个字段改成 `Option<T>`）——在解析阶段就填成默认值会让执行阶段看不出分界；② 报告新增 `resolved_from` 逐项报出来源，因为用户问的是“我设的生效了吗”而只有取值不回答那个问题。不合法就报 `STK-INP-0219`，**不静默退回**。端到端实测：设 `canvas=1280x720` 后输出**真的变**（3633 vs 5117 字节）；显式 `--canvas` 能压过设置；`font subset` 真的写到设置里的目录。
-  **本条抳出三个问题（都由既有门禁当场报出）**：① 跨 crate 错误码唯一性测试报 `Input/31` 冲突 —— 修法不是换号而是**不重写判定**，改用 `Geometry::for_canvas().validate()`（09 §1 唯一事实源）；② 同测试报 `Input/220` 与 font-service 冲突，换 221；③ 同测试报“常量 `CURRENT_SCHEMA` 同时等于 1 和 1” —— 不是弱化测试而是改名 `TOOL_DEFAULTS_CURRENT_SCHEMA`。另有一个刻意且更好的行为变化：画布 16:9 校验从解析阶段搬到执行阶段，于是非 16:9 从“退 2 + stderr 文本”变成“退 1 + 带错误码的 JSON 信封”。裁决：[tool-defaults-wiring](reviews/2026-10-17-tool-defaults-wiring.md)。**未完成**：Preset（36 §1 第三层）卡在 TOML 依赖审批（ISSUES E4，外部决策）；GUI 无入口；`fallback_full` 只接一半（命令行无“显式关”写法）。
+  **本条抳出三个问题（都由既有门禁当场报出）**：① 跨 crate 错误码唯一性测试报 `Input/31` 冲突 —— 修法不是换号而是**不重写判定**，改用 `Geometry::for_canvas().validate()`（09 §1 唯一事实源）；② 同测试报 `Input/220` 与 font-service 冲突，换 221；③ 同测试报“常量 `CURRENT_SCHEMA` 同时等于 1 和 1” —— 不是弱化测试而是改名 `TOOL_DEFAULTS_CURRENT_SCHEMA`。另有一个刻意且更好的行为变化：画布 16:9 校验从解析阶段搬到执行阶段，于是非 16:9 从“退 2 + stderr 文本”变成“退 1 + 带错误码的 JSON 信封”。裁决：[tool-defaults-wiring](reviews/2026-10-17-tool-defaults-wiring.md)。**当时未完成、随后同日已完成**：Preset 经 TOML 依赖批准后交付；ToolDefaults 参数接入完成（`fallback_full` 显式关闭仍不支持）；GUI 设置/预设入口仍未实现。
 - 2026-10-17 推进 Phase 6 发布起步：补齐根目录双许可正文，新增 `tools/make_portable.ps1` 并实测（解包后 CLI 与 renderer-host 可运行、`SHA256SUMS.txt` 校验通过）。**便携数据目录、安装器、更新检查与 ToolDefaults 已于同日完成（见上前几条）**；签名与第三方 DLL 分发审计仍未完成，见 [28 节](development/28_WINDOWS_BUILD_RELEASE.md)。
 - 2026-10-17 **交付 Windows 安装器（28 §3）**：新增 `tools/subtitletool.iss`（Inno Setup）+ `tools/make_installer.ps1`（驱动，找不到 ISCC 或编译失败均退非零）+ `tools/verify_installer.ps1`（把五条要求真跑一遍）。产物 `SubtitleToolkit-0.1.0-setup.exe`（6.15 MiB）。五条要求的验证结果：**11 项检查 11 通过**——per-user 静默安装不弹 UAC、三 exe 到位；关联默认不写（opt-in，只勾 `.ass` 时其余四类一个不写）；x86 宿主为可选且默认不装；卸载选择（保留/删除）两条分支都验过。
   **本条抳出三个真缺陷**：① 卸载选择存在 Pascal 变量里，而卸载器是**另一个进程**（`InitializeWizard` 没在那边跑过），于是“默认保留”实际是“总是删数据”——改成写 `HKCU\Software\{AppId}` 并由卸载器读取，**读不到就当保留**；② `{#AppId}` 外层双花括号是 `[Setup]` 的转义约定，而 **Pascal 字符串里不转义**，拼出来的是 `Software\{{7E3A…}}` 这个无关键——该错法**自洽**（写读同位置，自检会通过），只有拿安装器写的键去比对才看得出；③ progid 键漏了 `uninsdeletekey`，卸载后“打开方式”列表里会留一个指向已删程序的空壳条目。另：第一版为“键空才删”自己写了个 `RegDeleteKey`，Inno 里根本没这个名字——`RegDeleteKeyIfEmpty` 是自带的。裁决与完整记录：[windows-installer](reviews/2026-10-17-windows-installer.md)。**未完成**：Authenticode 签名（28 §5）；x86 宿主未构建；all-users 模式**只核对了静态声明**，未做实机 UAC 验证（如实记录）。
@@ -127,7 +135,7 @@ DirectWrite fallback 链（需 COM，ISSUES AG1）；真 minidump（把数据与
 - 2026-10-17 **实现字体子集（17 §5/§6，ISSUES AG2/E4），AT-FONT-003 用真 libass 执行通过**：新增 `font subset` 与 `font-service::subset`。选 `allsorts` 0.17.0（Apache-2.0，符合 21 §1）；复杂脚本按码位区间一律回退整份；其余做 cmap 级等价检查（字符解出的字形存在性与 advance 一致）。**渲染级等价用真 libass 验证**：同一 ASS/canvas/fps 下整份 Arial 与子集各经 `--inject-fonts` 注入渲染，2 帧 PNG 逐像素一致（1,045,720 → 29,240 字节）。过程中发现并绕开 `allsorts` 的真实缺陷：请求列表不含 glyph 0 时子集会把 `U+0020` 的 cmap 映射写成 0（空格渲染成 .notdef）。详见[子集裁决](reviews/2026-10-17-font-subset.md)。
 - 2026-10-17 **补齐 17 §6 的输出侧后两档（ISSUES AG8）**：新增 `font subset --embed-fonts --out X.ass`（把字体写进产物 ASS 的 `[Fonts]` 段）与 `font subset --mkv-attachments`（生成可直接嗂给 `mkv remux --attach-font` 的附件目录）。为此在 `font_service::attachments` 补了 base64 / `[Fonts]` 段的**编码器**，与既有解码器严格互逆（整份真字体字节往返用例守护）。过程中修正两个真实缺陷：**BOM 在文件头时 `\u{feff}[Fonts]` 不是一个段头，会导致整段隐形**；以及不去重会写出两份 `[Fonts]`（解析器只认第一份，第二份字节静默留下）。至此 17 §6 六档全部交付。见[子集裁决第七节](reviews/2026-10-17-font-subset.md)。
 - 2026-10-17 **全部已规划命令落地**：`doctor` 的 `not_built` 已为空（`font subset` 与 `mkv *` 是最后两条）。占位机制（`Command::NotBuilt` + `not_built_commands`）保留，供后续新增命令使用。
-- 2026-10-17 **GUI 与后端接通（20 §Repro）**：删掉 `task_worker` 里 `sleep+Ok(())` 的模拟执行，改把输入集与 Profile 矩阵编译成**真实 batch spec**（`cli::batch::Spec`）再交给 `cli::batch::run_batch` 跑——于是“GUI 复制的命令能直接重放”是结构上成立的，而不是靠事后对齐。同时修掉四个“看起来能用”的洞：`StartQueue` 从不调执行器、取消令牌跟引擎不是同一份（取消按钮无效）、`show_doctor` 设了但从不渲染、视频建议是写死字符串。预览占位色块新增 `FrameSource` 标记（不再冒充真实渲染），失败时清掉旧帧。仍**未**交付：AT-UI-001 的 60 秒持续响应实测、A/B 对比渲染、设置持久化。详见[GUI 接通裁决](reviews/2026-10-17-gui-backend-wiring.md)。
+- 2026-10-17 **GUI 与后端接通（20 §Repro）**：删除模拟执行，改把输入集与 Profile 矩阵编译成真实 batch spec，再交给 `cli::batch::run_batch`。同时修复队列不执行、取消令牌不共享、doctor 未渲染、视频建议写死等问题。该次记录之后，AT-UI-001 后台响应实测与 A/B 对比已完成；当前 GUI 缺口为设置/预设入口和键盘、IME、DPI 真人验收。详见[GUI 接通裁决](reviews/2026-10-17-gui-backend-wiring.md)与[功能矩阵](specs/03_FEATURE_MATRIX.md)。
 - 2026-10-17 **实现 PGS 校验第 5 层（解码器模型，13 §6）**：新增 `crates/validator/src/decoder_model.rs`。关键决定是**先用真实语料反推，而不是照抄理论公式**：理论模型（US7620297B2 / FFmpeg `supenc.c`）是编码器的前向模型，拿它量真实商业流命中率 0%（`PDS`/`END` 实际恒为 DTS==PTS，`ODS` 的 `PTS-DTS` 与 `w*h*FREQ/Rd` 无相关）。改为实现**真实流满足的 5 条不变式**，在本机 98.97 MB 真实 SUP 上全部 100% 成立（9951 个显示集 / 49659 段）。该层立刻抳出**我们自己编码器的两个缺陷**：`PDS` 与 `END` 都被写成了"有解码耗时"（真实流两者均恒为 DTS==PTS）。另更正覆盖缺口账目：`PGS.DEC.01` 已回收为真不变式，不再列为缺口，CLI 新增 `coverage_gap` 字段说明徽章为何被拒。详见[第 5 层裁决](reviews/2026-10-17-decoder-model-layer5.md)。：新增 `core_model::DataDir`；`portable.flag` 存在时运行期状态落在 exe 同级 `data/`，否则退回 `%LOCALAPPDATA%\subtitletool`。优先级 `STK_DATA_DIR` > `portable.flag` > 用户目录；`doctor --json` 新增 `data_dir` 与 `font_cache` 两项，报出路径、来源与理由。`make_portable.ps1` 默认在包里生成 `portable.flag`，且校验和改为覆盖包内**所有文件**。实测：解包后 `data_dir.kind=portable`，`font scan` 的缓存确实落在 `<包>/data/fontdb-v1.json`；回归用例 `crates/cli/tests/portable.rs`。仍未实现：安装器与 Authenticode 签名。
 - 2026-10-17 **补齐 28 §2 的 SBOM，并把便携包补成 checksums + SBOM + notices 三件套**：`tools/notices.py` 现同时产出 `sbom.cdx.json`（CycloneDX 1.5，529 个组件，数据全取自它本来就在读的 `Cargo.lock`/registry/`SOURCE_AUDIT_LOCK.json`）。选 CycloneDX 而不是 SPDX：它原生表达“组件 + 哈希 + 许可证”这三件本仓库真正持有的事实（21 §11 要求的三样），字段少到能用一份自己的代码写对，不引第三方依赖。`scope` 把 `required` 与 `excluded` 分开（开发期工具与研究用源码归档不进安装包，列成 runtime 会让下游误判分发义务）；native/二进制产物带 `stk:hash-status`，`match`（本机实测相等）与 `absent-here`（这台机器没那个文件）**分开写**。门禁会查它过期：把 SBOM 改成 5 个组件后，`notices.py --check` 报 `SBOM 过期：有 5 个组件，当前依赖树应该是 529 个` 并退 1。便携包已实测：解包后 9 个文件的 SHA-256 全与 `SHA256SUMS.txt` 一致。
 - 2026-10-17 **实现 37 §2 的磁盘渲染缓存**（`crates/cli/src/rendercache.rs`）：内存那级（批量内同 key 共享）此前已有，磁盘这级（配额、清理、跨运行复用）一直缺。入口挂在 `front::resolve_cached`——SUP 的 `pgs_encode` 与 BDN 的 `render::build` 唯一都经过的地方。CLI 新增 `cache stat|clear` 与 `--no-render-cache`；环境变量 `STK_RENDERCACHE`/`_DIR`/`_MAX_BYTES`（默认 512 MiB）。缓存 key 与内存共享**同一口径**（后半链参数不进 key，这正是跨运行复用成立的原因）。**读回时逐字段校验**（魔数、key、长度、patch 的 RGBA 与宽高自洽），不符就当作未命中并删掉。实测（真 libass）：第 1 次 `hit=false`、第 2 次 `hit=true`，两次 XML 与**每个 PNG 逐字节相同**；`--no-render-cache` 给出同一份产物；改文案必重渲染、改回重新命中；截断/改魔数/换 key 三种篡改都计 `corrupt` 并重渲染而产物不变；上限 20 KiB 时 5 份 17,786 字节记录只留 1 份。开发中抳出自己编码器的两个真缺陷（digest 误用带长度前缀的读法、`Patch` 字段序与声明序不一致）。详见[渲染缓存裁决](reviews/2026-10-17-render-cache.md)。
@@ -272,14 +280,14 @@ DirectWrite fallback 链（需 COM，ISSUES AG1）；真 minidump（把数据与
 
 - CSRI/VSFilterMod provider 已实现并验收；x86 renderer host 可构建且路由判定已验；
   发行安装链（portable + Inno Setup）已交付。
-  **Authenticode 签名暂缓**（用户 2026-10-17 明确置）；第三方 DLL 分发审计未完成。
+  **Authenticode 签名暂缓**（用户 2026-10-17 明确置）；libass DLL 已按官方包哈希核验并纳入两种安装产物，detached signature 未验证。
 - 字体服务未使用 DirectWrite 作为权威 resolver；但已补 **GDI 权威交叉核对**
   （`font scan --json` 的 `cross_check`）：GDI 看得到而库里匹配不上的家族会逐个列出。
   DirectWrite 的 **fallback 链**仍未做（需 COM，ISSUES AG1）。
   字体子集正确性尚无复杂文字渲染语料。
 - PGS Basic 编码不等于 Strict Blu-ray 合规。PCS 帧率字段、palette range/matrix、ODS 图末标记尚无真盘/设备结论；当前 ffprobe 证据只覆盖 `.sup` 容器段布局与时钟。第 5 层的不变式取的是**必要条件**（不满足一定有问题），不是充分条件。
 - Strict validator 已实现第 1–6 层（含第 5 层解码器模型）；**第 7 层设备语料**仍未取得，因此 `strict_badge_allowed` 仍恒为 false（报告给出 `coverage_gap`）。第 5 层本身未含缓冲区占用曲线与 acquisition/seamless 分支。
-- 仓库已补根目录 MIT/Apache-2.0 license 正文（`LICENSE-MIT`、`LICENSE-APACHE`，2026-10-17）；portable 包可由 [tools/make_portable.ps1](../tools/README.md) 生成（含三个 exe、`portable.flag`、`sbom.cdx.json`、许可正文与 `SHA256SUMS.txt`）。安装器已由 [tools/make_installer.ps1](../tools/README.md) 交付（2026-10-17，见上），逐条验证用 `tools/verify_installer.ps1`。**Authenticode 签名仍未完成**（这是发布链上剩下的一项）；第三方 DLL 分发审计也未完成。
+- 仓库已补根目录 MIT/Apache-2.0 license 正文（`LICENSE-MIT`、`LICENSE-APACHE`，2026-10-17）；portable 包可由 [tools/make_portable.ps1](../tools/README.md) 生成（含三个 exe、20 个 libass DLL、fontconfig 配置、`portable.flag`、`sbom.cdx.json`、逐包许可证材料与 `SHA256SUMS.txt`）。安装器由 [tools/make_installer.ps1](../tools/README.md) 生成，逐条验证用 `tools/verify_installer.ps1`。**Authenticode 签名仍未完成**；本次运行库 detached signature 未验证。
 - 22 §1 日志文件已实现（`core_model::logging`，`tracing` + 按日轮转 + 启动清理，
   随 `DataDir` 落盘、便携包内自动进 `data/logs/`）；日志已进 `diagnose` 的诊断包。
   **22 §2 correlation id 已实现**（`J/O/R` 三层，日志与报告同一个值）。
@@ -287,7 +295,7 @@ DirectWrite fallback 链（需 COM，ISSUES AG1）；真 minidump（把数据与
   真 minidump 仍未做（需异常处理器，且含内存镜像与 22 §5 冲突）。
 - 36 §1 的五层中**前四层已实现**：AppSettings（`settings.json`）、ToolDefaults（`tool-defaults.json`）、
   **Preset（TOML，2026-10-17，`preset show|validate|example`）**、JobSnapshot（JSON batch spec）。
-  **第五层 Plan（Planner 的 stage DAG）也未实现**。另：`batch --preset` 的直接接入未做
+  **第五层 Plan（Planner 的 stage DAG）也未实现**：现有模型只是无依赖边的阶段列表，没有生产 Planner 接线。另：`batch --preset` 的直接接入未做
   （§6 的合成顺序与 batch 的“已冻结快照”语义相冲，已在规格里说明）。
 
 ## 2026-10-08 早前代码审查验证
@@ -308,7 +316,7 @@ DirectWrite fallback 链（需 COM，ISSUES AG1）；真 minidump（把数据与
 
 ## 2026-10-08 追加真实 libass 验证
 
-用户提供的 `third_party/libass-9.dll` 已对应 MSYS2 UCRT64 0.17.5-1 官方包。按原包构建版本补齐并登记 19 个依赖 DLL。修正 `ass_read_memory` 的 codepage 参数为 UTF-8；来源、许可和分发边界见[第三方说明](../third_party/README.md#libass-开发期运行库)。
+用户提供的 `third_party/libass-9.dll` 已对应 MSYS2 UCRT64 0.17.5-1 官方包。按原包构建版本补齐并登记 19 个依赖 DLL。修正 `ass_read_memory` 的 codepage 参数为 UTF-8；来源、许可和分发范围见[第三方说明](../third_party/README.md#libass-分发运行库)。
 
 - `cargo test -p renderer-host --test host_isolation`：5 项全部实际执行并通过，覆盖像素相等、超时、宿主故障重试和位数/身份拒绝。
 - `cargo test -p render-libass --lib --tests`：16 项单元、5 项真实渲染通过，覆盖文字、输出画布与字体注入。

@@ -14,13 +14,14 @@
 import os
 import re
 import sys
+from pathlib import Path
 
 try:
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 except Exception:
     pass
 
-ROOT = r"D:\Code\SubtitleToolkit"
+ROOT = str(Path(__file__).resolve().parent.parent)
 SPEC = os.path.join(ROOT, "docs", "specs", "25_ACCEPTANCE_TESTS.md")
 
 # 覆盖结论。每一条要么给"专属测试函数名"，要么给 shared 理由，要么是 uncovered 理由。
@@ -180,4 +181,3 @@ def main():
 
 if __name__ == "__main__":
     sys.exit(main())
-

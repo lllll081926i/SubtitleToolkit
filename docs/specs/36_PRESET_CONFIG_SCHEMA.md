@@ -1,13 +1,13 @@
 # Preset、配置与可重放任务 Schema
 
-本文是目标 TOML preset 草案。当前 CLI 已有 JSON batch spec 和 `.jobstate.json` 恢复凭据，不读取或写入 TOML preset；GUI 与统一 JobSnapshot 尚未实现。草案不能作为 `batch --spec` 输入。当前可执行配置见 [CLI 规格](20_CLI_AUTOMATION.md)，实现范围见[功能矩阵](03_FEATURE_MATRIX.md)。
+本文记录 TOML preset 与可重放任务的配置合同。CLI 已实现 `preset show|validate|example` 和 JSON batch spec；GUI 工作台已接通 batch 执行，但尚无 preset/设置入口。Preset 目前不能直接作为 `batch --spec` 输入。通用 Planner stage DAG 仍未实现；当前边界见[功能矩阵](03_FEATURE_MATRIX.md)。
 
 ## 1. 配置分层
 - AppSettings：全局偏好；**已实现**（见下）；
 - ToolDefaults：每个工具默认；**已实现（2026-10-17）**（见下）；
 - Preset：用户可命名、导入导出；**已实现（2026-10-17）**（见下）；
 - JobSnapshot：一次执行的完整冻结参数；**已实现**（JSON batch spec + `jobstate`）；
-- Plan：Planner 解析后的实际 stage DAG；**已实现**。
+- Plan：Planner 生成并供执行/重放的实际 stage DAG；**未实现**。`core_model::profile::Plan` 只是无依赖边的被动阶段列表，尚未接入生产规划流程。
 
 ### Preset 的实现与边界（2026-10-17）
 

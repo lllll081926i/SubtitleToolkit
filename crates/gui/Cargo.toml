@@ -31,6 +31,7 @@ image-core = { workspace = true }
 cli = { path = "../cli", version = "0.1.0" }
 serde = { workspace = true }
 serde_json = { workspace = true }
+tracing = { workspace = true }
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time"] }
 # 不要开 "svg" 特性：它会引入 resvg/usvg（强制 MPL-2.0），与 21 §1 的核心许可政策冲突。
 # 图标改用 Unicode 字形（见 src/icons.rs）。

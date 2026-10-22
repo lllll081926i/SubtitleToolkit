@@ -3,9 +3,8 @@
 # 立场（与 make_portable.ps1 同一条）：
 # * 本脚本产出的是**可编译、可安装、可卸载**的 setup.exe，但它**未做 Authenticode
 #   签名**（28 §5 仍未实现）——所以 SmartScreen 会警告。那是未完成项，不是缺陷。
-# * 收进安装器的文件清单与便携包**同一条规则**（同样的 three-exe + 文档），
+# * 收进安装器的文件清单与便携包**同一条规则**（同样的程序、运行库和文档），
 #   两处各列一份清单迟早会漂移，而"安装版能跑、便携版缺文件"没人会立刻发现。
-# * **不打包第三方运行库 DLL**：libass 的分发义务仍在审计中（third_party/README.md）。
 #
 # 用法：
 #   . .\tools\set_build_cache.ps1
@@ -130,6 +129,20 @@ try {
         }
         Copy-Item -LiteralPath $src -Destination (Join-Path $stage $d) -Force
     }
+    & (Join-Path $PSScriptRoot 'copy_libass_runtime.ps1') -StageDir $stage
+
+    $sumLines = Get-ChildItem -LiteralPath $stage -File -Recurse |
+        Where-Object { $_.Name -ne 'SHA256SUMS.txt' } |
+        ForEach-Object {
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
+            $relativePath = [IO.Path]::GetRelativePath($stage, $_.FullName).Replace('\', '/')
+            "$hash  $relativePath"
+        }
+    [System.IO.File]::WriteAllText(
+        (Join-Path $stage 'SHA256SUMS.txt'),
+        (($sumLines -join "`n") + "`n"),
+        [System.Text.UTF8Encoding]::new($false)
+    )
     # 刻意**不**放 portable.flag：安装版就该落 %LOCALAPPDATA%（28 §4）。
     # 放进来的话安装版会静默变成便携行为，而用户以为自己装的是正常程序。
 
@@ -165,7 +178,8 @@ try {
     Write-Host "  卸载时由用户选择是否保留 presets/logs。" -ForegroundColor Cyan
     Write-Host ""
     Write-Host "  未完成项：Authenticode 签名（28 §5）—— 未签名的 setup.exe 在 SmartScreen 上会警告。" -ForegroundColor Yellow
-    Write-Host "  说明：本包不含第三方运行库 DLL。需要渲染时在目标机上设置 STK_LIBASS_DLL。" -ForegroundColor Yellow
+    Write-Host "  说明：本包包含已核验的 libass DLL、fontconfig 配置及随附许可证材料。" -ForegroundColor Yellow
+    Write-Host "  SHA256SUMS.txt 覆盖安装目录中的所有文件。" -ForegroundColor Yellow
 }
 finally {
     Pop-Location

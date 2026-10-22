@@ -229,7 +229,11 @@ pub fn load_spec(path: &Path) -> Result<Spec> {
     if spec.profiles.is_empty() {
         return Err(cli_err(154, "batch spec 没有任何输出 profile"));
     }
-    if spec.only_pairs.iter().any(|p| p.input.trim().is_empty() || p.profile.trim().is_empty()) {
+    if spec
+        .only_pairs
+        .iter()
+        .any(|p| p.input.trim().is_empty() || p.profile.trim().is_empty())
+    {
         return Err(cli_err(218, "only_pairs 不能包含空的输入路径或 Profile 名"));
     }
     Ok(spec)
@@ -348,7 +352,11 @@ fn job_cache_key(
     // 复用上一次的产物却不记下这件事，等于拿未注入的像素当注入的结果交付。
     let options = format!(
         "exact={}|min_axis={}|tool={}|inject={}|transform={}",
-        r.exact_colors, r.min_axis, tool, inject, transform_fingerprint(&r.options)
+        r.exact_colors,
+        r.min_axis,
+        tool,
+        inject,
+        transform_fingerprint(&r.options)
     );
     field_hash(&[
         ("input", input_sha),
@@ -506,7 +514,9 @@ struct PreparedInput {
     path: PathBuf,
 }
 impl Drop for PreparedInput {
-    fn drop(&mut self) { let _ = std::fs::remove_file(&self.path); }
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
 }
 
 fn prepare_input(input: &Path, resolved: &Resolved) -> Result<Option<PreparedInput>> {
@@ -514,8 +524,12 @@ fn prepare_input(input: &Path, resolved: &Resolved) -> Result<Option<PreparedInp
     use core_model::profile::HdrSettings;
     use transform_time::{PiecewiseSpec, TimeConfig};
     let p = &resolved.options;
-    if p.offset_ms.is_none() && p.speed_from.is_none() && p.speed_to.is_none()
-        && p.hdr_percent.is_none() && p.hdr_reference_nits.is_none() {
+    if p.offset_ms.is_none()
+        && p.speed_from.is_none()
+        && p.speed_to.is_none()
+        && p.hdr_percent.is_none()
+        && p.hdr_reference_nits.is_none()
+    {
         return Ok(None);
     }
     if p.offset_ms.is_some() && (p.speed_from.is_some() || p.speed_to.is_some()) {
@@ -534,12 +548,20 @@ fn prepare_input(input: &Path, resolved: &Resolved) -> Result<Option<PreparedInp
         Some(TimeConfig::speed_scale(from, to))
     } else if p.speed_from.is_some() || p.speed_to.is_some() {
         return Err(cli_err(221, "变速必须同时指定源与目标帧率"));
-    } else { None };
+    } else {
+        None
+    };
     let settings = if let Some(percent) = p.hdr_percent {
-        Some(HdrSettings::percentage(percent.checked_mul(100).ok_or_else(|| cli_err(221, "HDR 百分比溢出"))?)?)
+        Some(HdrSettings::percentage(
+            percent
+                .checked_mul(100)
+                .ok_or_else(|| cli_err(221, "HDR 百分比溢出"))?,
+        )?)
     } else if let Some(nits) = p.hdr_reference_nits {
         Some(HdrSettings::reference_white(nits)?)
-    } else { None };
+    } else {
+        None
+    };
     let (content, extension) = match input_kind {
         format_detect::SubtitleFormat::Ass | format_detect::SubtitleFormat::Ssa => {
             let mut document = codec_ass::AssDocument::parse(&loaded.text);
@@ -559,7 +581,9 @@ fn prepare_input(input: &Path, resolved: &Resolved) -> Result<Option<PreparedInp
             let (subtitle, _) = codec_srt::parse(&loaded.bytes)?;
             let subtitle = if let Some(cfg) = time {
                 pipeline::time_srt(&subtitle, &cfg, None, &PiecewiseSpec::new(Vec::new()))?.0
-            } else { subtitle };
+            } else {
+                subtitle
+            };
             (codec_srt::write(&subtitle)?, "srt")
         }
         _ => return Err(cli_err(222, "此输入格式不支持 batch 时间/HDR 变换")),
@@ -790,7 +814,10 @@ pub fn run_batch_with_cancel(
     // 同名字幕在不同目录里很常见：只在碰撞时加路径指纹，不改非碰撞文件的现有命名。
     let mut stem_counts = std::collections::HashMap::<String, usize>::new();
     for path in &found.files {
-        let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("output");
         *stem_counts.entry(stem.to_string()).or_default() += 1;
     }
     // 跨输入累计"因为 skip 策略而没动"的 output，好让报告能解释它
@@ -799,11 +826,15 @@ pub fn run_batch_with_cancel(
     for input in &found.files {
         // 精确重试只能执行原来失败的 (input, profile) 配对；不能把两组
         // 唯一值再做笛卡尔积，否则会重新写入上一轮已成功的产物。
-        let selected: Vec<Resolved> = resolved.iter()
-            .filter(|r| spec.only_pairs.is_empty() || spec.only_pairs.iter().any(|pair| {
-                let requested = resolve(&pair.input);
-                requested == *input && pair.profile == r.profile.name
-            }))
+        let selected: Vec<Resolved> = resolved
+            .iter()
+            .filter(|r| {
+                spec.only_pairs.is_empty()
+                    || spec.only_pairs.iter().any(|pair| {
+                        let requested = resolve(&pair.input);
+                        requested == *input && pair.profile == r.profile.name
+                    })
+            })
             .cloned()
             .map(|mut r| {
                 if r.options.canvas.eq_ignore_ascii_case("original") {
@@ -947,12 +978,17 @@ pub fn run_batch_with_cancel(
                 // 变换身份已加入 job/render 缓存键；不会把别的 Profile 的像素拿来复用。
                 let transformed = match prepare_input(input, r) {
                     Ok(stage) => stage,
-                    Err(error) => return ProfileOutcome::Failed {
-                        stage: error.code_string(),
-                        message: error.title,
-                    },
+                    Err(error) => {
+                        return ProfileOutcome::Failed {
+                            stage: error.code_string(),
+                            message: error.title,
+                        }
+                    }
                 };
-                let command_input = transformed.as_ref().map(|stage| stage.path.as_path()).unwrap_or(input);
+                let command_input = transformed
+                    .as_ref()
+                    .map(|stage| stage.path.as_path())
+                    .unwrap_or(input);
                 let sub = Invocation {
                     command: command_for(r, command_input, dll_str.as_deref()),
                     json: false,
@@ -1332,11 +1368,18 @@ mod inject_key_tests {
             renders: true,
             ext: "xml",
             options: SpecProfile {
-                name: "bdn".to_string(), format: "bdn".to_string(),
-                canvas: "1280x720".to_string(), fps: "25".to_string(),
-                exact_colors: false, min_axis: 8, default_font: None,
-                offset_ms: None, speed_from: None, speed_to: None,
-                hdr_percent: None, hdr_reference_nits: None,
+                name: "bdn".to_string(),
+                format: "bdn".to_string(),
+                canvas: "1280x720".to_string(),
+                fps: "25".to_string(),
+                exact_colors: false,
+                min_axis: 8,
+                default_font: None,
+                offset_ms: None,
+                speed_from: None,
+                speed_to: None,
+                hdr_percent: None,
+                hdr_reference_nits: None,
             },
         }
     }

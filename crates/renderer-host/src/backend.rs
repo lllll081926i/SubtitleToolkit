@@ -261,7 +261,8 @@ impl Backend {
                 let mut loss = core_model::loss::LossReport::new();
                 let mut pixels = rgba.pixels;
                 let blank_before = pixels.iter().all(|b| *b == 0);
-                let knocked_out = knock_out_background(&mut pixels, rgba.width, rgba.height, &mut loss);
+                let knocked_out =
+                    knock_out_background(&mut pixels, rgba.width, rgba.height, &mut loss);
                 let frame = image_core::Frame {
                     canvas,
                     rgba: pixels,
@@ -332,19 +333,31 @@ fn knock_out_background(
     }
     let mut cleared = 0usize;
     while let Some(index) = queue.pop_front() {
-        if visited[index] { continue; }
+        if visited[index] {
+            continue;
+        }
         visited[index] = true;
         let i = index * 4;
         let px = &pixels[i..i + 4];
-        if px[3] != 255 || px[..3] != bg { continue; }
+        if px[3] != 255 || px[..3] != bg {
+            continue;
+        }
         pixels[i + 3] = 0;
         cleared += 1;
         let x = index % w;
         let y = index / w;
-        if x > 0 { queue.push_back(index - 1); }
-        if x + 1 < w { queue.push_back(index + 1); }
-        if y > 0 { queue.push_back(index - w); }
-        if y + 1 < h { queue.push_back(index + w); }
+        if x > 0 {
+            queue.push_back(index - 1);
+        }
+        if x + 1 < w {
+            queue.push_back(index + 1);
+        }
+        if y > 0 {
+            queue.push_back(index - w);
+        }
+        if y + 1 < h {
+            queue.push_back(index + w);
+        }
     }
     if cleared > 0 {
         loss.user_attention(&format!(
@@ -362,15 +375,30 @@ mod background_tests {
     #[test]
     fn inner_same_color_pixels_are_not_erased() {
         let mut pixels = vec![0u8; 5 * 5 * 4];
-        for pixel in pixels.chunks_exact_mut(4) { pixel[3] = 255; }
+        for pixel in pixels.chunks_exact_mut(4) {
+            pixel[3] = 255;
+        }
         // 白色封闭环包围中央黑点：旧版全局同色抠除会错误删除它。
-        for (x, y) in [(1,1),(2,1),(3,1),(1,2),(3,2),(1,3),(2,3),(3,3)] {
+        for (x, y) in [
+            (1, 1),
+            (2, 1),
+            (3, 1),
+            (1, 2),
+            (3, 2),
+            (1, 3),
+            (2, 3),
+            (3, 3),
+        ] {
             let i = (y * 5 + x) * 4;
-            pixels[i..i + 3].copy_from_slice(&[255,255,255]);
+            pixels[i..i + 3].copy_from_slice(&[255, 255, 255]);
         }
         let mut loss = core_model::loss::LossReport::new();
         assert!(knock_out_background(&mut pixels, 5, 5, &mut loss));
-        assert_eq!(pixels[(2 * 5 + 2) * 4 + 3], 255, "被颜色环包围的同色字幕内容必须保留");
+        assert_eq!(
+            pixels[(2 * 5 + 2) * 4 + 3],
+            255,
+            "被颜色环包围的同色字幕内容必须保留"
+        );
         assert_eq!(pixels[3], 0, "外缘背景应移除");
     }
 }

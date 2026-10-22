@@ -518,21 +518,28 @@ impl SubtitleApp {
                     return Task::none();
                 }
                 let Some(mut spec) = self.frozen_spec.clone() else {
-                    self.task_drawer.notes.push("缺少上一轮冻结的任务配置，无法精确重试".into());
+                    self.task_drawer
+                        .notes
+                        .push("缺少上一轮冻结的任务配置，无法精确重试".into());
                     return Task::none();
                 };
                 // 精确选中的是“配对集合”，不是输入集合×Profile 集合。
                 // 保留上次配置快照，避免用户在任务完成后改参数影响“重试”语义。
-                spec.only_pairs = targets.iter()
+                spec.only_pairs = targets
+                    .iter()
                     .map(|(input, profile)| cli::batch::BatchPair {
                         input: input.clone(),
                         profile: profile.clone(),
                     })
                     .collect();
-                spec.roots.retain(|input| targets.iter().any(|(want, _)| want == input));
-                spec.profiles.retain(|profile| targets.iter().any(|(_, want)| want == &profile.name));
+                spec.roots
+                    .retain(|input| targets.iter().any(|(want, _)| want == input));
+                spec.profiles
+                    .retain(|profile| targets.iter().any(|(_, want)| want == &profile.name));
                 if spec.roots.is_empty() || spec.profiles.is_empty() {
-                    self.task_drawer.notes.push("原任务的输入或 Profile 不再匹配失败记录，已拒绝扩大重试范围".into());
+                    self.task_drawer
+                        .notes
+                        .push("原任务的输入或 Profile 不再匹配失败记录，已拒绝扩大重试范围".into());
                     return Task::none();
                 }
                 // 退回 Queued，否则统计会把上次的红格子继续算进去，
@@ -545,7 +552,10 @@ impl SubtitleApp {
                 self.task_drawer.is_expanded = true;
 
                 // 使用冻结配置对应的输出目录，防止用户改路径后报告与真实产物分离。
-                let out_dir = spec.output.dir.as_ref()
+                let out_dir = spec
+                    .output
+                    .dir
+                    .as_ref()
                     .map(std::path::PathBuf::from)
                     .unwrap_or_else(|| self.task_drawer.output_dir.clone());
                 self.task_drawer.notes.push(format!(

@@ -72,8 +72,9 @@ pub fn compile_profile_with_fps(p: &OutputProfile, default_fps: &str) -> Compile
     let (offset_ms, speed_from, speed_to) = match p.time_adjust {
         TimeAdjustMode::None => (None, None, None),
         TimeAdjustMode::OffsetMs(ms) => (Some(ms), None, None),
-        TimeAdjustMode::SpeedScale { from, to } =>
-            (None, Some(from.to_string()), Some(to.to_string())),
+        TimeAdjustMode::SpeedScale { from, to } => {
+            (None, Some(from.to_string()), Some(to.to_string()))
+        }
     };
     let (hdr_percent, hdr_reference_nits) = match p.hdr {
         HdrMode::Sdr => (None, None),
@@ -288,7 +289,11 @@ mod tests {
         let c = compile_profile(&p);
         assert_eq!(c.spec.offset_ms, Some(1000));
         assert_eq!(c.spec.hdr_reference_nits, Some(100));
-        assert!(c.notes.is_empty(), "已实现的功能不应再报未应用: {:?}", c.notes);
+        assert!(
+            c.notes.is_empty(),
+            "已实现的功能不应再报未应用: {:?}",
+            c.notes
+        );
 
         let mut q = OutputProfile::default_bdn(2);
         q.time_adjust = TimeAdjustMode::SpeedScale {
@@ -306,7 +311,12 @@ mod tests {
         a.time_adjust = TimeAdjustMode::OffsetMs(5);
         let b = OutputProfile::default_bdn(2);
         let (spec, notes) = compile_spec(
-            "j", &[PathBuf::from("x.ass")], &[&a, &b], &dir(), None, "{stem}.{ext}",
+            "j",
+            &[PathBuf::from("x.ass")],
+            &[&a, &b],
+            &dir(),
+            None,
+            "{stem}.{ext}",
         );
         assert!(notes.is_empty(), "全部参数已接通，不应出现未应用警告");
         assert_eq!(spec.profiles[0].offset_ms, Some(5));

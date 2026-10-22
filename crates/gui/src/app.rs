@@ -578,40 +578,40 @@ impl SubtitleApp {
             }
             Message::BatchEvent(u) => {
                 match u {
-                        crate::worker::task_worker::Progress::Started { spec_path, notes } => {
-                            self.task_drawer.spec_path = Some(spec_path);
-                            for n in notes {
-                                if !self.task_drawer.notes.contains(&n) {
-                                    self.task_drawer.notes.push(n);
-                                }
+                    crate::worker::task_worker::Progress::Started { spec_path, notes } => {
+                        self.task_drawer.spec_path = Some(spec_path);
+                        for n in notes {
+                            if !self.task_drawer.notes.contains(&n) {
+                                self.task_drawer.notes.push(n);
                             }
                         }
-                        crate::worker::task_worker::Progress::Row {
-                            input,
-                            profile,
-                            status,
-                            detail,
-                        } => {
-                            self.task_drawer.apply(
-                                &input,
-                                &profile,
-                                crate::state::task::TaskStatus::from_report(&status, &detail),
-                            );
-                        }
-                        crate::worker::task_worker::Progress::Finished {
-                            outcome,
-                            report_path,
-                            error,
-                        } => {
-                            self.task_drawer.report_path = report_path;
-                            let reason = error
-                                .map(|(code, title, _)| format!("{code}: {title}"))
-                                .unwrap_or_else(|| format!("任务判定为 {outcome}"));
-                            // 自己算的判定放进抽屉：报告里的 outcome 与逐行状态
-                            // 如果对不上，derived_outcome() 会把它暴露出来
-                            self.task_drawer.finish(&outcome, &reason);
-                        }
                     }
+                    crate::worker::task_worker::Progress::Row {
+                        input,
+                        profile,
+                        status,
+                        detail,
+                    } => {
+                        self.task_drawer.apply(
+                            &input,
+                            &profile,
+                            crate::state::task::TaskStatus::from_report(&status, &detail),
+                        );
+                    }
+                    crate::worker::task_worker::Progress::Finished {
+                        outcome,
+                        report_path,
+                        error,
+                    } => {
+                        self.task_drawer.report_path = report_path;
+                        let reason = error
+                            .map(|(code, title, _)| format!("{code}: {title}"))
+                            .unwrap_or_else(|| format!("任务判定为 {outcome}"));
+                        // 自己算的判定放进抽屉：报告里的 outcome 与逐行状态
+                        // 如果对不上，derived_outcome() 会把它暴露出来
+                        self.task_drawer.finish(&outcome, &reason);
+                    }
+                }
             }
             Message::BatchCompleted(error) => {
                 if let Some((code, title, action)) = error {

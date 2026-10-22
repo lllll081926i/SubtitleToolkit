@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
 
+# New pushes supersede earlier audit commits; prevent redundant Windows builds.
+concurrency:
+  group: windows-audit-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
 jobs:
   format_branch:
     if: github.event_name == 'push' && github.ref == 'refs/heads/fix/2026-10-22-audit-remediation'
@@ -33,6 +38,7 @@ jobs:
             git push origin HEAD:fix/2026-10-22-audit-remediation
           }
   check:
+    if: github.event_name == 'pull_request'
     name: Windows x64 workspace
     runs-on: windows-2022
     timeout-minutes: 70

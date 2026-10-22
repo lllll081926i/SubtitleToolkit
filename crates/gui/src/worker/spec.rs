@@ -259,7 +259,7 @@ mod tests {
         assert_eq!(canvas_string(&CanvasMode::Uhd2160), "3840x2160");
         assert_eq!(canvas_string(&CanvasMode::Hd720), "1280x720");
         assert_eq!(canvas_string(&CanvasMode::Custom(2560, 1440)), "2560x1440");
-        // KeepOriginal 没有对应取值，必须落到一个具体数字且**说出来**
+        // KeepOriginal 是真实的 original sentinel，交由 batch 逐文件决定。
         assert_eq!(
             canvas_string(&CanvasMode::KeepOriginal),
             KEEP_ORIGINAL_CANVAS
@@ -275,11 +275,8 @@ mod tests {
             custom_suffix: String::new(),
         };
         let c = compile_profile(&p);
-        assert!(
-            c.notes.iter().any(|n| n.contains("保持脚本原始尺寸")),
-            "换个画布就必须说清楚：{:?}",
-            c.notes
-        );
+        assert_eq!(c.spec.canvas, "original");
+        assert!(c.notes.is_empty());
     }
 
     /// 时间与 HDR 参数必须写入可重放的 batch spec。
@@ -305,35 +302,15 @@ mod tests {
 
     #[test]
     fn notes_are_attributed_to_the_profile_that_caused_them() {
-        let profiles = ProfilesState::new();
-        let mut a = profiles.profiles[0].clone();
-        a.name = "A".into();
+        let mut a = OutputProfile::default_bdn(1);
         a.time_adjust = TimeAdjustMode::OffsetMs(5);
-        // 拿一个**真的干净**的 profile 当对照组：默认的 2160p SUP 带着
-        // `HdrMode::ReferenceWhite(203)`，它本身就会产生一条说明——
-        // 拿它当“没问题的那个”会让这条断言变假。
-        let mut b = profiles.profiles[0].clone();
-        b.name = "B".into();
-        b.time_adjust = TimeAdjustMode::None;
-        b.hdr = HdrMode::Sdr;
-        b.canvas = CanvasMode::Fhd1080;
-
-        let (_, notes) = compile_spec(
-            "j",
-            &[PathBuf::from("x.ass")],
-            &[&a, &b],
-            &dir(),
-            None,
-            "{stem}.{ext}",
+        let b = OutputProfile::default_bdn(2);
+        let (spec, notes) = compile_spec(
+            "j", &[PathBuf::from("x.ass")], &[&a, &b], &dir(), None, "{stem}.{ext}",
         );
-        assert!(
-            notes.iter().any(|n| n.starts_with("[A]")),
-            "说明必须带上是谁引起的：{notes:?}"
-        );
-        assert!(
-            !notes.iter().any(|n| n.starts_with("[B]")),
-            "参数都支持的那个不该产生说明：{notes:?}"
-        );
+        assert!(notes.is_empty(), "全部参数已接通，不应出现未应用警告");
+        assert_eq!(spec.profiles[0].offset_ms, Some(5));
+        assert_eq!(spec.profiles[1].offset_ms, None);
     }
 
     #[test]

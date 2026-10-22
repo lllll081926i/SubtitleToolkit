@@ -4,6 +4,39 @@ use crate::views::{header, inputs_view, preview_view, profiles_view, task_view};
 use iced::widget::{column, container, row};
 use iced::{Element, Length, Task, Theme};
 
+/// 真正的流式执行：在 Iced 中并行运行阻塞任务与接收端，进度逐条推给 UI。
+/// 通道关闭后流自然终止，完成消息仍单独收口 panic / 启动失败。
+fn launch_batch(
+    spec: cli::batch::Spec,
+    out_dir: std::path::PathBuf,
+    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> Task<Message> {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    let worker = Task::perform(
+        async move {
+            let handle = tokio::task::spawn_blocking(move || {
+                crate::worker::task_worker::run(&spec, &out_dir, cancel, |progress| {
+                    let _ = tx.send(progress);
+                })
+            });
+            match handle.await {
+                Ok(Ok(())) => None,
+                Ok(Err(error)) => Some(error),
+                Err(panic) => Some((
+                    "STK-GUI-PANIC".into(),
+                    format!("后台批处理异常结束：{panic}"),
+                    "查看诊断包和渲染宿主崩溃记录".into(),
+                )),
+            }
+        },
+        Message::BatchCompleted,
+    );
+    let updates = iced::futures::stream::unfold(rx, |mut rx| async move {
+        rx.recv().await.map(|progress| (progress, rx))
+    });
+    Task::batch([worker, Task::run(updates, Message::BatchEvent)])
+}
+
 pub struct SubtitleApp {
     pub inputs: InputsState,
     pub preview: PreviewState,
@@ -487,30 +520,7 @@ impl SubtitleApp {
                 self.cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
                 let cancel = self.cancel.clone();
 
-                return Task::perform(
-                    async move {
-                        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-                        // 真执行放在阻塞线程里：它要做文件 IO 与 CPU 渲染。
-                        // 不能放在 async 任务里——那会把整个 UI 线程的运行时占住，
-                        // 界面就不动了（AT-UI-001 要的是重任务期间仍然可响应）。
-                        let handle = tokio::task::spawn_blocking(move || {
-                            crate::worker::task_worker::run(&spec, &out_dir, cancel, |p| {
-                                let _ = tx.send(p);
-                            })
-                        });
-                        let mut updates = Vec::new();
-                        let mut rx = rx;
-                        while let Some(p) = rx.recv().await {
-                            updates.push(p);
-                        }
-                        let result = handle.await.ok().and_then(|r| r.err());
-                        (updates, result)
-                    },
-                    |(updates, err)| Message::BatchProduced {
-                        updates,
-                        error: err,
-                    },
-                );
+                return launch_batch(spec, out_dir, cancel);
             }
             Message::RetryFailed => {
                 let targets = self.task_drawer.retry_targets();
@@ -564,31 +574,10 @@ impl SubtitleApp {
                 self.cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
                 let cancel = self.cancel.clone();
 
-                return Task::perform(
-                    async move {
-                        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-                        let handle = tokio::task::spawn_blocking(move || {
-                            crate::worker::task_worker::run(&spec, &out_dir, cancel, |p| {
-                                let _ = tx.send(p);
-                            })
-                        });
-                        let mut updates = Vec::new();
-                        let mut rx = rx;
-                        while let Some(p) = rx.recv().await {
-                            updates.push(p);
-                        }
-                        let result = handle.await.ok().and_then(|r| r.err());
-                        (updates, result)
-                    },
-                    |(updates, err)| Message::BatchProduced {
-                        updates,
-                        error: err,
-                    },
-                );
+                return launch_batch(spec, out_dir, cancel);
             }
-            Message::BatchProduced { updates, error } => {
-                for u in updates {
-                    match u {
+            Message::BatchEvent(u) => {
+                match u {
                         crate::worker::task_worker::Progress::Started { spec_path, notes } => {
                             self.task_drawer.spec_path = Some(spec_path);
                             for n in notes {
@@ -623,7 +612,8 @@ impl SubtitleApp {
                             self.task_drawer.finish(&outcome, &reason);
                         }
                     }
-                }
+            }
+            Message::BatchCompleted(error) => {
                 if let Some((code, title, action)) = error {
                     self.task_drawer
                         .finish("failed", &format!("{code}: {title}"));

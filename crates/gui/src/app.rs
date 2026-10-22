@@ -544,9 +544,13 @@ impl SubtitleApp {
                 self.task_drawer.is_running = true;
                 self.task_drawer.is_expanded = true;
 
-                // 直接复用冻结的 Spec（含 only_pairs），不重新编译当前 UI 配置。
-                self.task_drawer.notes.retain(|n| !n.starts_with("开始重试"));
-                let out_dir = self.task_drawer.output_dir.clone();
+                // 使用冻结配置对应的输出目录，防止用户改路径后报告与真实产物分离。
+                let out_dir = spec.output.dir.as_ref()
+                    .map(std::path::PathBuf::from)
+                    .unwrap_or_else(|| self.task_drawer.output_dir.clone());
+                self.task_drawer.notes.push(format!(
+                    "精确重试 {n} 项，使用上次任务的 Profile 参数与输出目录"
+                ));
                 self.cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
                 let cancel = self.cancel.clone();
 

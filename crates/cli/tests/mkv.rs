@@ -11,12 +11,10 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 fn mkv_dir() -> Option<PathBuf> {
-    for var in ["STK_MKVTOOLNIX_DIR"] {
-        if let Ok(d) = std::env::var(var) {
-            let p = PathBuf::from(d);
-            if p.join("mkvmerge.exe").is_file() {
-                return Some(p);
-            }
+    if let Ok(d) = std::env::var("STK_MKVTOOLNIX_DIR") {
+        let p = PathBuf::from(d);
+        if p.join("mkvmerge.exe").is_file() {
+            return Some(p);
         }
     }
     for dir in ["D:\\xia\\mkvtoolnix", "C:\\Program Files\\MKVToolNix"] {

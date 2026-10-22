@@ -116,8 +116,21 @@ pub fn run(
     // 把 GUI 的取消标志交给引擎：它会在每个 (输入, profile) 之前检查，
     // 于是“取消”真的能拦住后面的格子（AT-UI-001）。
     let cancel_token = task_engine::CancelToken::from_shared(cancel);
+    let run_result = {
+        let mut on_row = |input: &str, profile: &str, status: &str, detail: &str| {
+            emit(Progress::Row {
+                input: input.to_string(),
+                profile: profile.to_string(),
+                status: status.to_string(),
+                detail: detail.to_string(),
+            });
+        };
+        cli::batch::run_batch_with_progress(
+            &inv, &spec_path, "batch", Some(&cancel_token), Some(&mut on_row),
+        )
+    };
     let env =
-        match cli::batch::run_batch_with_cancel(&inv, &spec_path, "batch", Some(&cancel_token)) {
+        match run_result {
             Ok(env) => env,
             Err(e) => {
                 tracing::error!(
@@ -168,12 +181,8 @@ pub fn run(
             detail = %detail,
             "GUI 批处理条目完成"
         );
-        emit(Progress::Row {
-            input,
-            profile,
-            status,
-            detail,
-        });
+        // Progress::Row 已通过 on_row 在执行期间逐条发送；此处仅记结束诊断。
+        let _ = (input, profile, status, detail);
     }
 
     let outcome = env

@@ -598,8 +598,11 @@ fn prepare_input(input: &Path, resolved: &Resolved) -> Result<Option<PreparedInp
     let stage = PreparedInput { path };
     {
         use std::io::Write;
-        let mut file = std::fs::OpenOptions::new().write(true).create_new(true)
-            .open(&stage.path).map_err(StkError::from)?;
+        let mut file = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&stage.path)
+            .map_err(StkError::from)?;
         file.write_all(&content).map_err(StkError::from)?;
         file.sync_all().map_err(StkError::from)?;
     }
@@ -916,11 +919,16 @@ pub fn run_batch_with_progress(
                 )
             })
             .collect();
-        per_input_keys.insert(input_key.clone(), serde_json::json!(
-            resolved.iter().zip(keys.iter()).map(|(r, key)| serde_json::json!({
-                "profile": r.profile.name, "key": key,
-            })).collect::<Vec<_>>()
-        ));
+        per_input_keys.insert(
+            input_key.clone(),
+            serde_json::json!(resolved
+                .iter()
+                .zip(keys.iter())
+                .map(|(r, key)| serde_json::json!({
+                    "profile": r.profile.name, "key": key,
+                }))
+                .collect::<Vec<_>>()),
+        );
         // 前半链（渲染 + 变化检测）的共享 key：**不含** profile 名，所以同一输入的
         // SUP 与 BDN 会落进同一个 slot——14 §ASS→SUP 那句"共享 render/cache"就是这件事。
         let render_keys: Vec<String> = resolved

@@ -655,6 +655,17 @@ pub fn run_batch_with_cancel(
     cmd: &str,
     external_cancel: Option<&CancelToken>,
 ) -> Result<Envelope> {
+    run_batch_with_progress(inv, spec_path, cmd, external_cancel, None)
+}
+
+/// 每个输入的 Profile 完成后立即推送状态；GUI 通过流式 Task 渲染中间进度。
+pub fn run_batch_with_progress(
+    inv: &Invocation,
+    spec_path: &Path,
+    cmd: &str,
+    external_cancel: Option<&CancelToken>,
+    mut on_row: Option<&mut dyn FnMut(&str, &str, &str, &str)>,
+) -> Result<Envelope> {
     let started = std::time::Instant::now();
     let spec = load_spec(spec_path)?;
     let resolved = resolve_profiles(&spec)?;
@@ -1109,6 +1120,9 @@ pub fn run_batch_with_cancel(
                     status = %status,
                     "批处理 profile 完成"
                 ),
+            }
+            if let Some(callback) = &mut on_row {
+                callback(&input_key, name, &status, &detail);
             }
             lines.push(ProfileLine {
                 input: input.display().to_string(),

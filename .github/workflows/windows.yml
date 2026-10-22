@@ -24,8 +24,9 @@ jobs:
         shell: pwsh
         run: |
           cargo fmt --all
-          git add -- 'crates/**/*.rs'
-          if (-not (git diff --cached --quiet)) {
+          git add -- crates/
+          git diff --cached --quiet
+          if ($LASTEXITCODE -ne 0) {
             git config user.name 'github-actions[bot]'
             git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
             git commit -m 'style: rustfmt audit remediation'

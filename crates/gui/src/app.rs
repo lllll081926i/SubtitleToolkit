@@ -13,6 +13,8 @@ pub struct SubtitleApp {
     pub show_settings: bool,
     pub settings_notice: String,
     pub task_drawer: TaskDrawerState,
+    /// 上次实际执行的不可变配置：重试不能偷偷改用用户后来修改的 Profile。
+    pub frozen_spec: Option<cli::batch::Spec>,
     pub show_doctor: bool,
     /// 最近一次环境自检结果（`None` = 还没跑过）
     pub doctor: Option<Result<serde_json::Value, String>>,
@@ -35,6 +37,7 @@ impl Default for SubtitleApp {
             show_settings: false,
             settings_notice: String::new(),
             task_drawer: TaskDrawerState::new(),
+            frozen_spec: None,
             show_doctor: false,
             doctor: None,
             cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -477,6 +480,7 @@ impl SubtitleApp {
                     &self.settings.default_fps,
                 );
                 self.task_drawer.notes = notes.clone();
+                self.frozen_spec = Some(spec.clone());
                 let out_dir = self.task_drawer.output_dir.clone();
                 // 把令牌换成全新的：上一任务可能已经把旧令牌置位，
                 // 复用它会让新任务一开始就自认为被取消。
@@ -509,56 +513,28 @@ impl SubtitleApp {
                 );
             }
             Message::RetryFailed => {
-                // AT-RENDER-002 的“GUI 可重试”。
-                //
-                // ## 为什么用 roots 而不是新增一个“只要这几对”的字段
-                //
-                // `Spec` 的语义是“roots 里的文件 × 全部 profile”（15 §1）。
-                // 重试的集合是“失败的（输入, profile）” —— 那不一定是
-                // 输入的全集 × profile 的全集。
-                //
-                // 两件事分开表达：
-                //   - **哪些输入参加** → 只把有失败格的那些文件放进 `roots`；
-                //   - **哪些 profile 参加** → 只把有失败格的那些 profile 放进去。
-                // 两边的交集正好就是“失败的格子”，而不需要给 spec 加字段
-                // （加字段会让这份 spec 不再能拿去 CLI 重放 —— 而“可重放”
-                // 是 GUI 与 CLI 同源的全部价值）。
                 let targets = self.task_drawer.retry_targets();
                 if targets.is_empty() {
-                    self.task_drawer
-                        .notes
-                        .push("没有可重试的格子（失败的与没跑到的都没有）".to_string());
                     return Task::none();
                 }
-
-                // 重试哪些 profile。用**名字**匹配，因为界面上的 profile
-                // 可能在上一次执行之后被改过 —— 改过的按新参数跑，那是用户的意思。
-                let want_profiles: Vec<&crate::state::profile::OutputProfile> = self
-                    .profiles
-                    .enabled_profiles()
-                    .into_iter()
-                    .filter(|p| targets.iter().any(|(_, n)| *n == p.name))
-                    .collect();
-                if want_profiles.is_empty() {
-                    self.task_drawer.notes.push(
-                        "要重试的 profile 现在已经不在启用列表里了 —— \
-                         先把它们重新启用，或者直接点“开始”跑一批新的"
-                            .to_string(),
-                    );
+                let Some(mut spec) = self.frozen_spec.clone() else {
+                    self.task_drawer.notes.push("缺少上一轮冻结的任务配置，无法精确重试".into());
                     return Task::none();
-                }
-
-                let want_inputs: Vec<std::path::PathBuf> = {
-                    let mut v: Vec<std::path::PathBuf> = Vec::new();
-                    for (path, _) in &targets {
-                        let p = std::path::PathBuf::from(path);
-                        if !v.contains(&p) {
-                            v.push(p);
-                        }
-                    }
-                    v
                 };
-
+                // 精确选中的是“配对集合”，不是输入集合×Profile 集合。
+                // 保留上次配置快照，避免用户在任务完成后改参数影响“重试”语义。
+                spec.only_pairs = targets.iter()
+                    .map(|(input, profile)| cli::batch::BatchPair {
+                        input: input.clone(),
+                        profile: profile.clone(),
+                    })
+                    .collect();
+                spec.roots.retain(|input| targets.iter().any(|(want, _)| want == input));
+                spec.profiles.retain(|profile| targets.iter().any(|(_, want)| want == &profile.name));
+                if spec.roots.is_empty() || spec.profiles.is_empty() {
+                    self.task_drawer.notes.push("原任务的输入或 Profile 不再匹配失败记录，已拒绝扩大重试范围".into());
+                    return Task::none();
+                }
                 // 退回 Queued，否则统计会把上次的红格子继续算进去，
                 // 界面会显示“跑完了，但还有 N 个失败”—— 那与“正在重试”矛盾。
                 let n = self.task_drawer.reset_for_retry();
@@ -568,20 +544,8 @@ impl SubtitleApp {
                 self.task_drawer.is_running = true;
                 self.task_drawer.is_expanded = true;
 
-                let libass = std::env::var("STK_LIBASS_DLL")
-                    .ok()
-                    .map(std::path::PathBuf::from)
-                    .filter(|p| p.is_file());
-                let (spec, notes) = crate::worker::spec::compile_spec_with_fps(
-                    &crate::worker::task_worker::job_id(),
-                    &want_inputs,
-                    &want_profiles,
-                    &self.task_drawer.output_dir,
-                    libass,
-                    "{stem}.{profile}.{ext}",
-                    &self.settings.default_fps,
-                );
-                self.task_drawer.notes = notes;
+                // 直接复用冻结的 Spec（含 only_pairs），不重新编译当前 UI 配置。
+                self.task_drawer.notes.retain(|n| !n.starts_with("开始重试"));
                 let out_dir = self.task_drawer.output_dir.clone();
                 self.cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
                 let cancel = self.cancel.clone();

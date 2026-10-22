@@ -11,7 +11,6 @@
 use std::io::{self, BufWriter, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
-use std::time::Duration;
 
 use core_model::canvas::Canvas;
 use core_model::time::Time;
@@ -636,7 +635,7 @@ fn maybe_inject_crash_from_env(tracker: &renderer_host::crash::Tracker) {
         "panic" => panic!("故意的 host panic（AT-RENDER-002）"),
         // 不回复：主进程必须靠超时放手，而不是永远等
         "hang" => loop {
-            std::thread::sleep(Duration::from_secs(3600));
+            std::thread::sleep(std::time::Duration::from_secs(3600));
         },
         // 下面这两种**不在启动时死** —— 它们在渲染调用**内部**死，
         // 见 `crash_during_render`。
@@ -686,7 +685,7 @@ fn crash_during_render_if_asked(tracker: &renderer_host::crash::Tracker) {
         "render-hang" => {
             let _ = tracker.write("出帧中途挂住");
             loop {
-                std::thread::sleep(Duration::from_secs(3600));
+                std::thread::sleep(std::time::Duration::from_secs(3600));
             }
         }
         _ => {}

@@ -24,9 +24,15 @@ const HDRS: &[HdrMode] = &[
     HdrMode::Percentage(50),
 ];
 
-pub fn view<'a>(state: &'a ProfilesState) -> Element<'a, Message> {
+pub fn view<'a>(state: &'a ProfilesState, notice: &'a str) -> Element<'a, Message> {
     let header = row![
         text("输出配置").size(16),
+        button(text("导入").size(11))
+            .on_press(Message::ImportPreset)
+            .padding([4, 7]),
+        button(text("导出").size(11))
+            .on_press(Message::ExportPreset)
+            .padding([4, 7]),
         Space::with_width(Length::Fill),
         button(
             row![icons::plus(12.0), text("新建 Profile").size(12)]
@@ -135,7 +141,11 @@ pub fn view<'a>(state: &'a ProfilesState) -> Element<'a, Message> {
         profiles_col = profiles_col.push(boxed_card);
     }
 
-    let main_col = column![header, scrollable(profiles_col).height(Length::Fill)].spacing(10);
+    let mut main_col = column![header].spacing(8);
+    if !notice.is_empty() {
+        main_col = main_col.push(text(notice).size(11));
+    }
+    let main_col = main_col.push(scrollable(profiles_col).height(Length::Fill));
 
     container(main_col)
         .width(Length::Fixed(360.0))

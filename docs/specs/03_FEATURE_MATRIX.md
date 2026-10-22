@@ -25,11 +25,11 @@
 | Smart sync | 可选 | 已实现确定性执行（`time --piecewise`） | `PiecewiseMap` 多段线性映射，控制点由调用方显式给出；**不做**剪辑点自动检测（需要内容比对，另一条研究线）。RL01 的自动对齐仍未做 |
 | Advanced PGS author / Strict validator | 后续 | 第 1–6 层已实现（含第 5 层解码器模型） | 第 7 层设备语料未取得，`strict_badge_allowed` 仍恒为 false；第 5 层未含缓冲区占用曲线与 acquisition 分支 |
 | OCR SUP→SRT | 可选 | 未实现 | 独立研究线，不进入 CLI MVP 前置条件 |
-| Windows GUI | P0 产品目标 | 已接通（Iced 工作台 + 真 batch 通路）；AT-UI-001 后台响应已实测；A/B 分屏已接真变换；AT-RENDER-002 GUI 重试已补齐 | 计划中的 GUI 设置与预设入口未实现；键盘/IME/DPI 真人验收未做；A/B 不演示时间轴变换；重试会覆盖上次报告 |
+| Windows GUI | P0 产品目标 | 已接通（Iced 工作台 + 真 batch 通路）；设置可保存日志级别、默认帧率与新 Profile 画布；可导入/导出 TOML preset；GUI 新建任务将默认帧率冻结进 batch spec；AT-UI-001 后台响应已实测；A/B 分屏已接真变换；AT-RENDER-002 GUI 重试已补齐 | 键盘/IME/DPI 真人验收未做；Preset 当前不能表达 GUI 时间变换，导出时会拒绝丢弃该设置；导入未支持的帧率/渲染器/PGS 参数会提示未应用；A/B 不演示时间轴变换；重试会覆盖上次报告 |
 | Installer、portable、签名与更新 | 发布阶段 | portable 包已实现（checksums + SBOM + notices 三件套）；**安装器**已交付（`tools/make_installer.ps1` + `verify_installer.ps1`，28 §3 五条逐项验过）；**更新器**第一版已交付（`check-updates`，只做版本比对、不出网） | **Authenticode 签名未做**；all-users 模式只核对静态声明；x86 host **可构建但未随包分发**（前提是 x86 DLL 许可审计，21 §6）；更新器默认 URL 不是真实地址 |
 | 36 §1 AppSettings | 已交付 | `settings show\|init\|set`；未知字段保留、坏文件不阻塞、原子写 | — |
-| 36 §1 ToolDefaults | 已交付 | `tool-defaults show\|init\|set`；只登记白名单键；`pgs encode`/`render`/`mkv`/`font subset` 在用户没给参数时读取；报告标注 `resolved_from` | `batch` 有意不读用户默认值以保持 spec 可重放；GUI 设置入口未实现 |
-| 36 §1 **Preset（TOML）** | 已交付 | `core_model::preset` + `preset show\|validate\|example`；TOML 解析、未知字段保留、schema 检查、后缀碰撞检查 | GUI 预设入口和 `batch --preset` 未实现；第五层通用 Planner stage DAG 未实现（现有 `Plan` 只是无依赖边的阶段列表） |
+| 36 §1 ToolDefaults | 已交付 | `tool-defaults show\|init\|set`；只登记白名单键；`pgs encode`/`render`/`mkv`/`font subset` 在用户没给参数时读取；报告标注 `resolved_from` | `batch` 有意不读用户默认值以保持 spec 可重放；GUI 设置使用 AppSettings，不覆盖已冻结的 batch spec |
+| 36 §1 **Preset（TOML）** | 已交付 | `core_model::preset` + `preset show\|validate\|example`；GUI 可导入/导出 Profile，使用同一 TOML schema；不支持的参数显式提示或拒绝丢弃 | `batch --preset` 未接入以保持冻结快照语义；第五层通用 Planner stage DAG 未实现（现有 `Plan` 只是无依赖边的阶段列表） |
 | 17 §5 subset equivalence corpus | 已交付 | `font-service/tests/subset_corpus.rs`（9 用例）逐项回答规格列的 11 项；字符级必回退、字体级能做就做且等价、Latin ligatures 必须真做 | **缺 golden 图像比较**（规格要的 rendered RGBA；需固定语料与参考图，先撞许可审计 21 §6）；variable 的**轴保真未证明** |
 | 37 §2 渲染缓存 | 已交付 | 内存共享 + 磁盘（配额、清理、损坏自愈、跨运行复用） | 内存那级不是容量受限 LRU；benchmark 阈值（37 §6）未做 |
 | 05 §4.1 A/B 分屏对比 | 已交付 | 左原版/右变换（HDR 调光 + 等比缩放），用 `transform_hdr`/`transform_resolution` 同一份实现；恒等映射会说明原因 | 分隔线不可拖；时间轴变换不参与 |

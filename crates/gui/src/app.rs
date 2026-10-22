@@ -8,6 +8,10 @@ pub struct SubtitleApp {
     pub inputs: InputsState,
     pub preview: PreviewState,
     pub profiles: ProfilesState,
+    pub preset_notice: String,
+    pub settings: core_model::settings::AppSettings,
+    pub show_settings: bool,
+    pub settings_notice: String,
     pub task_drawer: TaskDrawerState,
     pub show_doctor: bool,
     /// 最近一次环境自检结果（`None` = 还没跑过）
@@ -26,6 +30,10 @@ impl Default for SubtitleApp {
             inputs: InputsState::new(),
             preview: PreviewState::new(),
             profiles: ProfilesState::new(),
+            preset_notice: String::new(),
+            settings: core_model::SettingsStore::current().load().settings,
+            show_settings: false,
+            settings_notice: String::new(),
             task_drawer: TaskDrawerState::new(),
             show_doctor: false,
             doctor: None,
@@ -294,7 +302,19 @@ impl SubtitleApp {
                     p.enabled = !p.enabled;
                 }
             }
-            Message::AddProfile => self.profiles.add_profile(),
+            Message::AddProfile => {
+                self.profiles.add_profile();
+                if let Some((w, h)) = parse_canvas_setting(&self.settings.default_canvas) {
+                    if let Some(profile) = self.profiles.active_profile_mut() {
+                        profile.canvas = match (w, h) {
+                            (1920, 1080) => crate::state::profile::CanvasMode::Fhd1080,
+                            (3840, 2160) => crate::state::profile::CanvasMode::Uhd2160,
+                            (1280, 720) => crate::state::profile::CanvasMode::Hd720,
+                            _ => crate::state::profile::CanvasMode::Custom(w, h),
+                        };
+                    }
+                }
+            }
             Message::DuplicateProfile(id) => self.profiles.duplicate_profile(id),
             Message::RemoveProfile(id) => self.profiles.remove_profile(id),
             Message::FormatChanged(id, fmt) => {
@@ -315,6 +335,101 @@ impl SubtitleApp {
             Message::TimeAdjustChanged(id, t) => {
                 if let Some(p) = self.profiles.profiles.iter_mut().find(|p| p.id == id) {
                     p.time_adjust = t;
+                }
+            }
+            Message::ExportPreset => {
+                let result = crate::preset_io::from_profiles(&self.profiles)
+                    .and_then(|preset| {
+                        core_model::preset::to_toml(&preset).map_err(|e| e.to_string())
+                    })
+                    .and_then(|contents| {
+                        let Some(path) = rfd::FileDialog::new()
+                            .add_filter("SubtitleToolkit preset", &["toml"])
+                            .set_file_name("subtitletool-preset.toml")
+                            .save_file()
+                        else {
+                            return Ok(None);
+                        };
+                        std::fs::write(&path, contents)
+                            .map(|()| Some(path.display().to_string()))
+                            .map_err(|e| format!("写入 preset 失败：{e}"))
+                    });
+                self.preset_notice = match result {
+                    Ok(Some(path)) => format!("已导出：{path}。preset 仅包含已启用的 Profile。"),
+                    Ok(None) => String::new(),
+                    Err(error) => error,
+                };
+            }
+            Message::ImportPreset => {
+                let result = rfd::FileDialog::new()
+                    .add_filter("SubtitleToolkit preset", &["toml"])
+                    .pick_file()
+                    .map(|path| {
+                        core_model::preset::load_file(&path)
+                            .map_err(|error| error.to_string())
+                            .and_then(|loaded| {
+                                crate::preset_io::into_profiles(&loaded.preset).map(
+                                    |(profiles, mut notices)| {
+                                        notices.splice(0..0, loaded.problems);
+                                        (path.display().to_string(), profiles, notices)
+                                    },
+                                )
+                            })
+                    });
+                self.preset_notice = match result {
+                    None => String::new(),
+                    Some(Err(error)) => error,
+                    Some(Ok((path, profiles, notices))) => {
+                        self.profiles.replace_profiles(profiles);
+                        if notices.is_empty() {
+                            format!("已导入：{path}")
+                        } else {
+                            format!("已导入：{path}。{}", notices.join("；"))
+                        }
+                    }
+                };
+            }
+            Message::OpenSettings => {
+                self.settings = core_model::SettingsStore::current().load().settings;
+                self.settings_notice.clear();
+                self.show_settings = true;
+            }
+            Message::CloseSettings => self.show_settings = false,
+            Message::SettingLogLevelChanged(value) => self.settings.log_level = value,
+            Message::SettingDefaultFpsChanged(value) => self.settings.default_fps = value,
+            Message::SettingDefaultCanvasChanged(value) => self.settings.default_canvas = value,
+            Message::SaveSettings => {
+                let valid_levels = ["trace", "debug", "info", "warn", "error", "off"];
+                let fps_valid =
+                    core_model::time::Fps::from_label(&self.settings.default_fps).is_ok();
+                let canvas_valid = self
+                    .settings
+                    .default_canvas
+                    .split_once('x')
+                    .and_then(|(w, h)| Some((w.parse::<u32>().ok()?, h.parse::<u32>().ok()?)))
+                    .is_some_and(|(w, h)| core_model::canvas::Canvas::new(w, h).is_ok());
+                if !valid_levels.contains(&self.settings.log_level.as_str()) {
+                    self.settings_notice =
+                        "日志级别只能是 trace、debug、info、warn、error 或 off。".to_string();
+                } else if self.settings.schema > core_model::settings::CURRENT_SCHEMA {
+                    self.settings_notice =
+                        "设置文件来自较新版本；为避免覆盖未知设置，本版本拒绝写回。".to_string();
+                } else if !fps_valid {
+                    self.settings_notice =
+                        "默认帧率格式无效，例如 24000/1001 或 23.976。".to_string();
+                } else if !canvas_valid {
+                    self.settings_notice =
+                        "默认画布格式无效，请使用有效的宽x高，例如 1920x1080。".to_string();
+                } else {
+                    match core_model::SettingsStore::current().save(&self.settings) {
+                        Ok(path) => {
+                            self.settings_notice = format!(
+                                "设置已保存：{}。日志级别将在下次启动时生效。",
+                                path.display()
+                            )
+                        }
+                        Err(error) => self.settings_notice = format!("保存设置失败：{error}"),
+                    }
                 }
             }
 
@@ -352,13 +467,14 @@ impl SubtitleApp {
                     .ok()
                     .map(std::path::PathBuf::from)
                     .filter(|p| p.is_file());
-                let (spec, notes) = crate::worker::spec::compile_spec(
+                let (spec, notes) = crate::worker::spec::compile_spec_with_fps(
                     &crate::worker::task_worker::job_id(),
                     &roots,
                     &profiles.iter().collect::<Vec<_>>(),
                     &self.task_drawer.output_dir,
                     libass,
                     "{stem}.{profile}.{ext}",
+                    &self.settings.default_fps,
                 );
                 self.task_drawer.notes = notes.clone();
                 let out_dir = self.task_drawer.output_dir.clone();
@@ -456,13 +572,14 @@ impl SubtitleApp {
                     .ok()
                     .map(std::path::PathBuf::from)
                     .filter(|p| p.is_file());
-                let (spec, notes) = crate::worker::spec::compile_spec(
+                let (spec, notes) = crate::worker::spec::compile_spec_with_fps(
                     &crate::worker::task_worker::job_id(),
                     &want_inputs,
                     &want_profiles,
                     &self.task_drawer.output_dir,
                     libass,
                     "{stem}.{profile}.{ext}",
+                    &self.settings.default_fps,
                 );
                 self.task_drawer.notes = notes;
                 let out_dir = self.task_drawer.output_dir.clone();
@@ -611,7 +728,7 @@ impl SubtitleApp {
         let main_workspace = row![
             inputs_view::view(&self.inputs),
             preview_view::view(&self.preview),
-            profiles_view::view(&self.profiles),
+            profiles_view::view(&self.profiles, &self.preset_notice),
         ]
         .width(Length::Fill)
         .height(Length::Fill);
@@ -627,6 +744,9 @@ impl SubtitleApp {
         if self.show_doctor {
             full_layout = full_layout.push(doctor_view(self.doctor.as_ref()));
         }
+        if self.show_settings {
+            full_layout = full_layout.push(settings_view(&self.settings, &self.settings_notice));
+        }
 
         container(full_layout)
             .width(Length::Fill)
@@ -637,6 +757,53 @@ impl SubtitleApp {
     pub fn theme(&self) -> Theme {
         Theme::Light
     }
+}
+
+fn settings_view<'a>(
+    settings: &'a core_model::settings::AppSettings,
+    notice: &'a str,
+) -> iced::Element<'a, Message> {
+    use iced::widget::{button, column, container, row, text, text_input, Space};
+    use iced::{Alignment, Length};
+
+    let body = column![
+        text("设置").size(16),
+        row![
+            text("日志级别").width(Length::Fixed(100.0)),
+            text_input("info", &settings.log_level).on_input(Message::SettingLogLevelChanged)
+        ],
+        row![
+            text("默认帧率").width(Length::Fixed(100.0)),
+            text_input("24000/1001", &settings.default_fps)
+                .on_input(Message::SettingDefaultFpsChanged)
+        ],
+        row![
+            text("默认画布").width(Length::Fixed(100.0)),
+            text_input("1920x1080", &settings.default_canvas)
+                .on_input(Message::SettingDefaultCanvasChanged)
+        ],
+        text("日志级别重启后生效；帧率用于之后新建的 GUI 任务；画布用于之后新建的 Profile。")
+            .size(11),
+        text(notice).size(11),
+        Space::with_height(Length::Fixed(4.0)),
+        row![
+            button(text("保存").size(12)).on_press(Message::SaveSettings),
+            button(text("关闭").size(12)).on_press(Message::CloseSettings),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center),
+    ]
+    .spacing(8)
+    .width(Length::Fixed(420.0));
+    container(body)
+        .padding(16)
+        .style(container::bordered_box)
+        .into()
+}
+
+fn parse_canvas_setting(value: &str) -> Option<(u32, u32)> {
+    let (width, height) = value.split_once('x')?;
+    Some((width.parse().ok()?, height.parse().ok()?))
 }
 
 /// 环境自检面板。三态各有各的文案：没跑过 / 拿到了 / 拿不到。

@@ -65,6 +65,10 @@ pub struct CompiledProfile {
 
 /// 把单个 profile 编译成 spec 项。
 pub fn compile_profile(p: &OutputProfile) -> CompiledProfile {
+    compile_profile_with_fps(p, crate::worker::task_worker::default_fps())
+}
+
+pub fn compile_profile_with_fps(p: &OutputProfile, default_fps: &str) -> CompiledProfile {
     let mut notes = Vec::new();
 
     // 时间轴调整与 HDR：spec 里没有对应字段（15 §1 的 profile 只有 format/canvas/fps/
@@ -106,7 +110,7 @@ pub fn compile_profile(p: &OutputProfile) -> CompiledProfile {
             // 帧率：GUI 目前没有逐 profile 的帧率控件，用 spec 的默认值。
             // 这里的字符串必须与 cli::batch::default_fps 一致，否则"GUI 与 CLI 默认不同"
             // 又是一处静默分歧。
-            fps: "25".to_string(),
+            fps: default_fps.to_string(),
             // pgs：GUI 没有暴露"严格 255 色"开关，保持与单命令默认一致（量化 + 记账）
             exact_colors: false,
             // bdn：与 CLI 单命令默认一致（0 = 不过滤）
@@ -130,10 +134,30 @@ pub fn compile_spec(
     libass_dll: Option<PathBuf>,
     template: &str,
 ) -> (Spec, Vec<String>) {
+    compile_spec_with_fps(
+        job_id,
+        roots,
+        profiles,
+        output_dir,
+        libass_dll,
+        template,
+        crate::worker::task_worker::default_fps(),
+    )
+}
+
+pub fn compile_spec_with_fps(
+    job_id: &str,
+    roots: &[PathBuf],
+    profiles: &[&OutputProfile],
+    output_dir: &Path,
+    libass_dll: Option<PathBuf>,
+    template: &str,
+    default_fps: &str,
+) -> (Spec, Vec<String>) {
     let mut notes: Vec<String> = Vec::new();
     let mut compiled = Vec::new();
     for p in profiles {
-        let c = compile_profile(p);
+        let c = compile_profile_with_fps(p, default_fps);
         for n in &c.notes {
             notes.push(format!("[{}] {}", p.name, n));
         }
@@ -361,5 +385,20 @@ mod tests {
         // 不排除任何东西：用户已经逐个勾选了
         assert!(spec.exclude.is_empty());
         assert!(!spec.include.is_empty(), "白名单不能是空——空等于放行一切");
+    }
+
+    #[test]
+    fn configured_fps_is_frozen_into_the_gui_batch_snapshot() {
+        let profile = ProfilesState::new().profiles.remove(0);
+        let (spec, _) = compile_spec_with_fps(
+            "j",
+            &[PathBuf::from("a.ass")],
+            &[&profile],
+            &PathBuf::from("out"),
+            None,
+            "{stem}.{ext}",
+            "24000/1001",
+        );
+        assert_eq!(spec.profiles[0].fps, "24000/1001");
     }
 }

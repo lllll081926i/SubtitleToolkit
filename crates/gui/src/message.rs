@@ -50,6 +50,14 @@ pub enum Message {
     CanvasChanged(usize, CanvasMode),
     HdrChanged(usize, HdrMode),
     TimeAdjustChanged(usize, TimeAdjustMode),
+    ExportPreset,
+    ImportPreset,
+    OpenSettings,
+    CloseSettings,
+    SettingLogLevelChanged(String),
+    SettingDefaultFpsChanged(String),
+    SettingDefaultCanvasChanged(String),
+    SaveSettings,
 
     // === 底栏：任务抽屉与执行 ===
     StartQueue,

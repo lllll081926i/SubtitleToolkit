@@ -192,6 +192,13 @@ impl ProfilesState {
         Self::default()
     }
 
+    pub fn replace_profiles(&mut self, profiles: Vec<OutputProfile>) {
+        let max_id = profiles.iter().map(|profile| profile.id).max().unwrap_or(0);
+        self.profiles = profiles;
+        self.active_edit_id = self.profiles.first().map(|profile| profile.id);
+        self.next_id = max_id.saturating_add(1).max(1);
+    }
+
     pub fn add_profile(&mut self) {
         let id = self.next_id;
         self.next_id += 1;

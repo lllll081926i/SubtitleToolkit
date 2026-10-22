@@ -2,14 +2,14 @@
 
 SubtitleToolkit 是面向 Windows 的字幕转换与制作工具，提供 Rust CLI 和 Iced 桌面界面。它支持 SRT、ASS/SSA、PGS、BDN 工作流，处理时间、帧率、分辨率、HDR 颜色、字体和批量任务，并通过隔离的 renderer host 调用 libass。
 
-> **项目状态：开发预览版。** 核心转换、真实 libass 渲染、PGS/BDN 基础链路、便携包和 Inno Setup 安装器已实现。Authenticode 签名、完整 Strict Blu-ray 设备验收和部分 GUI 设置入口仍未完成。功能与验证边界见[当前状态](docs/STATUS.md)和[功能矩阵](docs/specs/03_FEATURE_MATRIX.md)。
+> **项目状态：开发预览版。** 核心转换、真实 libass 渲染、PGS/BDN 基础链路、GUI 设置与 TOML 预设导入/导出、便携包和 Inno Setup 安装器已实现。Authenticode 签名、x86 真实渲染、完整 Strict Blu-ray 设备验收及字体复杂脚本图像语料仍未完成。功能与验证边界见[当前状态](docs/STATUS.md)和[功能矩阵](docs/specs/03_FEATURE_MATRIX.md)。
 
 ## 功能
 
 - 读取、转换和保留 ASS/SSA 与 SRT 字幕数据；调整时间、帧率、分辨率和 HDR 颜色。
 - 通过 libass 生成 BDN XML/PNG 或 PGS SUP，并使用独立 renderer host 隔离 native 渲染器。
 - 批量执行多输入、多 profile 任务；提供字体扫描、字体子集、MKV 辅助、配置预设和诊断包命令。
-- 使用 Windows Iced GUI 管理任务，并通过 CLI 支持脚本化操作。
+- 使用 Windows Iced GUI 管理任务，可保存全局日志/帧率/画布设置，并导入或导出 TOML 输出预设；CLI 支持脚本化操作。
 
 部分操作需要外部工具：视频探测需要 `ffprobe`，MKV 操作需要 MKVToolNix。PGS 严格设备兼容仍需更多真实播放器与设备语料；本项目不提供视频转码、烧录或完整 Blu-ray authoring。
 

@@ -126,33 +126,36 @@ pub fn run(
             });
         };
         cli::batch::run_batch_with_progress(
-            &inv, &spec_path, "batch", Some(&cancel_token), Some(&mut on_row),
+            &inv,
+            &spec_path,
+            "batch",
+            Some(&cancel_token),
+            Some(&mut on_row),
         )
     };
-    let env =
-        match run_result {
-            Ok(env) => env,
-            Err(e) => {
-                tracing::error!(
-                    job_id = %job_id,
-                    code = %e.code_string(),
-                    title = %e.title,
-                    details = ?e.details,
-                    "GUI 批处理启动失败"
-                );
-                let triple = (
-                    e.code_string(),
-                    e.title.clone(),
-                    e.user_action.clone().unwrap_or_default(),
-                );
-                emit(Progress::Finished {
-                    outcome: "failed".into(),
-                    report_path: None,
-                    error: Some(triple.clone()),
-                });
-                return Err(triple);
-            }
-        };
+    let env = match run_result {
+        Ok(env) => env,
+        Err(e) => {
+            tracing::error!(
+                job_id = %job_id,
+                code = %e.code_string(),
+                title = %e.title,
+                details = ?e.details,
+                "GUI 批处理启动失败"
+            );
+            let triple = (
+                e.code_string(),
+                e.title.clone(),
+                e.user_action.clone().unwrap_or_default(),
+            );
+            emit(Progress::Finished {
+                outcome: "failed".into(),
+                report_path: None,
+                error: Some(triple.clone()),
+            });
+            return Err(triple);
+        }
+    };
 
     // 逐行翻译 CLI 报告。**不重新解释状态**：status 字符串原样透出，
     // 这样 GUI 显示的与 CLI 报告里的永远是同一个词。

@@ -670,12 +670,15 @@ pub fn run_batch_with_cancel(
 }
 
 /// 每个输入的 Profile 完成后立即推送状态；GUI 通过流式 Task 渲染中间进度。
+/// Progress sink type kept named so Clippy and downstream adapters share one contract.
+pub type BatchProgressSink<'a> = dyn FnMut(&str, &str, &str, &str) + 'a;
+
 pub fn run_batch_with_progress(
     inv: &Invocation,
     spec_path: &Path,
     cmd: &str,
     external_cancel: Option<&CancelToken>,
-    mut on_row: Option<&mut dyn FnMut(&str, &str, &str, &str)>,
+    mut on_row: Option<&mut BatchProgressSink<'_>>,
 ) -> Result<Envelope> {
     let started = std::time::Instant::now();
     let spec = load_spec(spec_path)?;

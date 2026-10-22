@@ -1,8 +1,7 @@
 # SubtitleToolkit 安装器打包（28 §3）
 #
 # 立场（与 make_portable.ps1 同一条）：
-# * 本脚本产出的是**可编译、可安装、可卸载**的 setup.exe，但它**未做 Authenticode
-#   签名**（28 §5 仍未实现）——所以 SmartScreen 会警告。那是未完成项，不是缺陷。
+# * 默认不签名；使用 -Sign 时，在证书库可用的前提下签名程序文件和 setup.exe。
 # * 收进安装器的文件清单与便携包**同一条规则**（同样的程序、运行库和文档），
 #   两处各列一份清单迟早会漂移，而"安装版能跑、便携版缺文件"没人会立刻发现。
 #
@@ -18,6 +17,7 @@
 [CmdletBinding()]
 param(
     [switch]$NoBuild,
+    [switch]$Sign,
     [string]$OutDir,
     # 显式指定 ISCC.exe；不给就按顺序自动找
     [string]$IsccPath,
@@ -131,6 +131,12 @@ try {
     }
     & (Join-Path $PSScriptRoot 'copy_libass_runtime.ps1') -StageDir $stage
 
+    if ($Sign) {
+        $signTargets = @('subtitletool-cli.exe', 'subtitletool-render-host.exe', 'subtitletoolkit-gui.exe') |
+            ForEach-Object { Join-Path $stage $_ }
+        & (Join-Path $PSScriptRoot 'sign_authenticode.ps1') -Path $signTargets
+    }
+
     $sumLines = Get-ChildItem -LiteralPath $stage -File -Recurse |
         Where-Object { $_.Name -ne 'SHA256SUMS.txt' } |
         ForEach-Object {
@@ -164,6 +170,9 @@ try {
     if (-not (Test-Path -LiteralPath $setup -PathType Leaf)) {
         throw "ISCC 报了成功但产物不在：$setup"
     }
+    if ($Sign) {
+        & (Join-Path $PSScriptRoot 'sign_authenticode.ps1') -Path $setup
+    }
     $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $setup).Hash.ToLowerInvariant()
     $size = (Get-Item -LiteralPath $setup).Length
 
@@ -177,7 +186,9 @@ try {
     Write-Host "  文件关联默认不勾（opt-in）；legacy 32 位宿主为可选且当前未随包提供；" -ForegroundColor Cyan
     Write-Host "  卸载时由用户选择是否保留 presets/logs。" -ForegroundColor Cyan
     Write-Host ""
-    Write-Host "  未完成项：Authenticode 签名（28 §5）—— 未签名的 setup.exe 在 SmartScreen 上会警告。" -ForegroundColor Yellow
+    if (-not $Sign) {
+        Write-Host "  未完成项：本次未启用 Authenticode 签名；未签名文件可能触发 SmartScreen 警告。" -ForegroundColor Yellow
+    }
     Write-Host "  说明：本包包含已核验的 libass DLL、fontconfig 配置及随附许可证材料。" -ForegroundColor Yellow
     Write-Host "  SHA256SUMS.txt 覆盖安装目录中的所有文件。" -ForegroundColor Yellow
 }

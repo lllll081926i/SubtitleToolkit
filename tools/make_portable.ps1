@@ -2,7 +2,7 @@
 #
 # 立场（写清楚，避免把"能打 zip"当成"已发布"）：
 # * 本脚本只把**已经构建好并通过验收**的产物收进一个自包含目录，再打成 zip；
-#   它不做签名、不做安装器、不动注册表（那些是 28 §3/§5，尚未实现）。
+#   默认不签名；传入 -Sign 后会签署包内项目自己的可执行文件。
 # * 随包提供已逐包核验来源、哈希和许可材料的 libass UCRT64 运行库。
 # * 打包前重新验证内容哈希，并生成 SHA256SUMS.txt；第三方声明原样复制进包。
 #
@@ -16,6 +16,7 @@
 param(
     # 跳过 cargo build，直接用现有 release 产物（产物不存在时仍然报错，不静默产出空包）
     [switch]$NoBuild,
+    [switch]$Sign,
     # 输出目录；默认落在 Cargo 目标目录下的 portable/
     [string]$OutDir,
     # 不含版本号的包名前缀
@@ -95,6 +96,12 @@ try {
     # Runtime loader only accepts the colocated DLL when this marker is present.
     & (Join-Path $PSScriptRoot 'copy_libass_runtime.ps1') -StageDir $stage
 
+    if ($Sign) {
+        $signTargets = @('subtitletool-cli.exe', 'subtitletool-render-host.exe', 'subtitletoolkit-gui.exe') |
+            ForEach-Object { Join-Path $stage $_ }
+        & (Join-Path $PSScriptRoot 'sign_authenticode.ps1') -Path $signTargets
+    }
+
     # 28 §4：便携包默认就带上 portable.flag，让解包即用、不往用户机器上的
     # %LOCALAPPDATA% 写任何东西。数据落在同目录的 data/（core-model::DataDir 负责解析）。
     # 删掉这个文件就会退回安装版行为——这是用户的显式选择，不是我们替他决定的事。
@@ -143,7 +150,9 @@ try {
     Write-Host ""
     Write-Host "  说明：本包包含已核验的 libass DLL、fontconfig 配置及随附许可证材料。" -ForegroundColor Yellow
     Write-Host "  便携：包内自带 portable.flag，数据（字体库缓存等）落在同级 data/，不写 %LOCALAPPDATA%。" -ForegroundColor Yellow
-    Write-Host "  未完成项：Authenticode 签名见 28 节；运行库来源和哈希见包内 licenses/LIBASS_RUNTIME_LOCK.json。" -ForegroundColor Yellow
+    if (-not $Sign) {
+        Write-Host "  未完成项：本次未启用 Authenticode 签名；运行库来源和哈希见包内 licenses/LIBASS_RUNTIME_LOCK.json。" -ForegroundColor Yellow
+    }
 }
 finally {
     Pop-Location

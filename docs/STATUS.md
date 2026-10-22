@@ -2,7 +2,7 @@
 
 文档整理日期：2026-10-22。前部完成度快照按 2026-10-17 记录，作为历史基线保留；2026-10-22 本轮已重新运行工作区测试、Clippy、doctest、Debug 检查和最终 Release 打包。后续条目是按时间排列的实施日志；日志中的“未完成”描述当时状态，当前状态以本文“项目边界/已有实现/未交付或未裁决”和[功能矩阵](specs/03_FEATURE_MATRIX.md)为准。
 
-同日后续更新：
+2026-10-22 后续更新：Authenticode 的本地签名与验签流程已接入打包脚本，当前机器没有可用代码签名证书，因此没有受信任签名产物。用户决定暂不继续 x86 工作，签名优先推进。
 
 ## 产品完成度快照（2026-10-17 收盘）
 
@@ -37,7 +37,6 @@ AT-RENDER-003 的**路由判定**部分已验（端到端仍需真 x86 libass）
 **校验规则双向覆盖 15 条未覆盖 → 0**（AK17，`rule_coverage.py` 量出来的）。
 
 **当前主要未闭环项（含代码、验收和外部依赖）**：
-Authenticode 签名（需证书，用户 2026-10-17 明确暂缓）；
 AT-RENDER-003 的**x86 DLL 路由**（需真 x86 libass 样本）；
 第 7 层设备语料（需真机/播放器）；
 subset corpus 的 golden 图像比较（需固定语料字体，先撞许可审计）；
@@ -52,7 +51,7 @@ DirectWrite fallback 链（需 COM，ISSUES AG1）；真 minidump（把数据与
 - 输出 Profile 新增 TOML preset 导入/导出。使用 `core_model::preset` 的同一解析器与序列化器；遇到当前 GUI 不支持的帧率、渲染器或 PGS 参数时显示未应用提示；导出遇到时间变换时拒绝静默丢弃。
 - CLI 的 x86 provider 现在按 PE 架构寻找 `runtime-x86/subtitletool-render-host-x86.exe`，未找到时给出架构明确的错误；x64 与 x86 host 仍通过已有进程边界校验。`render-csri` 的 C ABI 布局断言改为按指针宽度验证后，`cargo build --target i686-pc-windows-msvc -p renderer-host --release` 通过。
 - 修复批处理直接在 CLI 进程打开 libass DLL 的越界行为。provider 版本当前标记为“未在 CLI 进程加载”，渲染缓存身份加入所选 host 的 SHA-256，避免不同 host 共用缓存。
-- 当前仍无经过来源/许可证审计的 x86 libass 及其 32 位依赖，因此 x86 真渲染与安装包分发未验收；Strict PGS 设备语料、DirectWrite fallback、字体 golden 图、OCR 与通用 Planner 仍有独立实现或外部验收条件。Authenticode 签名依用户先前决定暂缓。
+- 当前仍无经过来源/许可证审计的 x86 libass 及其 32 位依赖，因此 x86 真渲染与安装包分发未验收；Strict PGS 设备语料、DirectWrite fallback、字体 golden 图、OCR 与通用 Planner 仍有独立实现或外部验收条件。Authenticode 构建流程已接入，但须先取得并导入受信任代码签名证书。
 - 本轮核验通过：workspace 单元/集成测试、`clippy -D warnings`、串行 doctest、格式检查、x64 workspace Release 构建及 i686 renderer-host Release 构建。新便携包位于 `D:\rust\target\followup-portable-20261022\subtitletool-portable-20261022.zip`，SHA-256 为 `e28470fcced5ce69d03408b2cb0a3ca8978c1accbb8284d40a673cde55add3d7`；包内 CLI `doctor` 握手成功，真实 BDN/PNG 渲染成功，168 项 SHA-256 与 ZIP 读取核验通过。
 - 本机没有 Inno Setup 编译器，未重建安装器；`python tools/notices.py --check` 也未运行，当前 WindowsApps Python 启动别名无法启动 Python（退出码 9009）。
 
@@ -243,7 +242,7 @@ DirectWrite fallback 链（需 COM，ISSUES AG1）；真 minidump（把数据与
 
 - 项目面向 Windows x64，正式 Rust target 为 `x86_64-pc-windows-msvc`。
 - 当前交付形态是 CLI + Iced GUI + renderer host；安装包已交付，
-  Authenticode 签名暂缓（用户明确置），更新器为第一版（不出网）。
+  Authenticode 签名脚本已接入（签名证书尚缺），更新器为第一版（不出网）。
 - Cargo 工作区包含 `subtitletool-cli.exe`、`subtitletoolkit-gui.exe` 与 `subtitletool-render-host.exe`。renderer host 用于隔离 libass DLL。
 - `P0` 等级表示产品目标优先级，不表示该功能已交付。
 
@@ -290,14 +289,14 @@ DirectWrite fallback 链（需 COM，ISSUES AG1）；真 minidump（把数据与
 
 - CSRI/VSFilterMod provider 已实现并验收；x86 renderer host 可构建且路由判定已验；
   发行安装链（portable + Inno Setup）已交付。
-  **Authenticode 签名暂缓**（用户 2026-10-17 明确置）；libass DLL 已按官方包哈希核验并纳入两种安装产物，detached signature 未验证。
+  **Authenticode 签名需要受信任证书**；签署与 SignTool 验证已接入两种打包脚本，libass DLL 已按官方包哈希核验并纳入两种安装产物，detached signature 未验证。
 - 字体服务未使用 DirectWrite 作为权威 resolver；但已补 **GDI 权威交叉核对**
   （`font scan --json` 的 `cross_check`）：GDI 看得到而库里匹配不上的家族会逐个列出。
   DirectWrite 的 **fallback 链**仍未做（需 COM，ISSUES AG1）。
   字体子集正确性尚无复杂文字渲染语料。
 - PGS Basic 编码不等于 Strict Blu-ray 合规。PCS 帧率字段、palette range/matrix、ODS 图末标记尚无真盘/设备结论；当前 ffprobe 证据只覆盖 `.sup` 容器段布局与时钟。第 5 层的不变式取的是**必要条件**（不满足一定有问题），不是充分条件。
 - Strict validator 已实现第 1–6 层（含第 5 层解码器模型）；**第 7 层设备语料**仍未取得，因此 `strict_badge_allowed` 仍恒为 false（报告给出 `coverage_gap`）。第 5 层本身未含缓冲区占用曲线与 acquisition/seamless 分支。
-- 仓库已补根目录 MIT/Apache-2.0 license 正文（`LICENSE-MIT`、`LICENSE-APACHE`，2026-10-17）；portable 包可由 [tools/make_portable.ps1](../tools/README.md) 生成（含三个 exe、20 个 libass DLL、fontconfig 配置、`portable.flag`、`sbom.cdx.json`、逐包许可证材料与 `SHA256SUMS.txt`）。安装器由 [tools/make_installer.ps1](../tools/README.md) 生成，逐条验证用 `tools/verify_installer.ps1`。**Authenticode 签名仍未完成**；本次运行库 detached signature 未验证。
+- 仓库已补根目录 MIT/Apache-2.0 license 正文（`LICENSE-MIT`、`LICENSE-APACHE`，2026-10-17）；portable 包可由 [tools/make_portable.ps1](../tools/README.md) 生成（含三个 exe、20 个 libass DLL、fontconfig 配置、`portable.flag`、`sbom.cdx.json`、逐包许可证材料与 `SHA256SUMS.txt`）。安装器由 [tools/make_installer.ps1](../tools/README.md) 生成，逐条验证用 `tools/verify_installer.ps1`。Authenticode 签名流程已接入，但当前无受信任代码签名证书；本次运行库 detached signature 未验证。
 - 22 §1 日志文件已实现（`core_model::logging`，`tracing` + 按日轮转 + 启动清理，
   随 `DataDir` 落盘、便携包内自动进 `data/logs/`）；日志已进 `diagnose` 的诊断包。
   **22 §2 correlation id 已实现**（`J/O/R` 三层，日志与报告同一个值）。

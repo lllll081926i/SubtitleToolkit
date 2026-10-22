@@ -2,7 +2,7 @@
 
 SubtitleToolkit 是面向 Windows 的字幕转换与制作工具，提供 Rust CLI 和 Iced 桌面界面。它支持 SRT、ASS/SSA、PGS、BDN 工作流，处理时间、帧率、分辨率、HDR 颜色、字体和批量任务，并通过隔离的 renderer host 调用 libass。
 
-> **项目状态：开发预览版。** 核心转换、真实 libass 渲染、PGS/BDN 基础链路、GUI 设置与 TOML 预设导入/导出、便携包和 Inno Setup 安装器已实现。Authenticode 签名、x86 真实渲染、完整 Strict Blu-ray 设备验收及字体复杂脚本图像语料仍未完成。功能与验证边界见[当前状态](docs/STATUS.md)和[功能矩阵](docs/specs/03_FEATURE_MATRIX.md)。
+> **项目状态：开发预览版。** 核心转换、真实 libass 渲染、PGS/BDN 基础链路、GUI 设置与 TOML 预设导入/导出、便携包和 Inno Setup 安装器已实现。Authenticode 签名流程已接入，但需要受信任证书；x86 真实渲染、完整 Strict Blu-ray 设备验收及字体复杂脚本图像语料仍未完成。功能与验证边界见[当前状态](docs/STATUS.md)和[功能矩阵](docs/specs/03_FEATURE_MATRIX.md)。
 
 ## 功能
 

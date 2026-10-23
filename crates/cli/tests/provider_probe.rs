@@ -11,7 +11,7 @@
 //! （`third_party/` 下那两个）而不是构造名字 —— 构造的名字只能证明
 //! 代码没有 `match file_name`，证明不了它真的读了导出表。
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::Command;
 
 fn cli() -> PathBuf {
@@ -40,11 +40,7 @@ fn data(s: &str) -> serde_json::Value {
 }
 
 fn third_party(name: &str) -> Option<PathBuf> {
-    // 用例跑在 `target/<profile>/deps/`，仓库根在往上四层。
-    let mut p = std::env::current_exe().unwrap();
-    for _ in 0..4 {
-        p.pop();
-    }
+    let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let cand = p.join("third_party").join(name);
     cand.is_file().then_some(cand)
 }
@@ -201,8 +197,13 @@ fn a_relative_path_works() {
         return;
     };
     let dir = dll.parent().unwrap();
-    let (code, out) = run(&["provider", "probe", "libass-9.dll", "--json"]);
-    // 若当前目录不是 third_party 就会读不到 —— 那也算“逐行报错”而不是崩溃。
+    let output = Command::new(cli())
+        .current_dir(dir)
+        .args(["provider", "probe", "libass-9.dll", "--json"])
+        .output()
+        .unwrap();
+    let code = output.status.code().unwrap_or(-1);
+    let out = String::from_utf8_lossy(&output.stdout).to_string();
     assert!(code == 0, "{out}");
     let d = data(&out);
     assert_eq!(d["probed"], 1);
@@ -212,5 +213,4 @@ fn a_relative_path_works() {
         data(&out)["rows"][0]["usable_as_libass"],
         data(&out2)["rows"][0]["usable_as_libass"]
     );
-    let _ = Path::new(dir);
 }

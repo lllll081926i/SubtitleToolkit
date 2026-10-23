@@ -6,6 +6,8 @@ SubtitleToolkit 是面向 Windows 的字幕转换与制作工具，提供 Rust C
 
 ## 功能
 
+自动发版、Inno Setup 安装器、签名配置与本地打包见[发版操作](docs/development/RELEASE.md)。
+
 - 读取、转换和保留 ASS/SSA 与 SRT 字幕数据；调整时间、帧率、分辨率和 HDR 颜色。
 - 通过 libass 生成 BDN XML/PNG 或 PGS SUP，并使用独立 renderer host 隔离 native 渲染器。
 - 批量执行多输入、多 profile 任务；提供字体扫描、字体子集、MKV 辅助、配置预设和诊断包命令。

@@ -5,7 +5,7 @@ $package = (Resolve-Path -LiteralPath $PackageDir).Path
 $scratch = Join-Path ([IO.Path]::GetTempPath()) ('stk-package-check-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $scratch | Out-Null
 $saved = @{}
-foreach ($key in @('STK_DATA_DIR', 'STK_LIBASS_DLL', 'STK_RENDERER_HOST', 'STK_FONTS_DIR')) {
+foreach ($key in @('STK_DATA_DIR', 'STK_LIBASS_DLL', 'STK_RENDERER_HOST', 'STK_FONTS_DIR', 'FONTCONFIG_PATH', 'FONTCONFIG_FILE')) {
     $saved[$key] = [Environment]::GetEnvironmentVariable($key, 'Process')
     Set-Item -LiteralPath ('Env:' + $key) -Value $null
 }

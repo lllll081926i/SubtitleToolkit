@@ -242,6 +242,22 @@ pub fn run_profiles<F>(
 where
     F: Fn(&Pools, &OutputProfile) -> ProfileOutcome + Sync,
 {
+    run_profiles_observed(job, pools, cancel, budget, f, &|_, _| {})
+}
+
+/// 每项任务结束后立即通知观察者，包括已捕获的崩溃结果。
+pub fn run_profiles_observed<F, O>(
+    job: &Job,
+    pools: &Pools,
+    cancel: &CancelToken,
+    budget: &Mutex<CrashBudget>,
+    f: &F,
+    observe: &O,
+) -> Executed
+where
+    F: Fn(&Pools, &OutputProfile) -> ProfileOutcome + Sync,
+    O: Fn(&OutputProfile, &ProfileOutcome) + Sync,
+{
     let n = job.profiles.len();
     let slots: Mutex<Vec<Option<ProfileOutcome>>> = Mutex::new((0..n).map(|_| None).collect());
     let next = Arc::new(AtomicUsize::new(0));
@@ -279,6 +295,7 @@ where
                         }
                         crash_outcome(profile, i, profiles.len(), action)
                     });
+                    observe(profile, &outcome);
                     slots.lock().unwrap_or_else(|e| e.into_inner())[i] = Some(outcome);
                 });
             }
@@ -381,6 +398,40 @@ mod tests {
             path: format!("{}.out", prof.name),
             sha256: "00".repeat(32),
         }
+    }
+
+    #[test]
+    fn progress_arrives_before_all_profiles_finish() {
+        let job = job_of(vec![profile("first", 1280), profile("second", 1280)]);
+        let pools = Pools::new(2, 1, 1, 1).unwrap();
+        let cancel = CancelToken::new();
+        let budget = Mutex::new(CrashBudget::new(false));
+        let (tx, rx) = std::sync::mpsc::channel();
+        let rx = Mutex::new(rx);
+        let observed = AtomicUsize::new(0);
+        let result = run_profiles_observed(
+            &job,
+            &pools,
+            &cancel,
+            &budget,
+            &|_, p| {
+                if p.name == "second" {
+                    rx.lock()
+                        .unwrap()
+                        .recv_timeout(std::time::Duration::from_secs(5))
+                        .expect("前一项的进度必须在慢任务结束前到达");
+                }
+                ok(p)
+            },
+            &|p, _| {
+                observed.fetch_add(1, Ordering::SeqCst);
+                if p.name == "first" {
+                    tx.send(()).unwrap();
+                }
+            },
+        );
+        assert_eq!(observed.load(Ordering::SeqCst), 2);
+        assert!(result.outcomes.iter().all(|(_, o)| o.is_success()));
     }
 
     #[test]

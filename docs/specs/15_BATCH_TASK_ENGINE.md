@@ -5,6 +5,12 @@
 ## 1. Job
 `Job = InputSet + Pipeline + Vec<OutputProfile> + OutputPolicy + RuntimePolicy`。
 
+JSON spec 可用 `only_pairs: [{"input":"a.ass","profile":"sup"}]` 限制精确执行配对。GUI 重试保留原始 roots、输出目录与 Profile 快照，只通过配对集合选择失败项；保留 roots 可确保同名输入的路径哈希文件名保持稳定。
+
+Profile 支持 `offset_ms` 或成对的 `speed_from`/`speed_to`，以及 `hdr_percent` 或 `hdr_reference_nits`。每组互斥。`canvas: "original"` 逐输入读取 ASS PlayRes；缺失时明确失败。SRT 输出不要求画布，SRT 输入不能应用 HDR。
+
+`run_profiles_observed` 在各 Profile 完成时立即调用观察者。batch 进度接收端通过互斥锁串行调用，因此 `BatchProgressSink` 要求 `Send`；GUI 用流式 Task 接收事件。报告排序不决定进度发送顺序。
+
 ## 2. 输入发现
 - file list；
 - folder；

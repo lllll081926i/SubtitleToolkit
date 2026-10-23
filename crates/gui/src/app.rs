@@ -542,8 +542,7 @@ impl SubtitleApp {
                         profile: profile.clone(),
                     })
                     .collect();
-                spec.roots
-                    .retain(|input| targets.iter().any(|(want, _)| want == input));
+                // 保留原始输入全集以保持同名文件的路径哈希命名稳定；only_pairs 限制执行范围。
                 spec.profiles
                     .retain(|profile| targets.iter().any(|(_, want)| want == &profile.name));
                 if spec.roots.is_empty() || spec.profiles.is_empty() {

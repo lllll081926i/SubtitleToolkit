@@ -375,7 +375,7 @@ mod background_tests {
     #[test]
     fn inner_same_color_pixels_are_not_erased() {
         let mut pixels = vec![0u8; 5 * 5 * 4];
-        for pixel in pixels.chunks_exact_mut(4) {
+        for pixel in pixels.chunks_mut(4) {
             pixel[3] = 255;
         }
         // 白色封闭环包围中央黑点：旧版全局同色抠除会错误删除它。

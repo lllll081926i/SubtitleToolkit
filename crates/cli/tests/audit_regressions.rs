@@ -114,6 +114,20 @@ fn equal_stems_from_different_directories_do_not_share_names() {
         "same stem must produce independent files: {names:?}"
     );
     assert_ne!(names[0], names[1]);
+    execute(
+        &dir,
+        serde_json::json!({
+            "id":"names","roots":["season1/episode.ass","season2/episode.ass"],
+            "video_association":false,
+            "profiles":[{"name":"srt","format":"srt"}],
+            "only_pairs":[{"input":"season1/episode.ass","profile":"srt"}],
+            "output":{"dir":"out","template":"{stem}.{profile}.{ext}"}
+        }),
+    );
+    assert!(
+        !dir.join("out/episode.srt.srt").exists(),
+        "精确重试必须沿用原来的哈希文件名"
+    );
     std::fs::remove_dir_all(&dir).ok();
 }
 

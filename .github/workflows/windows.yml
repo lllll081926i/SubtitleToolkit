@@ -15,30 +15,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  format_branch:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/fix/2026-10-22-audit-remediation'
-    runs-on: windows-2022
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt
-      - name: Commit rustfmt changes to review branch
-        shell: pwsh
-        run: |
-          cargo fmt --all
-          git add -- crates/
-          git diff --cached --quiet
-          if ($LASTEXITCODE -ne 0) {
-            git config user.name 'github-actions[bot]'
-            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-            git commit -m 'style: rustfmt audit remediation'
-            git push origin HEAD:fix/2026-10-22-audit-remediation
-          }
   check:
-    if: github.event_name == 'pull_request'
     name: Windows x64 workspace
     runs-on: windows-2022
     timeout-minutes: 70
@@ -49,9 +26,7 @@ jobs:
           targets: x86_64-pc-windows-msvc
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
-      - name: Format
-        run: cargo fmt --all
-      - name: Recheck formatted workspace
+      - name: Check format
         run: cargo fmt --all -- --check
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings

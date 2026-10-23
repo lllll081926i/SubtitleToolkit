@@ -33,11 +33,11 @@ pub use job::ProfileOutcome;
 pub use jobstate::JobState;
 pub use jobstate::Reuse;
 pub use jobstate::StageRecord;
-pub use runner::run_profiles;
 pub use runner::Executed;
 pub use runner::Permit;
 pub use runner::Pools;
 pub use runner::Stage;
+pub use runner::{run_profiles, run_profiles_observed};
 
 /// 命名模板 token：`{stem}` `{profile}` `{width}` `{height}` `{fps}` `{hdr}` `{ext}`（15 §5）。
 #[derive(Clone, Debug, PartialEq, Eq)]

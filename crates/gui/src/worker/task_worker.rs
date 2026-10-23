@@ -57,7 +57,7 @@ pub fn run(
     spec: &Spec,
     output_dir: &Path,
     cancel: Arc<AtomicBool>,
-    mut emit: impl FnMut(Progress),
+    mut emit: impl FnMut(Progress) + Send,
 ) -> Result<(), (String, String, String)> {
     tracing::info!(
         job_id = %spec.id,

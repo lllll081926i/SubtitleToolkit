@@ -595,14 +595,15 @@ fn prepare_input(input: &Path, resolved: &Resolved) -> Result<Option<PreparedInp
     std::fs::create_dir_all(&dir).map_err(StkError::from)?;
     let path = dir.join(format!("profile-{}-{seq}.{extension}", std::process::id()));
     // create_new 防止可预测的临时文件名覆盖旧文件或跟随本地符号链接。
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .map_err(StkError::from)?;
     let stage = PreparedInput { path };
     {
         use std::io::Write;
-        let mut file = std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&stage.path)
-            .map_err(StkError::from)?;
+        let mut file = file;
         file.write_all(&content).map_err(StkError::from)?;
         file.sync_all().map_err(StkError::from)?;
     }
@@ -671,15 +672,16 @@ pub fn run_batch_with_cancel(
 
 /// 每个输入的 Profile 完成后立即推送状态；GUI 通过流式 Task 渲染中间进度。
 /// Progress sink type kept named so Clippy and downstream adapters share one contract.
-pub type BatchProgressSink<'a> = dyn FnMut(&str, &str, &str, &str) + 'a;
+pub type BatchProgressSink<'a> = dyn FnMut(&str, &str, &str, &str) + Send + 'a;
 
 pub fn run_batch_with_progress(
     inv: &Invocation,
     spec_path: &Path,
     cmd: &str,
     external_cancel: Option<&CancelToken>,
-    mut on_row: Option<&mut BatchProgressSink<'_>>,
+    on_row: Option<&mut BatchProgressSink<'_>>,
 ) -> Result<Envelope> {
+    let on_row = Mutex::new(on_row);
     let started = std::time::Instant::now();
     let spec = load_spec(spec_path)?;
     let resolved = resolve_profiles(&spec)?;
@@ -983,8 +985,12 @@ pub fn run_batch_with_progress(
         let skipped_ref = &skipped;
         let state_ref = &state;
         let dry = inv.dry_run;
-        let executed =
-            task_engine::run_profiles(&job, &pools, &cancel, &budget, &|_pools, prof| {
+        let executed = task_engine::run_profiles_observed(
+            &job,
+            &pools,
+            &cancel,
+            &budget,
+            &|_pools, prof| {
                 let idx = resolved
                     .iter()
                     .position(|r| r.profile.name == prof.name)
@@ -1101,7 +1107,14 @@ pub fn run_batch_with_progress(
                         message: e.title.clone(),
                     },
                 }
-            });
+            },
+            &|profile, outcome| {
+                if let Some(callback) = on_row.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+                    let (status, detail) = describe(outcome);
+                    callback(&input_key, &profile.name, &status, &detail);
+                }
+            },
+        );
         // 落盘的产物才进恢复状态（15 §7）
         if !dry {
             for (name, o) in &executed.outcomes {
@@ -1149,8 +1162,10 @@ pub fn run_batch_with_progress(
                     "批处理 profile 完成"
                 ),
             }
-            if let Some(callback) = &mut on_row {
-                callback(&input_key, name, &status, &detail);
+            if matches!(o, ProfileOutcome::Cancelled { stage } if stage == "not-started") {
+                if let Some(callback) = on_row.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+                    callback(&input_key, name, &status, &detail);
+                }
             }
             lines.push(ProfileLine {
                 input: input.display().to_string(),

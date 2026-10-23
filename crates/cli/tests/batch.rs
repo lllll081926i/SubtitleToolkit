@@ -385,7 +385,7 @@ fn batch_with_render_profile_reports_the_renderer_identity() {
             .collect::<String>()
     };
     assert_eq!(sha, expect, "报告里的哈希必须是真正那个 DLL 的哈希");
-    assert!(r["version"].as_str().unwrap_or_default().starts_with("0x"));
+    assert_eq!(r["version"], "unknown (not loaded in CLI process)");
     std::fs::remove_dir_all(&dir).ok();
 }
 

@@ -501,11 +501,11 @@ fn original_canvas(input: &Path, target: FormatKind) -> Result<Canvas> {
     let loaded = pipeline::load_text(input)?;
     let document = codec_ass::AssDocument::parse(&loaded.text);
     let (width, height) = document.play_res().ok_or_else(|| {
-        cli_err(220, "输入没有 PlayResX/PlayResY，无法保持原始画布")
+        cli_err(5301, "输入没有 PlayResX/PlayResY，无法保持原始画布")
             .with_detail(input.display().to_string())
     })?;
-    let w = u32::try_from(width).map_err(|_| cli_err(220, "原始画布宽度非法"))?;
-    let h = u32::try_from(height).map_err(|_| cli_err(220, "原始画布高度非法"))?;
+    let w = u32::try_from(width).map_err(|_| cli_err(5301, "原始画布宽度非法"))?;
+    let h = u32::try_from(height).map_err(|_| cli_err(5301, "原始画布高度非法"))?;
     Canvas::new(w, h)
 }
 
@@ -533,10 +533,10 @@ fn prepare_input(input: &Path, resolved: &Resolved) -> Result<Option<PreparedInp
         return Ok(None);
     }
     if p.offset_ms.is_some() && (p.speed_from.is_some() || p.speed_to.is_some()) {
-        return Err(cli_err(221, "不能同时指定时间偏移和变速"));
+        return Err(cli_err(5302, "不能同时指定时间偏移和变速"));
     }
     if p.hdr_percent.is_some() && p.hdr_reference_nits.is_some() {
-        return Err(cli_err(221, "不能同时指定两种 HDR 映射"));
+        return Err(cli_err(5302, "不能同时指定两种 HDR 映射"));
     }
     let loaded = pipeline::load_text(input)?;
     let input_kind = format_detect::probe_file(input)?.format;
@@ -547,7 +547,7 @@ fn prepare_input(input: &Path, resolved: &Resolved) -> Result<Option<PreparedInp
         let to = Fps::from_label(to)?;
         Some(TimeConfig::speed_scale(from, to))
     } else if p.speed_from.is_some() || p.speed_to.is_some() {
-        return Err(cli_err(221, "变速必须同时指定源与目标帧率"));
+        return Err(cli_err(5302, "变速必须同时指定源与目标帧率"));
     } else {
         None
     };
@@ -555,7 +555,7 @@ fn prepare_input(input: &Path, resolved: &Resolved) -> Result<Option<PreparedInp
         Some(HdrSettings::percentage(
             percent
                 .checked_mul(100)
-                .ok_or_else(|| cli_err(221, "HDR 百分比溢出"))?,
+                .ok_or_else(|| cli_err(5302, "HDR 百分比溢出"))?,
         )?)
     } else if let Some(nits) = p.hdr_reference_nits {
         Some(HdrSettings::reference_white(nits)?)
@@ -576,7 +576,7 @@ fn prepare_input(input: &Path, resolved: &Resolved) -> Result<Option<PreparedInp
         }
         format_detect::SubtitleFormat::Srt => {
             if settings.is_some() {
-                return Err(cli_err(222, "SRT 不包含 HDR 颜色属性，不能执行 HDR 映射"));
+                return Err(cli_err(5303, "SRT 不包含 HDR 颜色属性，不能执行 HDR 映射"));
             }
             let (subtitle, _) = codec_srt::parse(&loaded.bytes)?;
             let subtitle = if let Some(cfg) = time {
@@ -586,7 +586,7 @@ fn prepare_input(input: &Path, resolved: &Resolved) -> Result<Option<PreparedInp
             };
             (codec_srt::write(&subtitle)?, "srt")
         }
-        _ => return Err(cli_err(222, "此输入格式不支持 batch 时间/HDR 变换")),
+        _ => return Err(cli_err(5303, "此输入格式不支持 batch 时间/HDR 变换")),
     };
     // 不能修改原文件；temp 文件在输出目录外，且带进程内唯一序号。
     static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
@@ -791,12 +791,12 @@ pub fn run_batch_with_progress(
             Err(error) => {
                 let quarantine = state_path.with_extension("jobstate.corrupt");
                 if quarantine.exists() {
-                    return Err(cli_err(219, "旧恢复状态损坏，诊断副本已存在")
+                    return Err(cli_err(5300, "旧恢复状态损坏，诊断副本已存在")
                         .with_detail(quarantine.display().to_string())
                         .with_action("请先备份并检查损坏的恢复文件，再重新执行"));
                 }
                 std::fs::rename(&state_path, &quarantine).map_err(|e| {
-                    cli_err(219, "无法保存损坏的恢复状态")
+                    cli_err(5300, "无法保存损坏的恢复状态")
                         .with_detail(format!("{}: {e}", state_path.display()))
                 })?;
                 recovery_warning = Some(format!(

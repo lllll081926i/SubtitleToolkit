@@ -44,6 +44,7 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
+          shared-key: windows-x64-release-v1
           cache-on-failure: true
       - name: Check format
         run: cargo fmt --all -- --check
@@ -96,5 +97,6 @@ jobs:
           name: windows-x64-diagnostics
           path: |
             ${{ runner.temp }}/stk-package-check-*/**
+            target/tmp/stk-package-check-*/**
             target/gate/**
           if-no-files-found: ignore

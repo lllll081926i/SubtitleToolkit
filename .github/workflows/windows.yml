@@ -35,6 +35,7 @@ jobs:
             "$key=$([Environment]::GetEnvironmentVariable($key))" >> $env:GITHUB_ENV
           }
           "STK_LIBASS_DLL=$env:GITHUB_WORKSPACE/third_party/libass-9.dll" >> $env:GITHUB_ENV
+          "STK_RENDERER_HOST=$env:CARGO_TARGET_DIR/debug/subtitletool-render-host.exe" >> $env:GITHUB_ENV
           'STK_REQUIRE_LIBASS=1' >> $env:GITHUB_ENV
           "FONTCONFIG_PATH=$env:GITHUB_WORKSPACE/third_party/etc/fonts" >> $env:GITHUB_ENV
       - uses: dtolnay/rust-toolchain@stable
@@ -49,7 +50,10 @@ jobs:
       - name: Clippy
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
       - name: Unit and integration tests
-        run: cargo test --locked --workspace --lib --tests --no-fail-fast
+        run: |
+          cargo build --locked -p renderer-host
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked --workspace --lib --tests --no-fail-fast
       - name: Doctests
         run: cargo test --locked --workspace --doc --no-fail-fast -j 1
       - name: Build release executables

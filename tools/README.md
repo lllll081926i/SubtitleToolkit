@@ -62,7 +62,7 @@ $env:STK_SIGNING_CERT_THUMBPRINT = '证书 SHA-1 指纹'
 .\tools\make_installer.ps1             # 构建后打包
 .\tools\make_installer.ps1 -NoBuild    # 只用现有产物
 .\tools\make_installer.ps1 -NoBuild -Sign
-pwsh -NoProfile -File .\tools\verify_installer.ps1   # 把 28 §3 跑一遍
+pwsh -NoProfile -File .\tools\verify_installer.ps1   # 仅 GitHub Actions 临时 runner
 ```
 
 公开开源项目可以申请 [SignPath Foundation](https://signpath.org/) 的免费代码签名。申请获批后仍需在 GitHub/SignPath 配置项目、策略和凭据；本地签名脚本不代替这些外部配置。

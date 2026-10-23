@@ -104,7 +104,11 @@ fn pe_with_exports(machine: u16, names: &[&str]) -> Vec<u8> {
 }
 
 fn run(args: &[&str]) -> (String, String, Option<i32>) {
-    let out = Command::new(cli()).args(args).output().expect("跑 CLI");
+    let out = Command::new(cli())
+        .args(args)
+        .env_remove("STK_RENDERER_HOST")
+        .output()
+        .expect("跑 CLI");
     (
         String::from_utf8_lossy(&out.stdout).to_string(),
         String::from_utf8_lossy(&out.stderr).to_string(),

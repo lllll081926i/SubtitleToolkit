@@ -4,8 +4,8 @@
 ;   ISCC.exe /DStageDir=<打包目录> /DAppVersion=<版本> /DOutDir=<输出目录> subtitletool.iss
 ;
 ; 立场（写清楚，避免把"能编译出 setup.exe"当成"已发布"）：
-; * 本脚本**不做 Authenticode 签名**（28 §5 仍未实现），所以产出的 setup.exe
-;   在 SmartScreen 上会有警告。这不是缺陷，是未完成项，不许在文档里含糊过去。
+; * Authenticode 签名由 tools/make_installer.ps1 的 -Sign 参数启用。
+;   未配置受信任证书时，产物保持未签名，并在发布清单中明确标记。
 ; * 安装包包含打包脚本逐项校验的 libass UCRT64 运行库及许可证材料。
 ; * 安装器与便携包必须收**同一批文件**：两处各列一份清单，迟早会漂移，
 ;   而"安装版能跑、便携版缺文件"这类缺陷没人会立刻发现。清单由

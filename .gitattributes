@@ -15,3 +15,6 @@ tests/fixtures/** -text
 *.srt -text
 *.sup -text
 *.bdn.xml -text
+# 运行库配置按原始字节锁定 SHA-256，禁止 Git 改写行尾。
+third_party/etc/fonts/** -text
+third_party/share/fontconfig/** -text

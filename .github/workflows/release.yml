@@ -3,6 +3,12 @@ on:
   push:
     tags: ['v*']
   workflow_dispatch:
+    inputs:
+      validation:
+        description: 'package 只构建与验收安装包；full 额外执行全量测试'
+        type: choice
+        options: [package, full]
+        default: package
 permissions:
   contents: read
 concurrency:
@@ -11,6 +17,8 @@ concurrency:
 jobs:
   validate:
     uses: ./.github/workflows/windows.yml
+    with:
+      validation: ${{ github.event_name == 'push' && 'full' || inputs.validation }}
     secrets: inherit
   draft:
     if: github.ref_type == 'tag'

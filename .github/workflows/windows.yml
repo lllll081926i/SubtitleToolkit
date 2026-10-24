@@ -2,22 +2,36 @@ name: Windows Rust checks
 
 on:
   workflow_call:
+    inputs:
+      validation:
+        type: string
+        default: quick
     secrets:
       STK_SIGNING_PFX_BASE64:
         required: false
       STK_SIGNING_PFX_PASSWORD:
         required: false
   push:
-    branches: [main, "fix/**"]
+    branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      validation:
+        description: '快速检查、仅打包验收或完整发版检查'
+        type: choice
+        options: [quick, package, full]
+        default: quick
 
 permissions:
   contents: read
 
+env:
+  STK_VALIDATION: ${{ inputs.validation || 'quick' }}
+
 # 同一分支的新提交替代旧检查；标签发版不与分支检查相互取消。
 concurrency:
-  group: windows-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}
+  group: windows-${{ github.workflow }}-${{ github.head_ref || github.ref_name }}-${{ inputs.validation || 'quick' }}
   cancel-in-progress: true
 
 jobs:
@@ -30,6 +44,7 @@ jobs:
       - name: 初始化构建与真实渲染环境
         shell: pwsh
         run: |
+          if ($env:STK_VALIDATION -notin @('quick', 'package', 'full')) { throw '未知的验证模式' }
           . ./tools/set_build_cache.ps1
           foreach ($key in @('CARGO_HOME', 'CARGO_TARGET_DIR', 'TEMP', 'TMP')) {
             "$key=$([Environment]::GetEnvironmentVariable($key))" >> $env:GITHUB_ENV
@@ -44,25 +59,33 @@ jobs:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
         with:
-          shared-key: windows-x64-release-v1
+          shared-key: windows-x64-release-v2
           cache-on-failure: true
       - name: Check format
         run: cargo fmt --all -- --check
       - name: Clippy
+        if: env.STK_VALIDATION != 'package'
         run: cargo clippy --locked --workspace --all-targets -- -D warnings
+      - name: 快速核心回归
+        if: env.STK_VALIDATION == 'quick'
+        run: |
+          cargo test --locked -p task-engine -p renderer-host --lib
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test --locked -p cli --test audit_regressions
       - name: Unit and integration tests
+        if: env.STK_VALIDATION == 'full'
         run: |
           cargo build --locked -p renderer-host
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test --locked --workspace --lib --tests --no-fail-fast
       - name: Doctests
+        if: env.STK_VALIDATION == 'full'
         run: cargo test --locked --workspace --doc --no-fail-fast -j 1
       - name: Build release executables
+        if: env.STK_VALIDATION != 'quick'
         run: cargo build --locked --workspace --release
-      - name: Audit regressions
-        run: cargo test -p cli --test audit_regressions -- --nocapture
       - name: 导入可选签名证书
-        if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+        if: env.STK_VALIDATION != 'quick' && github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
         shell: pwsh
         env:
           PFX_BASE64: ${{ secrets.STK_SIGNING_PFX_BASE64 }}
@@ -76,6 +99,7 @@ jobs:
           try { $store.Open('ReadWrite'); $store.Add($cert) } finally { $store.Close() }
           "STK_SIGNING_CERT_THUMBPRINT=$($cert.Thumbprint)" >> $env:GITHUB_ENV
       - name: 构建并验证便携包和 Inno Setup 安装包
+        if: env.STK_VALIDATION != 'quick'
         shell: pwsh
         run: |
           $iscc = ./tools/install_innosetup.ps1
@@ -85,6 +109,7 @@ jobs:
           if ($setup.Count -ne 1) { throw '安装器产物数量必须为 1' }
           ./tools/verify_installer.ps1 -Setup ($setup[0].FullName)
       - name: 上传已验证发布资产
+        if: env.STK_VALIDATION != 'quick'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: windows-x64-release

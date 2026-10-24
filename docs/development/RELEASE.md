@@ -4,11 +4,15 @@
 
 ## 自动验证
 
-`.github/workflows/windows.yml` 在 PR、main 和 fix 分支运行，也供发版 workflow 复用。它执行格式检查、Clippy、工作区单元/集成测试、串行 doctest、Release 构建，再生成便携包和 Inno Setup 安装包。
+`.github/workflows/windows.yml` 在 PR 和 main 上执行快速检查：格式检查、Clippy、task-engine/renderer-host 单元测试和 CLI 审计回归。普通提交不再运行全量测试、Release 构建或安装器验收。仅保留 PR 与 main 两类触发，避免同一 PR 分支提交重复执行。
+
+发版 workflow 复用该文件，并选择验证模式。版本标签执行 `full`：格式检查、Clippy、工作区单元/集成测试、串行 doctest、Release 构建和安装器验收。手动运行默认选择 `package`：仅做格式检查、Release 构建和包内转换、安装/卸载验收；需要完整复查时再选择 `full`。完整测试已经包含 CLI 审计回归，不再单独重复运行。
 
 运行库测试启用真实 libass，缺失时失败。解压后的便携包和实际安装后的目录必须通过全部文件 SHA-256、宿主握手、ASS→BDN/PNG、ASS→SUP 和 SUP Standard 校验。安装器测试在 GitHub 临时 Windows runner 中验证静默安装、关联默认关闭、卸载保留/删除数据。all-users 仍只有静态声明检查，不代表真实 UAC 验收。
 
-测试完成后，Actions 的 `windows-x64-release` 资产包含：
+PR 分支需要单独检查安装包时，可手动运行 `Windows Rust checks`，选择该分支和 `package` 模式。它与该分支的快速检查互不取消。
+
+`package` 或 `full` 验收完成后，Actions 的 `windows-x64-release` 资产包含：
 
 - `SubtitleToolkit-<版本>-windows-x64-portable.zip`
 - `SubtitleToolkit-<版本>-setup.exe`

@@ -9,6 +9,9 @@ Cargo 配置将编译子进程的临时目录固定为仓库 `target/tmp/`。初
 | 工具 | 用途 |
 |---|---|
 | `set_build_cache.ps1` | 初始化开发会话的非 C 盘缓存与临时目录 |
+| `make_release.ps1` | 统一生成便携包、Inno Setup 安装器和发布校验和；验证解压包的真实转换 |
+| `install_innosetup.ps1` | 下载固定版本 Inno Setup，检查 SHA-256 后安装编译器 |
+| `test_distribution.ps1` | 核对软件包文件并用包内程序执行 BDN/SUP 转换 |
 | `make_portable.ps1` | 把 release 产物打成 portable zip；可用 `-Sign` 签署包内项目可执行文件 |
 | `make_installer.ps1` | 用 Inno Setup 编出安装器；可用 `-Sign` 签署项目可执行文件和安装器 |
 | `sign_authenticode.ps1` | 用 Windows SDK SignTool 签署并验证 Authenticode 文件签名 |
@@ -59,7 +62,7 @@ $env:STK_SIGNING_CERT_THUMBPRINT = '证书 SHA-1 指纹'
 .\tools\make_installer.ps1             # 构建后打包
 .\tools\make_installer.ps1 -NoBuild    # 只用现有产物
 .\tools\make_installer.ps1 -NoBuild -Sign
-pwsh -NoProfile -File .\tools\verify_installer.ps1   # 把 28 §3 跑一遍
+pwsh -NoProfile -File .\tools\verify_installer.ps1   # 仅 GitHub Actions 临时 runner
 ```
 
 公开开源项目可以申请 [SignPath Foundation](https://signpath.org/) 的免费代码签名。申请获批后仍需在 GitHub/SignPath 配置项目、策略和凭据；本地签名脚本不代替这些外部配置。
@@ -69,8 +72,7 @@ pwsh -NoProfile -File .\tools\verify_installer.ps1   # 把 28 §3 跑一遍
 的落法与验证见 [28 §3](../docs/development/28_WINDOWS_BUILD_RELEASE.md) 与
 [安装器裁决](../docs/reviews/2026-10-17-windows-installer.md)。
 
-`verify_installer.ps1` 只写 `target\tmp\installer-verify-<随机>`、`HKCU` 下相关键，
-并会**备份并恢复** `%LOCALAPPDATA%\subtitletool` —— 开发机上那份可能是你真正在用的数据。
+`verify_installer.ps1` 只允许在 GitHub Actions 临时 Windows runner 中运行。它会改写测试账户的文件关联和用户数据，禁止在日常开发账户运行。
 
 边界（不要把它们当成已完成）：
 

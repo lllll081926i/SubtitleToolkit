@@ -23,11 +23,8 @@ use crate::state::profile::{CanvasMode, HdrMode, OutputProfile, TargetFormat, Ti
 
 /// 画布模式 → spec 的 `WxH` 字符串。
 ///
-/// `KeepOriginal` 落到什么值是个**必须交代清楚**的选择：spec 里 canvas 是一个具体尺寸，
-/// 没有"保持原样"这个取值。这里用 1920x1080（这是脚本 PlayRes 与 BDN/SUP 的常见基准），
-/// 并在 `notes` 里把这件事说出来——静默替换成某个数字，用户改天发现输出被改过大小，
-/// 只会以为是软件的 bug。
-pub const KEEP_ORIGINAL_CANVAS: &str = "1920x1080";
+/// 使用明确的 original sentinel：batch 会逐输入读取真实 PlayRes。
+pub const KEEP_ORIGINAL_CANVAS: &str = "original";
 
 fn canvas_string(c: &CanvasMode) -> String {
     match c {
@@ -69,39 +66,21 @@ pub fn compile_profile(p: &OutputProfile) -> CompiledProfile {
 }
 
 pub fn compile_profile_with_fps(p: &OutputProfile, default_fps: &str) -> CompiledProfile {
-    let mut notes = Vec::new();
+    let notes = Vec::new();
 
-    // 时间轴调整与 HDR：spec 里没有对应字段（15 §1 的 profile 只有 format/canvas/fps/
-    // exact_colors/min_axis/default_font）。与其假装参数生效，不如明确说出来。
-    // 用户想改时间轴应该走 `time` 命令或先手工处理输入——那是**改内容**的动作，
-    // 混进批量导出里会让人分不清"我导出的到底是哪一版"。
-    match p.time_adjust {
-        TimeAdjustMode::None => {}
-        TimeAdjustMode::OffsetMs(ms) => notes.push(format!(
-            "时间轴偏移 {ms} ms 未应用：batch spec 没有该字段，请先用 time 命令处理输入"
-        )),
-        TimeAdjustMode::SpeedScale { from, to } => notes.push(format!(
-            "变速 {} -> {} 未应用：batch spec 没有该字段，请先用 time 命令处理输入",
-            from.to_f64(),
-            to.to_f64(),
-        )),
-    }
-    match p.hdr {
-        HdrMode::Sdr => {}
-        HdrMode::Percentage(pct) => notes.push(format!(
-            "HDR 兼容减半 {pct}% 未应用：batch spec 没有该字段，请先用 hdr 命令处理输入"
-        )),
-        HdrMode::ReferenceWhite(nits) => notes.push(format!(
-            "HDR 参考白 {nits} nit 未应用：batch spec 没有该字段，请先用 hdr 命令处理输入"
-        )),
-    }
-    if matches!(p.canvas, CanvasMode::KeepOriginal) {
-        notes.push(format!(
-            "画布选了\"保持脚本原始尺寸\"，而 batch spec 的 canvas 必须是具体尺寸；\
-             本次按 {KEEP_ORIGINAL_CANVAS} 处理"
-        ));
-    }
-
+    // 时间与 HDR 作为可重放字段写入 batch spec，由 CLI 在渲染前真实应用。
+    let (offset_ms, speed_from, speed_to) = match p.time_adjust {
+        TimeAdjustMode::None => (None, None, None),
+        TimeAdjustMode::OffsetMs(ms) => (Some(ms), None, None),
+        TimeAdjustMode::SpeedScale { from, to } => {
+            (None, Some(from.to_string()), Some(to.to_string()))
+        }
+    };
+    let (hdr_percent, hdr_reference_nits) = match p.hdr {
+        HdrMode::Sdr => (None, None),
+        HdrMode::Percentage(pct) => (Some(pct), None),
+        HdrMode::ReferenceWhite(nits) => (None, Some(nits)),
+    };
     CompiledProfile {
         spec: SpecProfile {
             name: p.name.clone(),
@@ -116,6 +95,11 @@ pub fn compile_profile_with_fps(p: &OutputProfile, default_fps: &str) -> Compile
             // bdn：与 CLI 单命令默认一致（0 = 不过滤）
             min_axis: 0,
             default_font: None,
+            offset_ms,
+            speed_from,
+            speed_to,
+            hdr_percent,
+            hdr_reference_nits,
         },
         notes,
     }
@@ -177,6 +161,7 @@ pub fn compile_spec_with_fps(
         include: default_includes(),
         exclude: default_excludes(),
         profiles: compiled,
+        only_pairs: Vec::new(),
         output: SpecOutput {
             dir: Some(output_dir.display().to_string()),
             template: template.to_string(),
@@ -275,7 +260,7 @@ mod tests {
         assert_eq!(canvas_string(&CanvasMode::Uhd2160), "3840x2160");
         assert_eq!(canvas_string(&CanvasMode::Hd720), "1280x720");
         assert_eq!(canvas_string(&CanvasMode::Custom(2560, 1440)), "2560x1440");
-        // KeepOriginal 没有对应取值，必须落到一个具体数字且**说出来**
+        // KeepOriginal 是真实的 original sentinel，交由 batch 逐文件决定。
         assert_eq!(
             canvas_string(&CanvasMode::KeepOriginal),
             KEEP_ORIGINAL_CANVAS
@@ -291,65 +276,41 @@ mod tests {
             custom_suffix: String::new(),
         };
         let c = compile_profile(&p);
-        assert!(
-            c.notes.iter().any(|n| n.contains("保持脚本原始尺寸")),
-            "换个画布就必须说清楚：{:?}",
-            c.notes
-        );
+        assert_eq!(c.spec.canvas, "original");
+        assert!(c.notes.is_empty());
     }
 
-    /// 时间轴与 HDR 参数在 spec 里没有落点。**必须报出来**，
-    /// 不能让用户以为改了参数却没生效还看不出来。
+    /// 时间与 HDR 参数必须写入可重放的 batch spec。
     #[test]
     fn unsupported_profile_settings_are_reported_not_silently_dropped() {
         let mut p = OutputProfile::default_bdn(1);
         p.time_adjust = TimeAdjustMode::OffsetMs(1000);
-        p.hdr = HdrMode::ReferenceWhite(203);
+        p.hdr = HdrMode::ReferenceWhite(100);
         let c = compile_profile(&p);
+        assert_eq!(c.spec.offset_ms, Some(1000));
+        assert_eq!(c.spec.hdr_reference_nits, Some(100));
         assert!(
-            c.notes
-                .iter()
-                .any(|n| n.contains("偏移") && n.contains("1000")),
-            "{:?}",
+            c.notes.is_empty(),
+            "已实现的功能不应再报未应用: {:?}",
             c.notes
         );
-        assert!(
-            c.notes
-                .iter()
-                .any(|n| n.contains("参考白") && n.contains("203")),
-            "{:?}",
-            c.notes
-        );
-        // 变速也要报
-        let mut q = OutputProfile::default_bdn(1);
+
+        let mut q = OutputProfile::default_bdn(2);
         q.time_adjust = TimeAdjustMode::SpeedScale {
             from: Rational::new(24000, 1001).unwrap(),
             to: Rational::new(25, 1).unwrap(),
         };
         let cq = compile_profile(&q);
-        assert!(
-            cq.notes.iter().any(|n| n.contains("变速")),
-            "{:?}",
-            cq.notes
-        );
+        assert_eq!(cq.spec.speed_from.as_deref(), Some("24000/1001"));
+        assert_eq!(cq.spec.speed_to.as_deref(), Some("25"));
     }
 
     #[test]
     fn notes_are_attributed_to_the_profile_that_caused_them() {
-        let profiles = ProfilesState::new();
-        let mut a = profiles.profiles[0].clone();
-        a.name = "A".into();
+        let mut a = OutputProfile::default_bdn(1);
         a.time_adjust = TimeAdjustMode::OffsetMs(5);
-        // 拿一个**真的干净**的 profile 当对照组：默认的 2160p SUP 带着
-        // `HdrMode::ReferenceWhite(203)`，它本身就会产生一条说明——
-        // 拿它当“没问题的那个”会让这条断言变假。
-        let mut b = profiles.profiles[0].clone();
-        b.name = "B".into();
-        b.time_adjust = TimeAdjustMode::None;
-        b.hdr = HdrMode::Sdr;
-        b.canvas = CanvasMode::Fhd1080;
-
-        let (_, notes) = compile_spec(
+        let b = OutputProfile::default_bdn(2);
+        let (spec, notes) = compile_spec(
             "j",
             &[PathBuf::from("x.ass")],
             &[&a, &b],
@@ -357,14 +318,9 @@ mod tests {
             None,
             "{stem}.{ext}",
         );
-        assert!(
-            notes.iter().any(|n| n.starts_with("[A]")),
-            "说明必须带上是谁引起的：{notes:?}"
-        );
-        assert!(
-            !notes.iter().any(|n| n.starts_with("[B]")),
-            "参数都支持的那个不该产生说明：{notes:?}"
-        );
+        assert!(notes.is_empty(), "全部参数已接通，不应出现未应用警告");
+        assert_eq!(spec.profiles[0].offset_ms, Some(5));
+        assert_eq!(spec.profiles[1].offset_ms, None);
     }
 
     #[test]

@@ -50,8 +50,17 @@ use render_api::capability::ProviderKind;
 ///
 /// 只能由宿主进程的启动环境开启；控制面协议里没有任何字段能触发它。
 fn lying_script_len(script: &str) -> Option<usize> {
-    let on = std::env::var_os(crate::protocol::LIE_ABOUT_LENGTH_ENV).is_some();
-    on.then(|| script.len() + (1 << 24))
+    // 正式 Release 不编入故意触发第三方越界读的测试入口。
+    #[cfg(not(any(debug_assertions, feature = "fault-injection")))]
+    {
+        let _ = script;
+        None
+    }
+    #[cfg(any(debug_assertions, feature = "fault-injection"))]
+    {
+        let on = std::env::var_os(crate::protocol::LIE_ABOUT_LENGTH_ENV).is_some();
+        on.then(|| script.len() + (1 << 24))
+    }
 }
 
 /// 一次渲染的产物（provider 无关）。
@@ -252,7 +261,8 @@ impl Backend {
                 let mut loss = core_model::loss::LossReport::new();
                 let mut pixels = rgba.pixels;
                 let blank_before = pixels.iter().all(|b| *b == 0);
-                let knocked_out = knock_out_background(&mut pixels, &mut loss);
+                let knocked_out =
+                    knock_out_background(&mut pixels, rgba.width, rgba.height, &mut loss);
                 let frame = image_core::Frame {
                     canvas,
                     rgba: pixels,
@@ -296,32 +306,101 @@ impl Backend {
 /// 这不是完美判据，所以它只做**一件事、且可观察**：
 /// 敲掉了多少就记多少，不静默。真正的修法是让 provider 交出预乘 alpha 的字幕层，
 /// 而 CSRI 头文件里没有那个入口。
-fn knock_out_background(pixels: &mut [u8], loss: &mut core_model::loss::LossReport) -> bool {
-    if pixels.len() < 4 {
+fn knock_out_background(
+    pixels: &mut [u8],
+    width: u32,
+    height: u32,
+    loss: &mut core_model::loss::LossReport,
+) -> bool {
+    use std::collections::VecDeque;
+    let w = width as usize;
+    let h = height as usize;
+    if w == 0 || h == 0 || w.checked_mul(h).and_then(|n| n.checked_mul(4)) != Some(pixels.len()) {
         return false;
     }
     let bg = [pixels[0], pixels[1], pixels[2]];
-    let mut hit = 0usize;
-    // 用 `chunks_mut(4)` 而不是 `chunks_exact_mut(4)`：
-    // 后者要求长度是 4 的倍数，而这里只需“按 4 分组、尾数忽略”。
-    for px in pixels.chunks_mut(4) {
-        // 只动“不透明且与背景同色”的像素：半透明的边缘像素保留，
-        // 因为那是抗锯齿的过渡，敲掉会让边缘变硬。
-        if px.len() == 4 && px[3] == 255 && px[0] == bg[0] && px[1] == bg[1] && px[2] == bg[2] {
-            px[3] = 0;
-            hit += 1;
+    // 只剥离从图像外缘连续连通的背景，不再全局删除任何相同 RGB 的像素。
+    // 这能保留被其他颜色包围的深色字形；贴边同色内容仍有损，报告明确说明。
+    let mut visited = vec![false; w * h];
+    let mut queue = VecDeque::new();
+    for x in 0..w {
+        queue.push_back(x);
+        queue.push_back((h - 1) * w + x);
+    }
+    for y in 0..h {
+        queue.push_back(y * w);
+        queue.push_back(y * w + w - 1);
+    }
+    let mut cleared = 0usize;
+    while let Some(index) = queue.pop_front() {
+        if visited[index] {
+            continue;
+        }
+        visited[index] = true;
+        let i = index * 4;
+        let px = &pixels[i..i + 4];
+        if px[3] != 255 || px[..3] != bg {
+            continue;
+        }
+        pixels[i + 3] = 0;
+        cleared += 1;
+        let x = index % w;
+        let y = index / w;
+        if x > 0 {
+            queue.push_back(index - 1);
+        }
+        if x + 1 < w {
+            queue.push_back(index + 1);
+        }
+        if y > 0 {
+            queue.push_back(index - w);
+        }
+        if y + 1 < h {
+            queue.push_back(index + w);
         }
     }
-    let total = pixels.len() / 4;
-    // 只在“敲掉的比例不小”时记账：一两个同色像素是噪声。
-    let meaningful = hit * 100 > total;
-    if meaningful {
-        loss.preserved(&format!(
-            "CSRI 背景剥离：{hit}/{total} 个不透明像素与角点同色（{:?}），已置为透明",
-            bg
+    if cleared > 0 {
+        loss.user_attention(&format!(
+            "CSRI 有损背景抠图：仅将边界连通的同色不透明像素置透明（{cleared}/{}）；             贴边文字/全屏绘图仍需逐像素人工核查",
+            w * h
         ));
     }
-    meaningful
+    cleared > 0
+}
+
+#[cfg(test)]
+mod background_tests {
+    use super::*;
+
+    #[test]
+    fn inner_same_color_pixels_are_not_erased() {
+        let mut pixels = vec![0u8; 5 * 5 * 4];
+        for pixel in pixels.chunks_mut(4) {
+            pixel[3] = 255;
+        }
+        // 白色封闭环包围中央黑点：旧版全局同色抠除会错误删除它。
+        for (x, y) in [
+            (1, 1),
+            (2, 1),
+            (3, 1),
+            (1, 2),
+            (3, 2),
+            (1, 3),
+            (2, 3),
+            (3, 3),
+        ] {
+            let i = (y * 5 + x) * 4;
+            pixels[i..i + 3].copy_from_slice(&[255, 255, 255]);
+        }
+        let mut loss = core_model::loss::LossReport::new();
+        assert!(knock_out_background(&mut pixels, 5, 5, &mut loss));
+        assert_eq!(
+            pixels[(2 * 5 + 2) * 4 + 3],
+            255,
+            "被颜色环包围的同色字幕内容必须保留"
+        );
+        assert_eq!(pixels[3], 0, "外缘背景应移除");
+    }
 }
 
 /// 按导出表判定一个 DLL 属于哪条链。**不加载**。

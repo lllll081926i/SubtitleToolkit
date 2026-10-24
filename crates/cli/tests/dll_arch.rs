@@ -59,6 +59,7 @@ fn render(dir: &Path, dll: &Path) -> serde_json::Value {
         .arg(dir.join("a.xml"))
         .arg("--json")
         .env("STK_LIBASS_DLL", dll)
+        .env_remove("STK_RENDERER_HOST")
         .output()
         .expect("跑 CLI");
     let s = String::from_utf8_lossy(&o.stdout);

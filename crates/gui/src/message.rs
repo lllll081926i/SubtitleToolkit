@@ -70,15 +70,9 @@ pub enum Message {
     ToggleTaskDrawer,
     SelectOutputDir,
     OpenOutputDir,
-    /// 后台任务跑完后一次性交付：逐条通报 + 起不来的错误（如果有）。
-    ///
-    /// 一次性而不是流式：Iced 的 `Task::perform` 每次只能回一条消息，
-    /// 要流式就得开一个订阅（subscription）；而任务规模是“输入 × profile”这一量级，
-    /// 跑完一次性交付足够，且不会让 UI 与执行线程共享可变状态。
-    BatchProduced {
-        updates: Vec<crate::worker::task_worker::Progress>,
-        error: Option<(String, String, String)>,
-    },
+    /// Iced Task::run 流式发送阶段进度，不再等整个批次结束。
+    BatchEvent(crate::worker::task_worker::Progress),
+    BatchCompleted(Option<(String, String, String)>),
     /// 编译期“做不到”的说明（时间轴/HDR 在 batch spec 里没有落点）。
     TaskNotes(Vec<String>),
 

@@ -1,0 +1,61 @@
+name: Windows 发布
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      validation:
+        description: 'package 只构建与验收安装包；full 额外执行全量测试'
+        type: choice
+        options: [package, full]
+        default: package
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    uses: ./.github/workflows/windows.yml
+    with:
+      validation: ${{ github.event_name == 'push' && 'full' || inputs.validation }}
+    secrets: inherit
+  draft:
+    if: github.ref_type == 'tag'
+    needs: validate
+    runs-on: windows-2022
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 确认标签属于已合并主分支
+        shell: pwsh
+        run: |
+          git merge-base --is-ancestor HEAD origin/main
+          if ($LASTEXITCODE -ne 0) { throw '标签提交尚未合入 main，拒绝发版。' }
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: windows-x64-release
+          path: assets
+      - name: 创建带校验和的 Release 草稿
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $manifest = Get-Content assets/release-manifest.json -Raw | ConvertFrom-Json
+          foreach ($line in Get-Content assets/SHA256SUMS.txt) {
+            if ($line -notmatch '^([0-9a-f]{64})  ([^/\\]+)$') { throw '非法的资产校验和清单' }
+            if ((Get-FileHash -LiteralPath (Join-Path assets $Matches[2]) -Algorithm SHA256).Hash.ToLowerInvariant() -ne $Matches[1]) { throw '下载的发布资产校验失败' }
+          }
+          if ($manifest.commit -ne (git rev-parse HEAD) -or $manifest.tag -ne $env:RELEASE_TAG) { throw '发布资产与标签提交不匹配' }
+          $notes = @('Windows x64；安装器使用 Inno Setup。', '', '包含便携包、安装包、SHA-256 校验和与构建清单。')
+          if (-not $manifest.signed) { $notes += ''; $notes += '本次为未签名产物；Windows 可能提示未知发布者。' }
+          $notes | Set-Content release-notes.md -Encoding utf8
+          $assets = @(Get-ChildItem assets -File | ForEach-Object FullName)
+          $args = @('release', 'create', $env:RELEASE_TAG, '--verify-tag', '--draft', '--title', "SubtitleToolkit $env:RELEASE_TAG", '--notes-file', 'release-notes.md')
+          if ($env:RELEASE_TAG.Contains('-')) { $args += '--prerelease' }
+          & gh @args @assets
+          if ($LASTEXITCODE -ne 0) { throw 'Release 草稿创建失败；不会覆盖已有 Release。' }

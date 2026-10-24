@@ -141,7 +141,7 @@ x86 host **已能构建**且与 x64 输出逐字节一致，但**尚未随包分
 未知字段往返不丢、`init` 拒绝覆盖、5 种非法取值全被拒且不落文件、
 坏文件降级并保留证据、设置确实落在 `DataDir` 内。
 
-Preset（36 §1）已实现 CLI 管理命令；GUI 尚无 preset 入口。ToolDefaults 的**存储、求值与接入都已实现**（见 36 §1）——
+Preset（36 §1）已实现 CLI 管理命令和 GUI TOML 导入/导出入口；但 Preset 尚不能表达时间轴变换，GUI 导出会拒绝静默丢弃此配置。ToolDefaults 的**存储、求值与接入都已实现**（见 36 §1）——
 `pgs encode`/`render`/`mkv`/`font subset` 在用户没给参数时确实会查它，
 报告里的 `resolved_from` 会报出每一项的来源
 （[接入层裁决](../reviews/2026-10-17-tool-defaults-wiring.md)）。

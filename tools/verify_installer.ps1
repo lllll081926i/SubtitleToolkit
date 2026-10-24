@@ -5,11 +5,10 @@
 #
 # 为什么不写成 Rust 集成测试：安装/卸载要起真进程、写 HKCU 与 %LOCALAPPDATA%，
 # 而且必须**静默**跑（/VERYSILENT）。Rust 测试跑这个会污染开发机的真实注册表与
-# 用户目录，而 CI 上又没有装 Inno Setup。一个显式的、开发者手动跑的脚本
-# 比一条会留下副作用的"自动化测试"诚实。
+# 用户目录。本脚本仅在 GitHub Actions 临时 Windows runner 中运行。
 #
 # 用法：
-#   .\tools\verify_installer.ps1                      # 用默认输出的安装器
+#   .\tools\verify_installer.ps1                      # 仅 CI：用默认输出的安装器
 #   .\tools\verify_installer.ps1 -Setup PATH\setup.exe
 #
 # 全程只写这些位置，并**在结束时清理**：
@@ -23,6 +22,10 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+if ($env:GITHUB_ACTIONS -ne 'true') {
+    throw '安装器行为验证会改写测试账户的关联与用户数据，只允许在 GitHub Actions 临时 Windows runner 中运行。'
+}
 
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $appId = '{7E3A9C41-5B2D-4F18-9A6E-1C0D8B7F4A52}'
@@ -84,6 +87,7 @@ try {
 
     # ---------------------------------------------------------------------------
     Write-Host "== 第一条：per-user 默认，不要求管理员 ==" -ForegroundColor Cyan
+    Cleanup-Assoc
     Remove-Item -LiteralPath $dest -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $dest | Out-Null
     # 不给 /DIR 而用 /DIR 指定临时目录：默认路径会写到真实的 %LOCALAPPDATA%\Programs。
@@ -95,9 +99,8 @@ try {
         Where-Object { $_.Name -ne 'unins000.exe' }
     Check "三个可执行文件都已安装" ($exes.Count -eq 3) (($exes.Name | Sort-Object) -join ', ')
 
-    # 关联项可能被上一次崩掉的验证脚本留下：装之前先清，
-    # 否则“默认不写关联”这条会在残留上假 PASS。
-    Cleanup-Assoc
+    # 在实际安装目录验证随包依赖，避免借用开发目录中的程序或 DLL。
+    & (Join-Path $PSScriptRoot 'test_distribution.ps1') -PackageDir $dest
 
     # ---------------------------------------------------------------------------
     Write-Host "== 第二条：可选 all-users ==" -ForegroundColor Cyan

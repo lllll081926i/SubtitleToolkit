@@ -57,7 +57,7 @@ pub fn run(
     spec: &Spec,
     output_dir: &Path,
     cancel: Arc<AtomicBool>,
-    mut emit: impl FnMut(Progress),
+    mut emit: impl FnMut(Progress) + Send,
 ) -> Result<(), (String, String, String)> {
     tracing::info!(
         job_id = %spec.id,
@@ -116,30 +116,46 @@ pub fn run(
     // 把 GUI 的取消标志交给引擎：它会在每个 (输入, profile) 之前检查，
     // 于是“取消”真的能拦住后面的格子（AT-UI-001）。
     let cancel_token = task_engine::CancelToken::from_shared(cancel);
-    let env =
-        match cli::batch::run_batch_with_cancel(&inv, &spec_path, "batch", Some(&cancel_token)) {
-            Ok(env) => env,
-            Err(e) => {
-                tracing::error!(
-                    job_id = %job_id,
-                    code = %e.code_string(),
-                    title = %e.title,
-                    details = ?e.details,
-                    "GUI 批处理启动失败"
-                );
-                let triple = (
-                    e.code_string(),
-                    e.title.clone(),
-                    e.user_action.clone().unwrap_or_default(),
-                );
-                emit(Progress::Finished {
-                    outcome: "failed".into(),
-                    report_path: None,
-                    error: Some(triple.clone()),
-                });
-                return Err(triple);
-            }
+    let run_result = {
+        let mut on_row = |input: &str, profile: &str, status: &str, detail: &str| {
+            emit(Progress::Row {
+                input: input.to_string(),
+                profile: profile.to_string(),
+                status: status.to_string(),
+                detail: detail.to_string(),
+            });
         };
+        cli::batch::run_batch_with_progress(
+            &inv,
+            &spec_path,
+            "batch",
+            Some(&cancel_token),
+            Some(&mut on_row),
+        )
+    };
+    let env = match run_result {
+        Ok(env) => env,
+        Err(e) => {
+            tracing::error!(
+                job_id = %job_id,
+                code = %e.code_string(),
+                title = %e.title,
+                details = ?e.details,
+                "GUI 批处理启动失败"
+            );
+            let triple = (
+                e.code_string(),
+                e.title.clone(),
+                e.user_action.clone().unwrap_or_default(),
+            );
+            emit(Progress::Finished {
+                outcome: "failed".into(),
+                report_path: None,
+                error: Some(triple.clone()),
+            });
+            return Err(triple);
+        }
+    };
 
     // 逐行翻译 CLI 报告。**不重新解释状态**：status 字符串原样透出，
     // 这样 GUI 显示的与 CLI 报告里的永远是同一个词。
@@ -168,12 +184,8 @@ pub fn run(
             detail = %detail,
             "GUI 批处理条目完成"
         );
-        emit(Progress::Row {
-            input,
-            profile,
-            status,
-            detail,
-        });
+        // Progress::Row 已通过 on_row 在执行期间逐条发送；此处仅记结束诊断。
+        let _ = (input, profile, status, detail);
     }
 
     let outcome = env

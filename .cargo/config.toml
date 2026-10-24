@@ -1,10 +1,5 @@
-# 工程级镜像设置：与用户级 ~/.cargo/config.toml 一致，保证 CI/新机器同样走国内源
-[source.crates-io]
-replace-with = "rsproxy-sparse"
-
-[source.rsproxy-sparse]
-registry = "sparse+https://rsproxy.cn/index/"
-
+# 仓库默认使用 crates.io 官方源。若需要 rsproxy 国内镜像，请在个人
+# ~/.cargo/config.toml 配置，不要把替换源绑定给所有 Windows CI 和其他开发者。
 [net]
 git-fetch-with-cli = true
 

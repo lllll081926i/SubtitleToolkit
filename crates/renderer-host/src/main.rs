@@ -11,7 +11,6 @@
 use std::io::{self, BufWriter, Write};
 use std::path::PathBuf;
 use std::process::ExitCode;
-use std::time::Duration;
 
 use core_model::canvas::Canvas;
 use core_model::time::Time;
@@ -615,6 +614,10 @@ fn render_at(
 /// 只有宿主进程自己的环境变量 `STK_HOST_CRASH` 能走到这里。它在 `serve()` 的最早阶段
 /// 被消费，所以发布二进制里没有任何来自控制面的自杀路径（2026-10-09 审查）。
 /// 未知取值直接退出：静默忽略会让测试以为崩溃注入生效了，实际却在正常跑。
+#[cfg(not(any(debug_assertions, feature = "fault-injection")))]
+fn maybe_inject_crash_from_env(_tracker: &renderer_host::crash::Tracker) {}
+
+#[cfg(any(debug_assertions, feature = "fault-injection"))]
 fn maybe_inject_crash_from_env(tracker: &renderer_host::crash::Tracker) {
     let Ok(how) = std::env::var(protocol::CRASH_ENV) else {
         return;
@@ -632,7 +635,7 @@ fn maybe_inject_crash_from_env(tracker: &renderer_host::crash::Tracker) {
         "panic" => panic!("故意的 host panic（AT-RENDER-002）"),
         // 不回复：主进程必须靠超时放手，而不是永远等
         "hang" => loop {
-            std::thread::sleep(Duration::from_secs(3600));
+            std::thread::sleep(std::time::Duration::from_secs(3600));
         },
         // 下面这两种**不在启动时死** —— 它们在渲染调用**内部**死，
         // 见 `crash_during_render`。
@@ -666,6 +669,10 @@ fn maybe_inject_crash_from_env(tracker: &renderer_host::crash::Tracker) {
 /// 注：这不是在 provider 里真的造一个访问违例（做不到 —— 我们控制不了
 /// 第三方代码）。它复现的是**同一个时序**。规格要求真 provider 的崩溃行为，
 /// 而 §6.2 里写明了为什么那一步仍不算验收。
+#[cfg(not(any(debug_assertions, feature = "fault-injection")))]
+fn crash_during_render_if_asked(_tracker: &renderer_host::crash::Tracker) {}
+
+#[cfg(any(debug_assertions, feature = "fault-injection"))]
 fn crash_during_render_if_asked(tracker: &renderer_host::crash::Tracker) {
     let Ok(how) = std::env::var(protocol::CRASH_ENV) else {
         return;
@@ -678,7 +685,7 @@ fn crash_during_render_if_asked(tracker: &renderer_host::crash::Tracker) {
         "render-hang" => {
             let _ = tracker.write("出帧中途挂住");
             loop {
-                std::thread::sleep(Duration::from_secs(3600));
+                std::thread::sleep(std::time::Duration::from_secs(3600));
             }
         }
         _ => {}

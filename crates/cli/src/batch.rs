@@ -56,6 +56,17 @@ pub struct SpecProfile {
     pub min_axis: u32,
     #[serde(default)]
     pub default_font: Option<String>,
+    /// 每个输出 Profile 独立的时间与 HDR 变换；没有设置时保持输入原样。
+    #[serde(default)]
+    pub offset_ms: Option<i64>,
+    #[serde(default)]
+    pub speed_from: Option<String>,
+    #[serde(default)]
+    pub speed_to: Option<String>,
+    #[serde(default)]
+    pub hdr_percent: Option<u32>,
+    #[serde(default)]
+    pub hdr_reference_nits: Option<u32>,
 }
 
 fn default_canvas() -> String {
@@ -138,6 +149,14 @@ impl Default for SpecRuntime {
     }
 }
 
+/// 精确重试的一个工作单元。空列表表示常规全矩阵批处理。
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct BatchPair {
+    pub input: String,
+    pub profile: String,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Spec {
@@ -151,6 +170,8 @@ pub struct Spec {
     #[serde(default)]
     pub exclude: Vec<String>,
     pub profiles: Vec<SpecProfile>,
+    #[serde(default)]
+    pub only_pairs: Vec<BatchPair>,
     #[serde(default)]
     pub output: SpecOutput,
     #[serde(default)]
@@ -175,6 +196,7 @@ struct Resolved {
     /// 14 §ASS→BDN 的小对象过滤阈值：只过滤，不钳制尺寸（13 §7）
     min_axis: u32,
     font: String,
+    options: SpecProfile,
     /// 需要渲染器才能产出的 profile
     renders: bool,
     ext: &'static str,
@@ -207,6 +229,13 @@ pub fn load_spec(path: &Path) -> Result<Spec> {
     if spec.profiles.is_empty() {
         return Err(cli_err(154, "batch spec 没有任何输出 profile"));
     }
+    if spec
+        .only_pairs
+        .iter()
+        .any(|p| p.input.trim().is_empty() || p.profile.trim().is_empty())
+    {
+        return Err(cli_err(218, "only_pairs 不能包含空的输入路径或 Profile 名"));
+    }
     Ok(spec)
 }
 
@@ -223,6 +252,10 @@ fn parse_overwrite(v: Option<&str>) -> Result<OverwritePolicy> {
 }
 
 fn parse_canvas(s: &str) -> Result<Canvas> {
+    // 实际画布在每个输入上解析；此处的临时值不能拿来执行。
+    if s.eq_ignore_ascii_case("original") {
+        return Ok(Canvas::FHD1080);
+    }
     let (w, h) = s
         .split_once(['x', 'X', ':'])
         .ok_or_else(|| cli_err(159, "profile.canvas 需要 WxH"))?;
@@ -272,6 +305,7 @@ fn resolve_profiles(spec: &Spec) -> Result<Vec<Resolved>> {
                 .clone()
                 .unwrap_or_else(|| "Arial".to_string()),
             renders: matches!(target, FormatKind::Pgs | FormatKind::Bdn),
+            options: p.clone(),
         })
     }
     let mut names: Vec<&str> = out.iter().map(|r| r.profile.name.as_str()).collect();
@@ -317,8 +351,12 @@ fn job_cache_key(
     // inject 也必须进 key（AD5 的同一条纪律）：注入改变的是"哪批字节画了像素"。
     // 复用上一次的产物却不记下这件事，等于拿未注入的像素当注入的结果交付。
     let options = format!(
-        "exact={}|min_axis={}|tool={}|inject={}",
-        r.exact_colors, r.min_axis, tool, inject
+        "exact={}|min_axis={}|tool={}|inject={}|transform={}",
+        r.exact_colors,
+        r.min_axis,
+        tool,
+        inject,
+        transform_fingerprint(&r.options)
     );
     field_hash(&[
         ("input", input_sha),
@@ -355,7 +393,15 @@ fn render_cache_key(
         ("renderer", renderer_sha.unwrap_or("none")),
         ("fonts", font_env),
         ("inject", inject),
+        ("transform", &transform_fingerprint(&r.options)),
     ])
+}
+
+fn transform_fingerprint(p: &SpecProfile) -> String {
+    format!(
+        "offset={:?};speed={:?}/{:?};hdr={:?}/{:?}",
+        p.offset_ms, p.speed_from, p.speed_to, p.hdr_percent, p.hdr_reference_nits
+    )
 }
 
 #[derive(Serialize)]
@@ -446,6 +492,124 @@ fn artifact_of(r: &Resolved, path: &Path) -> Option<String> {
     }
 }
 
+/// 读取每个输入的原始逻辑画布；拒绝“保持原样”却实际偷偷改成 1080p。
+fn original_canvas(input: &Path, target: FormatKind) -> Result<Canvas> {
+    // 纯文本 SRT 没有画布，且导出 SRT 时画布不参与输出。
+    if matches!(target, FormatKind::Srt) {
+        return Ok(Canvas::FHD1080);
+    }
+    let loaded = pipeline::load_text(input)?;
+    let document = codec_ass::AssDocument::parse(&loaded.text);
+    let (width, height) = document.play_res().ok_or_else(|| {
+        cli_err(5301, "输入没有 PlayResX/PlayResY，无法保持原始画布")
+            .with_detail(input.display().to_string())
+    })?;
+    let w = u32::try_from(width).map_err(|_| cli_err(5301, "原始画布宽度非法"))?;
+    let h = u32::try_from(height).map_err(|_| cli_err(5301, "原始画布高度非法"))?;
+    Canvas::new(w, h)
+}
+
+/// 一次 Profile 的临时输入文件；即使渲染失败也通过 Drop 清理。
+struct PreparedInput {
+    path: PathBuf,
+}
+impl Drop for PreparedInput {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.path);
+    }
+}
+
+fn prepare_input(input: &Path, resolved: &Resolved) -> Result<Option<PreparedInput>> {
+    use core_model::loss::LossReport;
+    use core_model::profile::HdrSettings;
+    use transform_time::{PiecewiseSpec, TimeConfig};
+    let p = &resolved.options;
+    if p.offset_ms.is_none()
+        && p.speed_from.is_none()
+        && p.speed_to.is_none()
+        && p.hdr_percent.is_none()
+        && p.hdr_reference_nits.is_none()
+    {
+        return Ok(None);
+    }
+    if p.offset_ms.is_some() && (p.speed_from.is_some() || p.speed_to.is_some()) {
+        return Err(cli_err(5302, "不能同时指定时间偏移和变速"));
+    }
+    if p.hdr_percent.is_some() && p.hdr_reference_nits.is_some() {
+        return Err(cli_err(5302, "不能同时指定两种 HDR 映射"));
+    }
+    let loaded = pipeline::load_text(input)?;
+    let input_kind = format_detect::probe_file(input)?.format;
+    let time = if let Some(ms) = p.offset_ms {
+        Some(TimeConfig::offset(ms))
+    } else if let (Some(from), Some(to)) = (&p.speed_from, &p.speed_to) {
+        let from = Fps::from_label(from)?;
+        let to = Fps::from_label(to)?;
+        Some(TimeConfig::speed_scale(from, to))
+    } else if p.speed_from.is_some() || p.speed_to.is_some() {
+        return Err(cli_err(5302, "变速必须同时指定源与目标帧率"));
+    } else {
+        None
+    };
+    let settings = if let Some(percent) = p.hdr_percent {
+        Some(HdrSettings::percentage(
+            percent
+                .checked_mul(100)
+                .ok_or_else(|| cli_err(5302, "HDR 百分比溢出"))?,
+        )?)
+    } else if let Some(nits) = p.hdr_reference_nits {
+        Some(HdrSettings::reference_white(nits)?)
+    } else {
+        None
+    };
+    let (content, extension) = match input_kind {
+        format_detect::SubtitleFormat::Ass | format_detect::SubtitleFormat::Ssa => {
+            let mut document = codec_ass::AssDocument::parse(&loaded.text);
+            pipeline::check_ass_dialogue_count(&document)?;
+            if let Some(cfg) = time {
+                pipeline::time_ass(&mut document, &cfg, None, &PiecewiseSpec::new(Vec::new()))?;
+            }
+            if let Some(settings) = settings {
+                transform_hdr::apply(&mut document, &settings, &mut LossReport::new())?;
+            }
+            (document.render().into_bytes(), "ass")
+        }
+        format_detect::SubtitleFormat::Srt => {
+            if settings.is_some() {
+                return Err(cli_err(5303, "SRT 不包含 HDR 颜色属性，不能执行 HDR 映射"));
+            }
+            let (subtitle, _) = codec_srt::parse(&loaded.bytes)?;
+            let subtitle = if let Some(cfg) = time {
+                pipeline::time_srt(&subtitle, &cfg, None, &PiecewiseSpec::new(Vec::new()))?.0
+            } else {
+                subtitle
+            };
+            (codec_srt::write(&subtitle)?, "srt")
+        }
+        _ => return Err(cli_err(5303, "此输入格式不支持 batch 时间/HDR 变换")),
+    };
+    // 不能修改原文件；temp 文件在输出目录外，且带进程内唯一序号。
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let seq = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = std::env::temp_dir().join("subtitletool-profile-stage");
+    std::fs::create_dir_all(&dir).map_err(StkError::from)?;
+    let path = dir.join(format!("profile-{}-{seq}.{extension}", std::process::id()));
+    // create_new 防止可预测的临时文件名覆盖旧文件或跟随本地符号链接。
+    let file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .map_err(StkError::from)?;
+    let stage = PreparedInput { path };
+    {
+        use std::io::Write;
+        let mut file = file;
+        file.write_all(&content).map_err(StkError::from)?;
+        file.sync_all().map_err(StkError::from)?;
+    }
+    Ok(Some(stage))
+}
+
 /// 把 profile 派发到与单命令完全相同的执行路径。
 fn command_for(r: &Resolved, input: &Path, dll: Option<&str>) -> Command {
     match r.target {
@@ -503,6 +667,21 @@ pub fn run_batch_with_cancel(
     cmd: &str,
     external_cancel: Option<&CancelToken>,
 ) -> Result<Envelope> {
+    run_batch_with_progress(inv, spec_path, cmd, external_cancel, None)
+}
+
+/// 每个输入的 Profile 完成后立即推送状态；GUI 通过流式 Task 渲染中间进度。
+/// Progress sink type kept named so Clippy and downstream adapters share one contract.
+pub type BatchProgressSink<'a> = dyn FnMut(&str, &str, &str, &str) + Send + 'a;
+
+pub fn run_batch_with_progress(
+    inv: &Invocation,
+    spec_path: &Path,
+    cmd: &str,
+    external_cancel: Option<&CancelToken>,
+    on_row: Option<&mut BatchProgressSink<'_>>,
+) -> Result<Envelope> {
+    let on_row = Mutex::new(on_row);
     let started = std::time::Instant::now();
     let spec = load_spec(spec_path)?;
     let resolved = resolve_profiles(&spec)?;
@@ -602,16 +781,38 @@ pub fn run_batch_with_cancel(
     let tool = env!("CARGO_PKG_VERSION").to_string();
     let tool_versions = vec![("subtitletool-cli".to_string(), tool.clone())];
     let state_path = out_dir.join(".jobstate.json");
-    let mut state = if inv.dry_run {
+    // 损坏的历史恢复文件必须留证据；不能静默当成“从没跑过”。
+    let mut recovery_warning = None;
+    let mut state = if inv.dry_run || !state_path.exists() {
         JobState::new(spec.id.clone(), tool_versions.clone())
     } else {
-        JobState::read_from(&state_path)
-            .unwrap_or_else(|_| JobState::new(spec.id.clone(), tool_versions.clone()))
+        match JobState::read_from(&state_path) {
+            Ok(saved) => saved,
+            Err(error) => {
+                let quarantine = state_path.with_extension("jobstate.corrupt");
+                if quarantine.exists() {
+                    return Err(cli_err(5300, "旧恢复状态损坏，诊断副本已存在")
+                        .with_detail(quarantine.display().to_string())
+                        .with_action("请先备份并检查损坏的恢复文件，再重新执行"));
+                }
+                std::fs::rename(&state_path, &quarantine).map_err(|e| {
+                    cli_err(5300, "无法保存损坏的恢复状态")
+                        .with_detail(format!("{}: {e}", state_path.display()))
+                })?;
+                recovery_warning = Some(format!(
+                    "旧恢复状态无法解析（{error}），已移至 {}，将重新计算输出",
+                    quarantine.display()
+                ));
+                JobState::new(spec.id.clone(), tool_versions.clone())
+            }
+        }
     };
 
     // 一次批量任务共享一份前半链缓存：key 含输入哈希，所以跨输入不会互相污染
     let memo = crate::front::RenderMemo::default();
-    let render_profiles = resolved.iter().filter(|r| r.renders).count();
+    let mut render_executions = 0usize;
+    let mut processed_inputs = 0usize;
+    let mut per_input_keys = serde_json::Map::new();
     // 字体环境身份（17 §7）：库只建一次，逐输入算"这个脚本实际用了哪些 face"。
     // 不渲染的 job 根本不建库，也不该被字体环境绑住。
     let inject_flag = if inv.inject_fonts { "on" } else { "off" };
@@ -636,17 +837,60 @@ pub fn run_batch_with_cancel(
         .filter(|s| !s.contains(&spec_name))
         .cloned()
         .collect();
+    if let Some(warning) = recovery_warning {
+        warnings.push(warning);
+    }
+    // 同名字幕在不同目录里很常见：只在碰撞时加路径指纹，不改非碰撞文件的现有命名。
+    let mut stem_counts = std::collections::HashMap::<String, usize>::new();
+    for path in &found.files {
+        let stem = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("output");
+        *stem_counts.entry(stem.to_string()).or_default() += 1;
+    }
     // 跨输入累计"因为 skip 策略而没动"的 output，好让报告能解释它
     let skipped: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
     for input in &found.files {
+        // 精确重试只能执行原来失败的 (input, profile) 配对；不能把两组
+        // 唯一值再做笛卡尔积，否则会重新写入上一轮已成功的产物。
+        let selected: Vec<Resolved> = resolved
+            .iter()
+            .filter(|r| {
+                spec.only_pairs.is_empty()
+                    || spec.only_pairs.iter().any(|pair| {
+                        let requested = resolve(&pair.input);
+                        requested == *input && pair.profile == r.profile.name
+                    })
+            })
+            .cloned()
+            .map(|mut r| {
+                if r.options.canvas.eq_ignore_ascii_case("original") {
+                    r.profile.canvas = original_canvas(input, r.target)?;
+                }
+                Ok(r)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        if selected.is_empty() {
+            continue;
+        }
+        processed_inputs += 1;
+        render_executions += selected.iter().filter(|r| r.renders).count();
+        let resolved = selected;
         let raw = crate::pipeline::read_bounded(input, crate::pipeline::MAX_BINARY_BYTES, "输入")?;
         let input_sha = sha256_hex(&raw);
-        let stem = input
+        let original_stem = input
             .file_stem()
             .and_then(|s| s.to_str())
-            .unwrap_or("output")
-            .to_string();
+            .unwrap_or("output");
+        let stem = if stem_counts.get(original_stem).copied().unwrap_or(0) > 1 {
+            let canonical = input.canonicalize().unwrap_or_else(|_| input.clone());
+            let fingerprint = sha256_hex(canonical.to_string_lossy().as_bytes());
+            format!("{original_stem}-{}", &fingerprint[..12])
+        } else {
+            original_stem.to_string()
+        };
         let job = Job {
             id: format!("{}:{}", spec.id, stem),
             input: InputSet {
@@ -680,6 +924,16 @@ pub fn run_batch_with_cancel(
                 )
             })
             .collect();
+        per_input_keys.insert(
+            input_key.clone(),
+            serde_json::json!(resolved
+                .iter()
+                .zip(keys.iter())
+                .map(|(r, key)| serde_json::json!({
+                    "profile": r.profile.name, "key": key,
+                }))
+                .collect::<Vec<_>>()),
+        );
         // 前半链（渲染 + 变化检测）的共享 key：**不含** profile 名，所以同一输入的
         // SUP 与 BDN 会落进同一个 slot——14 §ASS→SUP 那句"共享 render/cache"就是这件事。
         let render_keys: Vec<String> = resolved
@@ -704,7 +958,11 @@ pub fn run_batch_with_cancel(
                     width: r.profile.canvas.width,
                     height: r.profile.canvas.height,
                     fps: r.profile.fps.to_label(),
-                    hdr: "sdr".to_string(),
+                    hdr: match (r.options.hdr_percent, r.options.hdr_reference_nits) {
+                        (Some(p), _) => format!("{p}percent"),
+                        (_, Some(n)) => format!("{n}nit"),
+                        _ => "sdr".to_string(),
+                    },
                     ext: r.ext.to_string(),
                 })?;
                 // 目录型产物（BDN）每个输入独占一层目录：两个输入的 PNG 都从 0000.png
@@ -727,8 +985,12 @@ pub fn run_batch_with_cancel(
         let skipped_ref = &skipped;
         let state_ref = &state;
         let dry = inv.dry_run;
-        let executed =
-            task_engine::run_profiles(&job, &pools, &cancel, &budget, &|_pools, prof| {
+        let executed = task_engine::run_profiles_observed(
+            &job,
+            &pools,
+            &cancel,
+            &budget,
+            &|_pools, prof| {
                 let idx = resolved
                     .iter()
                     .position(|r| r.profile.name == prof.name)
@@ -757,8 +1019,23 @@ pub fn run_batch_with_cancel(
                     }
                 }
                 let skipped = skipped_ref;
+                // 先对输入的私有副本应用这个 Profile 的时间/HDR，再走原单命令链。
+                // 变换身份已加入 job/render 缓存键；不会把别的 Profile 的像素拿来复用。
+                let transformed = match prepare_input(input, r) {
+                    Ok(stage) => stage,
+                    Err(error) => {
+                        return ProfileOutcome::Failed {
+                            stage: error.code_string(),
+                            message: error.title,
+                        }
+                    }
+                };
+                let command_input = transformed
+                    .as_ref()
+                    .map(|stage| stage.path.as_path())
+                    .unwrap_or(input);
                 let sub = Invocation {
-                    command: command_for(r, input, dll_str.as_deref()),
+                    command: command_for(r, command_input, dll_str.as_deref()),
                     json: false,
                     out: Some(path.clone()),
                     dry_run: dry,
@@ -830,7 +1107,14 @@ pub fn run_batch_with_cancel(
                         message: e.title.clone(),
                     },
                 }
-            });
+            },
+            &|profile, outcome| {
+                if let Some(callback) = on_row.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+                    let (status, detail) = describe(outcome);
+                    callback(&input_key, &profile.name, &status, &detail);
+                }
+            },
+        );
         // 落盘的产物才进恢复状态（15 §7）
         if !dry {
             for (name, o) in &executed.outcomes {
@@ -877,6 +1161,11 @@ pub fn run_batch_with_cancel(
                     status = %status,
                     "批处理 profile 完成"
                 ),
+            }
+            if matches!(o, ProfileOutcome::Cancelled { stage } if stage == "not-started") {
+                if let Some(callback) = on_row.lock().unwrap_or_else(|e| e.into_inner()).as_mut() {
+                    callback(&input_key, name, &status, &detail);
+                }
             }
             lines.push(ProfileLine {
                 input: input.display().to_string(),
@@ -952,8 +1241,8 @@ pub fn run_batch_with_cancel(
         std::fs::create_dir_all(&out_dir).map_err(|e| {
             cli_err(163, "无法创建输出目录").with_detail(format!("{out_dir:?}：{e}"))
         })?;
-        std::fs::write(&state_path, state.to_json()?).map_err(|e| {
-            cli_err(164, "无法写 .jobstate.json").with_detail(format!("{state_path:?}：{e}"))
+        state.write_to(&state_path).map_err(|e| {
+            cli_err(164, "无法原子提交 .jobstate.json").with_detail(format!("{state_path:?}：{e}"))
         })?;
     }
 
@@ -963,7 +1252,7 @@ pub fn run_batch_with_cancel(
     tracing::info!(
         job_id = %spec.id,
         outcome = outcome.label(),
-        inputs = found.files.len(),
+        inputs = processed_inputs,
         profiles = resolved.len(),
         renders = memo.renders(),
         elapsed_ms = started.elapsed().as_millis() as u64,
@@ -997,13 +1286,13 @@ pub fn run_batch_with_cancel(
         "output_ids": output_ids,
         "renderer_id": renderer_id,
         "outcome": outcome.label(),
-        "inputs": found.files.len(),
+        "inputs": processed_inputs,
         "profiles": resolved.len(),
         "elapsed_ms": started.elapsed().as_millis() as u64,
         // 14 §Multi-output 的可核对证据：渲染次数应当少于"渲染型 profile 执行次数"，
         // 相等就等于没共享。三个数一起报出来，谁都能自己算。
         "render_cache": {
-            "executions": render_profiles * found.files.len(),
+            "executions": render_executions,
             "renders": memo.renders(),
             "keys": memo.keys(),
         },
@@ -1046,18 +1335,12 @@ pub fn run_batch_with_cancel(
         "output_ids": output_ids,
         "renderer_id": renderer_id,
         "outcome": outcome.label(),
-        "inputs": found.files.len(),
+        "inputs": processed_inputs,
         "profiles": resolved.len(),
+        "selected_pairs": if spec.only_pairs.is_empty() { serde_json::Value::Null } else { serde_json::json!(&spec.only_pairs) },
         "elapsed_ms": started.elapsed().as_millis() as u64,
         "overwrite": format!("{overwrite:?}"),
-        "cache_keys": keys_of(
-            &resolved,
-            &found.files,
-            renderer_sha.as_deref(),
-            &tool,
-            &font_envs,
-            inject_flag,
-        ),
+        "cache_keys": per_input_keys,
         "font_env": font_env_report,
         "report": report,
     });
@@ -1081,41 +1364,6 @@ pub fn run_batch_with_cancel(
     Ok(env)
 }
 
-/// data 里的缓存 key 摘要：每个输入 × 每个 profile 一条。
-/// 批量任务被问"你为什么复用了这个文件"时，这是能拿出来的凭据（01 §任务凭据）。
-fn keys_of(
-    resolved: &[Resolved],
-    files: &[PathBuf],
-    renderer_sha: Option<&str>,
-    tool: &str,
-    font_envs: &std::collections::BTreeMap<String, String>,
-    inject: &str,
-) -> serde_json::Value {
-    let mut m = serde_json::Map::new();
-    for f in files {
-        let sha = std::fs::read(f)
-            .ok()
-            .map(|b| sha256_hex(&b))
-            .unwrap_or_default();
-        // 报告里的 key 必须与执行时用的是同一份字体环境；写 "none" 会让报告与真实身份不一致
-        let env = font_envs
-            .get(&f.display().to_string())
-            .cloned()
-            .unwrap_or_else(|| "none".to_string());
-        let rows: Vec<serde_json::Value> = resolved
-            .iter()
-            .map(|r| {
-                serde_json::json!({
-                    "profile": r.profile.name,
-                    "key": job_cache_key(&sha, r, renderer_sha, tool, &env, inject),
-                })
-            })
-            .collect();
-        m.insert(f.display().to_string(), serde_json::Value::Array(rows));
-    }
-    serde_json::Value::Object(m)
-}
-
 #[cfg(test)]
 mod inject_key_tests {
     use super::*;
@@ -1134,6 +1382,20 @@ mod inject_key_tests {
             font: "Arial".to_string(),
             renders: true,
             ext: "xml",
+            options: SpecProfile {
+                name: "bdn".to_string(),
+                format: "bdn".to_string(),
+                canvas: "1280x720".to_string(),
+                fps: "25".to_string(),
+                exact_colors: false,
+                min_axis: 8,
+                default_font: None,
+                offset_ms: None,
+                speed_from: None,
+                speed_to: None,
+                hdr_percent: None,
+                hdr_reference_nits: None,
+            },
         }
     }
 

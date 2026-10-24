@@ -36,7 +36,7 @@
 
 上游版本、接口和许可研究集中维护在[来源清单](../research/30_RESEARCH_SOURCES.md)与[第三方来源锁](../../third_party/SOURCE_AUDIT_LOCK.json)，总纲不再维护另一份“最新版本”列表。
 
-Iced 0.14 是 GUI 目标选型；当前没有 GUI crate。CSRI 导出存在只支持接口候选判断，不证明 DLL 可以加载或像素兼容。2160p custom 输出不宣称 Blu-ray 合规，实际 Profile 与设备结论见 [PGS 规格](../specs/13_PGS_BDN_BLURAY.md)。
+Iced 0.14 已落地至 `crates/gui`，任务界面调用真实 CLI batch 引擎。CSRI 导出存在只支持接口候选判断，不证明 DLL 可以加载或像素兼容。2160p custom 输出不宣称 Blu-ray 合规，实际 Profile 与设备结论见 [PGS 规格](../specs/13_PGS_BDN_BLURAY.md)。
 
 ## 6. 追加规格
 

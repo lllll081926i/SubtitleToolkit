@@ -81,6 +81,9 @@ impl OutputProfile {
     /// 所以这里**不重新实现判定**，只调用 `Canvas::within_bluray` 这个
     /// 组件级单一事实源（09 §6 的硬规则），把结论翻译成 GUI 的说明文案。
     pub fn problem(&self) -> Option<String> {
+        if self.name.trim().is_empty() {
+            return Some("请为输出方案填写名称".into());
+        }
         // 严格蓝光 profile 禁止 2160p PGS（09 §6、AT-BD-001）。
         //
         // 判据依 `format` 与画布两个字段：PGS 是有蓝光规范的位图格式（
@@ -92,7 +95,11 @@ impl OutputProfile {
             CanvasMode::Fhd1080 => Canvas::FHD1080,
             CanvasMode::Hd720 => Canvas::HD720,
             // 保持原尺寸与自定义：判定要等真实脚本/取值，这里不猜。
-            CanvasMode::KeepOriginal | CanvasMode::Custom(..) => return None,
+            CanvasMode::KeepOriginal => return None,
+            CanvasMode::Custom(w, h) => match Canvas::new(w, h) {
+                Ok(canvas) => canvas,
+                Err(error) => return Some(error.to_string()),
+            },
         };
         let is_bluray_bitmap =
             matches!(self.target_format, TargetFormat::Pgs | TargetFormat::BdnXml);

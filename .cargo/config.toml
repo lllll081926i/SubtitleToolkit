@@ -8,3 +8,7 @@ git-fetch-with-cli = true
 TEMP = { value = "target/tmp", relative = true, force = true }
 TMP = { value = "target/tmp", relative = true, force = true }
 TMPDIR = { value = "target/tmp", relative = true, force = true }
+
+# 项目自身 EXE 静态链接 MSVC CRT；第三方 DLL 仍由运行库锁完整收集。
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

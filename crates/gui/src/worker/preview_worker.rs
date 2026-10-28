@@ -49,13 +49,7 @@ pub async fn render_single_frame(
     time_ms: i64,
     canvas: (u32, u32),
 ) -> Result<PreviewFrame, String> {
-    render_script(
-        move || std::fs::read(&ass_path).map_err(|e| e.to_string()),
-        time_ms,
-        canvas,
-        canvas,
-    )
-    .await
+    render_script(move || preview_script(&ass_path), time_ms, canvas, canvas).await
 }
 
 /// A/B 对比：同一时间点渲染两次，B 侧先应用 Profile 的 HDR 变换（05 §4.1）。
@@ -83,8 +77,8 @@ pub async fn render_ab(req: AbRequest) -> Result<AbFrames, String> {
             "未做变换（Profile 是 SDR 且画布相同）：两侧应当一致".to_string(),
         )
     } else {
-        let raw = std::fs::read(&path).map_err(|e| e.to_string())?;
-        let text = String::from_utf8_lossy(&raw).into_owned();
+        let raw = preview_script(&path)?;
+        let text = String::from_utf8(raw).map_err(|e| e.to_string())?;
         let mut doc = codec_ass::AssDocument::parse(&text);
         let mut parts: Vec<String> = Vec::new();
 
@@ -144,7 +138,8 @@ pub async fn render_ab(req: AbRequest) -> Result<AbFrames, String> {
                 script_policy: core_model::geometry::ScriptResolutionPolicy::Rewrite,
                 layout_policy: core_model::geometry::LayoutResPolicy::ScaleWithScript,
             };
-            let _ = transform_resolution::apply(&mut doc, &g, &mut core_model::LossReport::new());
+            transform_resolution::apply(&mut doc, &g, &mut core_model::LossReport::new())
+                .map_err(|e| e.to_string())?;
             parts.push(format!(
                 "尺寸 {}x{} → {}x{}",
                 bx, by, canvas_b.0, canvas_b.1
@@ -160,13 +155,7 @@ pub async fn render_ab(req: AbRequest) -> Result<AbFrames, String> {
     };
 
     // A 侧：原版，不变
-    let a = render_script(
-        move || std::fs::read(&path).map_err(|e| e.to_string()),
-        time,
-        canvas_a,
-        canvas_a,
-    )
-    .await?;
+    let a = render_script(move || preview_script(&path), time, canvas_a, canvas_a).await?;
 
     let b = match b_bytes {
         Some(bytes) => render_script(move || Ok(bytes), time, canvas_b, canvas_b).await?,
@@ -321,5 +310,41 @@ fn placeholder(canvas: (u32, u32), reason: &str) -> PreviewFrame {
         source: crate::state::preview::FrameSource::Placeholder {
             reason: reason.to_string(),
         },
+    }
+}
+
+/// 预览与导出复用编码判定和 SRT→ASS 转换，拒绝把位图文件当 ASS 喂给宿主。
+fn preview_script(path: &std::path::Path) -> Result<Vec<u8>, String> {
+    use format_detect::SubtitleFormat;
+    let format = format_detect::probe_file(path)
+        .map_err(|e| e.to_string())?
+        .format;
+    match format {
+        SubtitleFormat::Ass | SubtitleFormat::Ssa => cli::pipeline::load_text(path)
+            .map(|loaded| loaded.text.into_bytes())
+            .map_err(|e| e.to_string()),
+        SubtitleFormat::Srt => {
+            let loaded = cli::pipeline::load_text(path).map_err(|e| e.to_string())?;
+            let (sub, mut loss) =
+                codec_srt::parse(loaded.text.as_bytes()).map_err(|e| e.to_string())?;
+            Ok(cli::pipeline::srt_to_ass(&sub, Canvas::FHD1080, "预览", &mut loss).into_bytes())
+        }
+        _ => Err("此格式暂不支持画面预览；可在输出方案中进行转换与校验".into()),
+    }
+}
+
+#[cfg(test)]
+mod input_tests {
+    use super::*;
+    #[test]
+    fn srt_preview_is_converted_using_the_export_pipeline() {
+        let path = std::env::temp_dir().join(format!("stk-preview-{}.srt", std::process::id()));
+        std::fs::write(&path, "1\n00:00:01,000 --> 00:00:02,000\n你好\n").unwrap();
+        let bytes = preview_script(&path).unwrap();
+        let text = String::from_utf8(bytes).unwrap();
+        assert!(text.contains("[Script Info]"));
+        assert!(text.contains("你好"));
+        assert_eq!(codec_ass::AssDocument::parse(&text).dialogues().len(), 1);
+        std::fs::remove_file(path).unwrap();
     }
 }

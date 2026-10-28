@@ -1,3 +1,4 @@
+use super::style;
 use crate::icons;
 use crate::message::Message;
 use crate::state::task::{TaskDrawerState, TaskStatus};
@@ -11,8 +12,9 @@ pub fn view<'a>(state: &'a TaskDrawerState, total_plan: usize) -> Element<'a, Me
                 .spacing(6)
                 .align_y(Alignment::Center),
         )
+        .style(style::secondary)
         .on_press(Message::CancelQueue)
-        .padding([8, 16])
+        .padding(16)
     } else {
         button(
             row![
@@ -22,8 +24,10 @@ pub fn view<'a>(state: &'a TaskDrawerState, total_plan: usize) -> Element<'a, Me
             .spacing(6)
             .align_y(Alignment::Center),
         )
-        .on_press(Message::StartQueue)
-        .padding([8, 16])
+        .style(style::secondary)
+        .on_press_maybe((total_plan > 0).then_some(Message::StartQueue))
+        .style(style::primary)
+        .padding(16)
     };
 
     // AT-RENDER-002：失败之后必须能重试，而不只是“看得到红了”。
@@ -42,8 +46,9 @@ pub fn view<'a>(state: &'a TaskDrawerState, total_plan: usize) -> Element<'a, Me
                 .spacing(6)
                 .align_y(Alignment::Center),
             )
+            .style(style::secondary)
             .on_press(Message::RetryFailed)
-            .padding([8, 16])
+            .padding(16)
             .into(),
         )
     } else {
@@ -53,15 +58,17 @@ pub fn view<'a>(state: &'a TaskDrawerState, total_plan: usize) -> Element<'a, Me
     let dir_text = format!("输出: {}", state.output_dir.display());
 
     let dir_controls = row![
-        text(dir_text).size(12),
-        button(text("更改...").size(11))
+        text(dir_text).size(12).width(Length::Fill),
+        button(text("更改...").size(12))
+            .style(style::secondary)
             .on_press(Message::SelectOutputDir)
             .padding([2, 6]),
         button(
-            row![icons::folder(12.0), text("打开文件夹").size(11)]
+            row![icons::folder(12.0), text("打开文件夹").size(12)]
                 .spacing(4)
                 .align_y(Alignment::Center),
         )
+        .style(style::secondary)
         .on_press(Message::OpenOutputDir)
         .padding([2, 6]),
     ]
@@ -80,11 +87,12 @@ pub fn view<'a>(state: &'a TaskDrawerState, total_plan: usize) -> Element<'a, Me
             } else {
                 "详情"
             })
-            .size(11),
+            .size(12),
         ]
         .spacing(4)
         .align_y(Alignment::Center),
     )
+    .style(style::secondary)
     .on_press(Message::ToggleTaskDrawer)
     .padding([4, 8]);
 
@@ -97,7 +105,6 @@ pub fn view<'a>(state: &'a TaskDrawerState, total_plan: usize) -> Element<'a, Me
             None => row![],
         },
         Space::with_width(Length::Fixed(16.0)),
-        dir_controls,
         Space::with_width(Length::Fill),
         text(format!(
             "完成 {} · 失败 {}",
@@ -110,7 +117,7 @@ pub fn view<'a>(state: &'a TaskDrawerState, total_plan: usize) -> Element<'a, Me
     ]
     .align_y(Alignment::Center);
 
-    let mut main_col = column![bar_content].spacing(8);
+    let mut main_col = column![dir_controls, bar_content].spacing(12);
 
     if state.is_expanded {
         let mut task_list = column![].spacing(4);
@@ -120,7 +127,7 @@ pub fn view<'a>(state: &'a TaskDrawerState, total_plan: usize) -> Element<'a, Me
         if !state.notes.is_empty() {
             let mut notes_col = column![].spacing(2);
             for n in &state.notes {
-                notes_col = notes_col.push(text(format!("· {n}")).size(11));
+                notes_col = notes_col.push(text(format!("· {n}")).size(12));
             }
             task_list = task_list.push(container(notes_col).padding(4).width(Length::Fill));
         }
@@ -136,10 +143,10 @@ pub fn view<'a>(state: &'a TaskDrawerState, total_plan: usize) -> Element<'a, Me
         }
         if let Some(p) = &state.spec_path {
             task_list = task_list
-                .push(text(format!("spec（可直接喂给 CLI 重放）：{}", p.display())).size(11));
+                .push(text(format!("spec（可直接喂给 CLI 重放）：{}", p.display())).size(12));
         }
         if let Some(p) = &state.report_path {
-            task_list = task_list.push(text(format!("报告：{}", p.display())).size(11));
+            task_list = task_list.push(text(format!("报告：{}", p.display())).size(12));
         }
 
         if state.tasks.is_empty() {
@@ -150,26 +157,26 @@ pub fn view<'a>(state: &'a TaskDrawerState, total_plan: usize) -> Element<'a, Me
                 // 这里不再自己把状态“翻译”一遍，否则 GUI 与 CLI 报告会出现两套词。
                 let status_row: Element<'a, Message> = match &task.status {
                     TaskStatus::Verified { .. } | TaskStatus::FromCache { .. } => {
-                        row![icons::check(12.0), text(status_line(&task.status)).size(11)]
+                        row![icons::check(12.0), text(status_line(&task.status)).size(12)]
                             .spacing(4)
                             .align_y(Alignment::Center)
                             .into()
                     }
                     TaskStatus::WouldWrite { .. } => {
-                        text(status_line(&task.status)).size(11).into()
+                        text(status_line(&task.status)).size(12).into()
                     }
                     TaskStatus::Failed { code, .. } => row![
                         icons::close(12.0),
-                        text(format!("失败 [{code}] {}", task.status.detail())).size(11)
+                        text(format!("失败 [{code}] {}", task.status.detail())).size(12)
                     ]
                     .spacing(4)
                     .align_y(Alignment::Center)
                     .into(),
                     TaskStatus::NotAttempted { .. } => {
-                        text(status_line(&task.status)).size(11).into()
+                        text(status_line(&task.status)).size(12).into()
                     }
                     TaskStatus::Queued | TaskStatus::Running | TaskStatus::Cancelled { .. } => {
-                        text(status_line(&task.status)).size(11).into()
+                        text(status_line(&task.status)).size(12).into()
                     }
                 };
 
@@ -193,7 +200,8 @@ pub fn view<'a>(state: &'a TaskDrawerState, total_plan: usize) -> Element<'a, Me
 
     container(main_col)
         .width(Length::Fill)
-        .padding([8, 16])
+        .padding(16)
+        .style(style::card)
         .into()
 }
 

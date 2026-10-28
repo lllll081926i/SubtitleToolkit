@@ -1,3 +1,4 @@
+use super::style;
 use crate::icons;
 use crate::message::Message;
 use crate::state::PreviewState;
@@ -20,19 +21,18 @@ pub fn view<'a>(state: &'a PreviewState) -> Element<'a, Message> {
     );
 
     let top_bar = row![
-        text("预览").size(15),
+        text("画面预览").size(22),
         Space::with_width(Length::Fill),
         // 像素来源必须一直可见：占位色块与真渲染在画面上分辨不出来，
         // 而它们的含义完全不同（前者是我们编的颜色，后者是可交付的根据）。
-        text(state.source.label()).size(12),
         Space::with_width(Length::Fixed(12.0)),
-        text(time_code).size(13),
         Space::with_width(Length::Fixed(12.0)),
         button(text(if state.is_split_ab {
             "A/B对比: 开"
         } else {
             "A/B对比: 关"
         }))
+        .style(style::secondary)
         .on_press(Message::ToggleSplitAb)
         .padding([4, 10]),
     ]
@@ -41,13 +41,13 @@ pub fn view<'a>(state: &'a PreviewState) -> Element<'a, Message> {
     let ab_caption: Option<Element<'a, Message>> = if state.is_split_ab {
         Some(
             row![
-                text("原版").size(11),
+                text("原版").size(12),
                 Space::with_width(Length::Fixed(10.0)),
                 text(format!(
                     "变换后：{}",
                     state.ab_note.as_deref().unwrap_or("等待渲染")
                 ))
-                .size(11),
+                .size(12),
             ]
             .align_y(Alignment::Center)
             .into(),
@@ -118,7 +118,8 @@ pub fn view<'a>(state: &'a PreviewState) -> Element<'a, Message> {
         0.0..=(state.duration_ms.max(1) as f32),
         state.current_time_ms as f32,
         |v| Message::PreviewTimeChanged(v as i64),
-    );
+    )
+    .on_release(Message::PreviewSeeked);
 
     let controls = row![
         button(
@@ -126,6 +127,7 @@ pub fn view<'a>(state: &'a PreviewState) -> Element<'a, Message> {
                 .spacing(4)
                 .align_y(Alignment::Center),
         )
+        .style(style::secondary)
         .on_press(Message::PreviewJumpEvent(false))
         .padding([4, 10]),
         Space::with_width(Length::Fixed(8.0)),
@@ -136,6 +138,7 @@ pub fn view<'a>(state: &'a PreviewState) -> Element<'a, Message> {
                 .spacing(4)
                 .align_y(Alignment::Center),
         )
+        .style(style::secondary)
         .on_press(Message::PreviewJumpEvent(true))
         .padding([4, 10]),
     ]
@@ -145,18 +148,24 @@ pub fn view<'a>(state: &'a PreviewState) -> Element<'a, Message> {
     let content = match ab_caption {
         Some(c) => column![
             top_bar,
+            text(state.source.label()).size(12).color(style::MUTED),
+            text(time_code.clone()).size(13),
             c,
             container(canvas_box)
                 .width(Length::Fill)
-                .height(Length::Fill),
+                .height(Length::Fill)
+                .style(style::stage),
             controls,
         ]
         .spacing(10),
         None => column![
             top_bar,
+            text(state.source.label()).size(12).color(style::MUTED),
+            text(time_code.clone()).size(13),
             container(canvas_box)
                 .width(Length::Fill)
-                .height(Length::Fill),
+                .height(Length::Fill)
+                .style(style::stage),
             controls,
         ]
         .spacing(10),
@@ -165,7 +174,8 @@ pub fn view<'a>(state: &'a PreviewState) -> Element<'a, Message> {
     container(content)
         .width(Length::Fill)
         .height(Length::Fill)
-        .padding(12)
+        .padding(20)
+        .style(style::card)
         .into()
 }
 

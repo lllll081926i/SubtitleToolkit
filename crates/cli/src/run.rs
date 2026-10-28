@@ -536,6 +536,18 @@ pub fn find_ffprobe() -> Option<PathBuf> {
     } else {
         "ffprobe"
     };
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            for candidate in [
+                dir.join(exe_name),
+                dir.join("tools").join("bin").join(exe_name),
+            ] {
+                if candidate.is_file() {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
     if let Ok(path) = std::env::var("PATH") {
         for d in std::env::split_paths(&path) {
             let cand = d.join(exe_name);
@@ -548,7 +560,6 @@ pub fn find_ffprobe() -> Option<PathBuf> {
     // 早先这里写的是 `crates/cli/../tools/bin`，也就是 crates/tools/bin —— 那个目录从来不存在，
     // 所以这条回落在真机上从来没生效过（ISSUES AF2）。
     let local = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
         .join("..")
         .join("..")
         .join("tools")

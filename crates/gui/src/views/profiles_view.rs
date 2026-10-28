@@ -1,7 +1,10 @@
+use super::style;
 use crate::icons;
 use crate::message::Message;
-use crate::state::profile::{CanvasMode, HdrMode, ProfilesState, TargetFormat};
-use iced::widget::{button, checkbox, column, container, pick_list, row, scrollable, text, Space};
+use crate::state::profile::{CanvasMode, HdrMode, ProfilesState, TargetFormat, TimeAdjustMode};
+use iced::widget::{
+    button, checkbox, column, container, pick_list, row, scrollable, text, text_input, Space,
+};
 use iced::{Alignment, Element, Length};
 
 const FORMATS: &[TargetFormat] = &[
@@ -26,19 +29,22 @@ const HDRS: &[HdrMode] = &[
 
 pub fn view<'a>(state: &'a ProfilesState, notice: &'a str) -> Element<'a, Message> {
     let header = row![
-        text("输出配置").size(16),
-        button(text("导入").size(11))
+        text("输出方案").size(22),
+        button(text("导入").size(12))
+            .style(style::secondary)
             .on_press(Message::ImportPreset)
             .padding([4, 7]),
-        button(text("导出").size(11))
+        button(text("导出").size(12))
+            .style(style::secondary)
             .on_press(Message::ExportPreset)
             .padding([4, 7]),
         Space::with_width(Length::Fill),
         button(
-            row![icons::plus(12.0), text("新建 Profile").size(12)]
+            row![icons::plus(12.0), text("新建方案").size(12)]
                 .spacing(4)
                 .align_y(Alignment::Center),
         )
+        .style(style::secondary)
         .on_press(Message::AddProfile)
         .padding([4, 8]),
     ]
@@ -56,19 +62,22 @@ pub fn view<'a>(state: &'a ProfilesState, notice: &'a str) -> Element<'a, Messag
             row![
                 text(&profile.name).size(13),
                 Space::with_width(Length::Fill),
-                text(profile.target_format.label()).size(11),
+                text(profile.target_format.label()).size(12),
             ]
             .align_y(Alignment::Center),
         )
+        .style(style::secondary)
         .on_press(Message::ProfileSelected(id))
         .width(Length::Fill)
         .padding(4);
 
         let dup_btn = button(icons::copy(12.0))
+            .style(style::secondary)
             .on_press(Message::DuplicateProfile(id))
             .padding([4, 6]);
 
         let remove_btn = button(icons::close(12.0))
+            .style(style::secondary)
             .on_press(Message::RemoveProfile(id))
             .padding([4, 6]);
 
@@ -90,7 +99,24 @@ pub fn view<'a>(state: &'a ProfilesState, notice: &'a str) -> Element<'a, Messag
 
             let hdr_pick = pick_list(HDRS, Some(profile.hdr), move |h| Message::HdrChanged(id, h));
 
+            let time_options = [
+                TimeAdjustMode::None,
+                TimeAdjustMode::OffsetMs(-1000),
+                TimeAdjustMode::OffsetMs(-500),
+                TimeAdjustMode::OffsetMs(500),
+                TimeAdjustMode::OffsetMs(1000),
+            ];
             let options_col = column![
+                text_input("方案名称（不可为空）", &profile.name)
+                    .on_input(move |name| Message::ProfileRenamed(id, name))
+                    .padding(10),
+                row![
+                    text("时间调整").width(Length::Fixed(90.0)),
+                    pick_list(time_options, Some(profile.time_adjust), move |v| {
+                        Message::TimeAdjustChanged(id, v)
+                    })
+                ]
+                .align_y(Alignment::Center),
                 row![
                     text("目标格式:").size(12).width(Length::Fixed(70.0)),
                     format_pick
@@ -107,16 +133,17 @@ pub fn view<'a>(state: &'a ProfilesState, notice: &'a str) -> Element<'a, Messag
                 ]
                 .align_y(Alignment::Center),
                 row![
-                    text("状态:").size(11).width(Length::Fixed(70.0)),
-                    text(match profile.problem() {
-                        None => "可用",
-                        Some(_) => "超过蓝光画布上限",
+                    text("状态:").size(12).width(Length::Fixed(70.0)),
+                    text(if profile.problem().is_none() {
+                        "可用"
+                    } else {
+                        "请检查参数"
                     })
-                    .size(11),
+                    .size(12),
                 ]
                 .align_y(Alignment::Center),
             ]
-            .spacing(6);
+            .spacing(12);
 
             card_content = card_content.push(options_col);
         }
@@ -124,7 +151,7 @@ pub fn view<'a>(state: &'a ProfilesState, notice: &'a str) -> Element<'a, Messag
         if let Some(why) = profile.problem() {
             let warn = column![
                 text("此配置无法运行").size(12),
-                text(why.lines().next().unwrap_or("画布超出蓝光上限").to_string()).size(11),
+                text(why.lines().next().unwrap_or("画布超出蓝光上限").to_string()).size(12),
             ]
             .spacing(4);
 
@@ -136,21 +163,35 @@ pub fn view<'a>(state: &'a ProfilesState, notice: &'a str) -> Element<'a, Messag
             );
         }
 
-        let boxed_card = container(card_content).padding(10).width(Length::Fill);
+        let boxed_card = container(card_content)
+            .padding(20)
+            .width(Length::Fill)
+            .style(if is_editing {
+                style::selected
+            } else {
+                style::card
+            });
 
         profiles_col = profiles_col.push(boxed_card);
     }
 
-    let mut main_col = column![header].spacing(8);
+    let mut main_col = column![
+        header,
+        text("勾选需要导出的方案；点击方案展开参数。每份输入可同时生成多种输出。")
+            .size(13)
+            .color(style::MUTED)
+    ]
+    .spacing(16);
     if !notice.is_empty() {
-        main_col = main_col.push(text(notice).size(11));
+        main_col = main_col.push(text(notice).size(12));
     }
     let main_col = main_col.push(scrollable(profiles_col).height(Length::Fill));
 
     container(main_col)
-        .width(Length::Fixed(360.0))
+        .width(Length::Fill)
         .height(Length::Fill)
-        .padding(12)
+        .padding(20)
+        .style(style::card)
         .into()
 }
 
@@ -172,6 +213,16 @@ impl std::fmt::Display for HdrMode {
             Self::Sdr => write!(f, "SDR"),
             Self::ReferenceWhite(n) => write!(f, "参考白 {} nit", n),
             Self::Percentage(p) => write!(f, "线性缩放 {}%", p),
+        }
+    }
+}
+
+impl std::fmt::Display for TimeAdjustMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => write!(f, "保持原时间轴"),
+            Self::OffsetMs(ms) => write!(f, "偏移 {ms:+} ms"),
+            Self::SpeedScale { from, to } => write!(f, "变速 {from} → {to}"),
         }
     }
 }

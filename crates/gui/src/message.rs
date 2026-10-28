@@ -3,6 +3,11 @@ use std::path::PathBuf;
 
 #[derive(Clone, Debug)]
 pub enum Message {
+    WorkspaceChanged(bool),
+    MotionTick(std::time::Instant),
+    PreviewResolved(u64, Box<Message>),
+    PreviewSeeked,
+    VideoProbed(crate::state::inputs::VideoAssist, String),
     // === 左栏：输入管理 ===
     InputSelected(usize),
     InputToggled(usize),
@@ -10,6 +15,7 @@ pub enum Message {
     RemoveInput(usize),
     AddFilesClicked,
     FilesDropped(Vec<PathBuf>),
+    InputItemsLoaded(Vec<crate::state::inputs::InputItem>),
     VideoAssistDropped(PathBuf),
     ApplyVideoAssist,
     DismissVideoBanner,
@@ -42,6 +48,7 @@ pub enum Message {
 
     // === 右栏：Profile 矩阵 ===
     ProfileSelected(usize),
+    ProfileRenamed(usize, String),
     ProfileToggled(usize),
     AddProfile,
     DuplicateProfile(usize),

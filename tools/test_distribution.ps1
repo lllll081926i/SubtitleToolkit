@@ -23,6 +23,16 @@ try {
             throw "软件包校验失败：$relative"
         }
     }
+    foreach ($required in @('subtitletool-cli.exe', 'subtitletoolkit-gui.exe', 'subtitletool-render-host.exe', 'libass-runtime.flag', 'licenses/LIBASS_RUNTIME_LOCK.json', 'THIRD_PARTY_NOTICES.md', 'sbom.cdx.json')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $package $required) -PathType Leaf)) { throw "发布包缺少必需文件：$required" }
+    }
+    $runtime = Get-Content (Join-Path $package 'licenses/LIBASS_RUNTIME_LOCK.json') -Raw | ConvertFrom-Json
+    foreach ($artifact in $runtime.artifacts) {
+        $dll = Join-Path $package $artifact.name
+        if ((Get-FileHash -LiteralPath $dll -Algorithm SHA256).Hash.ToLowerInvariant() -ne $artifact.sha256) {
+            throw "发布包运行库与锁不一致：$($artifact.name)"
+        }
+    }
     $cli = Join-Path $package 'subtitletool-cli.exe'
     $doctor = & $cli doctor --json
     if ($LASTEXITCODE -ne 0) { throw "软件包 doctor 失败：$doctor" }

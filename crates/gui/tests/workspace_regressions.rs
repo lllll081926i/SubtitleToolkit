@@ -91,3 +91,20 @@ fn subtitle_metadata_drives_the_real_timeline() {
     assert_eq!(item.event_count, 1);
     std::fs::remove_file(path).unwrap();
 }
+
+#[test]
+fn ab_placeholder_is_never_promoted_to_a_real_render() {
+    let mut app = SubtitleApp::default();
+    let _ = app.update(Message::AbRendered {
+        a_rgba: vec![0; 4],
+        a_dims: (1, 1),
+        b_rgba: vec![0; 4],
+        b_dims: (1, 1),
+        note: String::new(),
+        source: FrameSource::Placeholder {
+            reason: "缺少宿主".into(),
+        },
+    });
+    assert!(!app.preview.source.is_trustworthy());
+    assert!(app.preview.source.label().contains("缺少宿主"));
+}

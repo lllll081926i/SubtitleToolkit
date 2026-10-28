@@ -407,6 +407,7 @@ impl SubtitleApp {
                     };
                     self.preview
                         .set_ab_frames(a_rgba, a_dims, b_rgba, b_dims, provider);
+                    self.preview.source = source;
                 }
             }
             Message::FrameRendered {

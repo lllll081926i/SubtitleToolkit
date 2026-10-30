@@ -15,6 +15,7 @@ fn main() -> iced::Result {
 
     let result = iced::application(SubtitleApp::title, SubtitleApp::update, SubtitleApp::view)
         .theme(SubtitleApp::theme)
+        .subscription(SubtitleApp::subscription)
         // 默认 SansSerif 在部分 Windows 安装上没有 CJK 覆盖；明确选用 Windows
         // 自带的中文 UI 字体，避免界面中文与 Unicode 图标显示成空框。
         .default_font(iced::Font::with_name("Microsoft YaHei UI"))

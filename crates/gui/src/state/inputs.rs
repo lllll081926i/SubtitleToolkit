@@ -11,6 +11,7 @@ pub struct InputItem {
     pub selected: bool,
     pub duration_ms: Option<u64>,
     pub event_count: usize,
+    pub event_starts: Vec<i64>,
     pub play_res: Option<(u32, u32)>,
 }
 
@@ -26,7 +27,7 @@ impl InputItem {
             .map(|d| d.format)
             .unwrap_or(SubtitleFormat::Unknown);
 
-        Self {
+        let mut item = Self {
             id,
             path,
             file_name,
@@ -34,8 +35,49 @@ impl InputItem {
             selected: true,
             duration_ms: None,
             event_count: 0,
+            event_starts: Vec::new(),
             play_res: None,
+        };
+        item.load_metadata();
+        item
+    }
+    fn load_metadata(&mut self) {
+        if !matches!(
+            self.format,
+            SubtitleFormat::Ass | SubtitleFormat::Ssa | SubtitleFormat::Srt
+        ) {
+            return;
         }
+        let Ok(loaded) = cli::pipeline::load_text(&self.path) else {
+            return;
+        };
+        let pairs: Vec<_> = if self.format == SubtitleFormat::Srt {
+            let Ok((sub, _)) = codec_srt::parse(loaded.text.as_bytes()) else {
+                return;
+            };
+            sub.cues.iter().map(|cue| (cue.start, cue.end)).collect()
+        } else {
+            let doc = codec_ass::AssDocument::parse(&loaded.text);
+            self.play_res = doc
+                .play_res()
+                .and_then(|(w, h)| Some((u32::try_from(w).ok()?, u32::try_from(h).ok()?)))
+                .filter(|(w, h)| core_model::Canvas::new(*w, *h).is_ok());
+            doc.dialogues()
+                .iter()
+                .filter_map(|d| Some((d.start().ok()?, d.end().ok()?)))
+                .collect()
+        };
+        self.event_count = pairs.len();
+        self.event_starts = pairs
+            .iter()
+            .filter_map(|(start, _)| start.to_pts_ticks().ok().map(|t| (t / 90).max(0)))
+            .collect();
+        self.event_starts.sort_unstable();
+        self.event_starts.dedup();
+        self.duration_ms = pairs
+            .iter()
+            .filter_map(|(_, end)| end.to_pts_ticks().ok().map(|t| (t / 90).max(0) as u64))
+            .max();
     }
 }
 
@@ -63,14 +105,17 @@ impl InputsState {
     }
 
     pub fn add_path(&mut self, path: PathBuf) {
-        if self.items.iter().any(|item| item.path == path) {
-            return; // 杜绝重复添加相同路径
+        self.add_item(InputItem::from_path(0, path));
+    }
+
+    pub fn add_item(&mut self, mut item: InputItem) {
+        if self.items.iter().any(|old| old.path == item.path) {
+            return;
         }
-        let id = self.next_id;
+        item.id = self.next_id;
         self.next_id += 1;
-        let item = InputItem::from_path(id, path);
         if self.active_preview_id.is_none() {
-            self.active_preview_id = Some(id);
+            self.active_preview_id = Some(item.id);
         }
         self.items.push(item);
     }

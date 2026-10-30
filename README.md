@@ -107,3 +107,17 @@ Doctest 使用 `-j 1` 串行运行。需要真实 native 渲染的测试依赖 l
 ## 许可证
 
 SubtitleToolkit 自有代码采用双许可证：你可以选择 [MIT](LICENSE-MIT) 或 [Apache-2.0](LICENSE-APACHE)。第三方 DLL、源码归档和 Rust 依赖仍受其各自许可证约束；请同时阅读 [第三方声明](THIRD_PARTY_NOTICES.md)。
+
+
+## 桌面工作台
+
+- 左侧素材库添加或拖入 ASS、SSA、SRT、SUP、BDN XML；拖入视频可探测参考参数。
+- 「预览与校对」提供 ASS/SSA/SRT 画面、真实对白跳转及 A/B 对比。时间轴拖动结束后渲染，避免拖动期间反复启动渲染宿主。
+- 「输出方案」独立编辑方案名称、输出格式、画布、HDR 和时间偏移；勾选的方案与勾选的输入组成批处理。设置和环境自检使用覆盖式弹窗。
+- 底部固定显示输出目录、任务入口、完成统计和可展开的错误详情。取消会等待正在执行的一步退出，然后才允许再次启动。
+
+### 发布依赖边界
+
+便携包及安装器包含 GUI、CLI、渲染宿主、锁定的 20 个 libass 运行库 DLL、fontconfig 配置、许可证和 SBOM。Windows x64 项目 EXE 静态链接 MSVC CRT，不要求另装 VC Redistributable。
+
+ffprobe、MKVToolNix 和第三方 CSRI 渲染器仍是可选外部组件，并未宣称随包附带。参考视频探测可通过 `STK_FFPROBE` 指定 ffprobe，或将自行取得的合法版本放在程序旁／`tools/bin`；其次查找 PATH。不能将未登记来源、哈希和许可证的二进制直接加入发布包。位图字幕的画面预览尚未实现，转换和校验仍由现有后端执行。

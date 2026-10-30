@@ -39,6 +39,10 @@ fn launch_batch(
 
 pub struct SubtitleApp {
     pub inputs: InputsState,
+    pub show_profiles: bool,
+    pub transition_started: Option<std::time::Instant>,
+    pub transition_progress: f32,
+    pub preview_generation: u64,
     pub preview: PreviewState,
     pub profiles: ProfilesState,
     pub preset_notice: String,
@@ -63,6 +67,10 @@ impl Default for SubtitleApp {
     fn default() -> Self {
         Self {
             inputs: InputsState::new(),
+            show_profiles: false,
+            transition_started: None,
+            transition_progress: 1.0,
+            preview_generation: 0,
             preview: PreviewState::new(),
             profiles: ProfilesState::new(),
             preset_notice: String::new(),
@@ -97,12 +105,19 @@ impl SubtitleApp {
     /// 当前 Profile 变换的版本。变换用的是 `transform_hdr` / `transform_resolution`
     /// ——与 `hdr` 命令和导出链同一份实现，所以对比结果就是导出的预演。
     fn request_preview(&mut self) -> Task<Message> {
+        self.preview_generation = self.preview_generation.wrapping_add(1);
+        let generation = self.preview_generation;
         let Some(item) = self.inputs.active_input() else {
+            self.preview = PreviewState::new();
             return Task::none();
         };
+        self.preview.duration_ms = item.duration_ms.unwrap_or(60_000).min(i64::MAX as u64) as i64;
+        self.preview.set_time(self.preview.current_time_ms);
         let path = item.path.clone();
         let time = self.preview.current_time_ms;
         self.preview.is_rendering = true;
+        self.preview.rendered_rgba = None;
+        self.preview.ab_rgba = None;
 
         // 画布：用当前选中 Profile 的目标尺寸作为 B 侧；A 侧用同一存储画布。
         //
@@ -138,23 +153,28 @@ impl SubtitleApp {
                     )
                     .await
                 },
-                move |res| match res {
-                    Ok(f) => Message::AbRendered {
-                        a_rgba: f.a.rgba,
-                        a_dims: (f.a.width, f.a.height),
-                        b_rgba: f.b.rgba,
-                        b_dims: (f.b.width, f.b.height),
-                        note: f.note,
-                        source: f.b.source,
-                    },
-                    Err(e) => Message::AbRendered {
-                        a_rgba: vec![],
-                        a_dims: (ca_w, ca_h),
-                        b_rgba: vec![],
-                        b_dims: (cb_w, cb_h),
-                        note: String::new(),
-                        source: crate::state::preview::FrameSource::Failed { code: e },
-                    },
+                move |res| {
+                    Message::PreviewResolved(
+                        generation,
+                        Box::new(match res {
+                            Ok(f) => Message::AbRendered {
+                                a_rgba: f.a.rgba,
+                                a_dims: (f.a.width, f.a.height),
+                                b_rgba: f.b.rgba,
+                                b_dims: (f.b.width, f.b.height),
+                                note: f.note,
+                                source: f.b.source,
+                            },
+                            Err(e) => Message::AbRendered {
+                                a_rgba: vec![],
+                                a_dims: (ca_w, ca_h),
+                                b_rgba: vec![],
+                                b_dims: (cb_w, cb_h),
+                                note: String::new(),
+                                source: crate::state::preview::FrameSource::Failed { code: e },
+                            },
+                        }),
+                    )
                 },
             );
         }
@@ -166,19 +186,24 @@ impl SubtitleApp {
             async move {
                 crate::worker::preview_worker::render_single_frame(path, time, (ca_w, ca_h)).await
             },
-            |res| match res {
-                Ok(f) => Message::FrameRendered {
-                    rgba: f.rgba,
-                    width: f.width,
-                    height: f.height,
-                    source: f.source,
-                },
-                Err(e) => Message::FrameRendered {
-                    rgba: vec![],
-                    width: 1920,
-                    height: 1080,
-                    source: crate::state::preview::FrameSource::Failed { code: e },
-                },
+            move |res| {
+                Message::PreviewResolved(
+                    generation,
+                    Box::new(match res {
+                        Ok(f) => Message::FrameRendered {
+                            rgba: f.rgba,
+                            width: f.width,
+                            height: f.height,
+                            source: f.source,
+                        },
+                        Err(e) => Message::FrameRendered {
+                            rgba: vec![],
+                            width: 1920,
+                            height: 1080,
+                            source: crate::state::preview::FrameSource::Failed { code: e },
+                        },
+                    }),
+                )
             },
         )
     }
@@ -190,7 +215,11 @@ impl SubtitleApp {
     /// 比编一个变换出来好。
     fn ab_plan(&self) -> ((u32, u32), (u32, u32), crate::state::profile::HdrMode, bool) {
         use crate::state::profile::CanvasMode;
-        let original = (1920u32, 1080u32);
+        let original = self
+            .inputs
+            .active_input()
+            .and_then(|i| i.play_res)
+            .unwrap_or((1920, 1080));
         let Some(p) = self.profiles.active_profile() else {
             return (
                 original,
@@ -212,6 +241,33 @@ impl SubtitleApp {
 
     pub fn update(&mut self, message: Message) -> Task<Message> {
         match message {
+            Message::WorkspaceChanged(profiles) => {
+                self.show_profiles = profiles;
+                self.transition_started = Some(std::time::Instant::now());
+                self.transition_progress = 0.0;
+                if !profiles {
+                    return self.request_preview();
+                }
+            }
+            Message::MotionTick(now) => {
+                if let Some(start) = self.transition_started {
+                    self.transition_progress =
+                        (now.duration_since(start).as_secs_f32() / 0.16).min(1.0);
+                    if self.transition_progress >= 1.0 {
+                        self.transition_started = None;
+                    }
+                }
+            }
+            Message::PreviewResolved(generation, result) => {
+                if generation == self.preview_generation {
+                    return self.update(*result);
+                }
+            }
+            Message::PreviewSeeked => return self.request_preview(),
+            Message::VideoProbed(assist, banner) => {
+                self.inputs.video_assist = Some(assist);
+                self.inputs.banner_suggestion = Some(banner);
+            }
             // === 左栏输入事件 ===
             Message::InputSelected(id) => {
                 self.inputs.active_preview_id = Some(id);
@@ -219,32 +275,76 @@ impl SubtitleApp {
             }
             Message::InputToggled(id) => self.inputs.toggle_select(id),
             Message::SelectAllInputs(s) => self.inputs.select_all(s),
-            Message::RemoveInput(id) => self.inputs.remove_item(id),
+            Message::RemoveInput(id) => {
+                self.inputs.remove_item(id);
+                return self.request_preview();
+            }
             Message::AddFilesClicked => {
-                let files = rfd::FileDialog::new()
-                    .add_filter("字幕文件", &["ass", "ssa", "srt", "sup"])
-                    .pick_files();
-                if let Some(paths) = files {
-                    return Task::perform(async move { paths }, Message::FilesDropped);
-                }
+                return Task::perform(
+                    async {
+                        rfd::AsyncFileDialog::new()
+                            .add_filter("字幕文件", &["ass", "ssa", "srt", "sup", "xml"])
+                            .pick_files()
+                            .await
+                            .unwrap_or_default()
+                            .into_iter()
+                            .map(|f| f.path().to_path_buf())
+                            .collect()
+                    },
+                    Message::FilesDropped,
+                );
             }
             Message::FilesDropped(paths) => {
-                for p in paths {
-                    self.inputs.add_path(p);
+                return Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || {
+                            paths
+                                .into_iter()
+                                .map(|path| crate::state::inputs::InputItem::from_path(0, path))
+                                .collect()
+                        })
+                        .await
+                    },
+                    |result| match result {
+                        Ok(items) => Message::InputItemsLoaded(items),
+                        Err(error) => Message::TaskNotes(vec![format!("读取字幕失败：{error}")]),
+                    },
+                );
+            }
+            Message::InputItemsLoaded(items) => {
+                for item in items {
+                    self.inputs.add_item(item);
                 }
+                return self.request_preview();
             }
             Message::VideoAssistDropped(p) => {
                 // 用真的 ffprobe 读（16 §/AT-PROBE-001）：
                 // 这里曾经写死“建议帧率 23.976 | 分辨率 3840x2160”，
                 // 那个数字对任何视频都“对”，所以没人会发现它从来没被测过。
                 // 探不到就说探不到，并把 hint 给出来。
-                let probe = crate::worker::probe_worker::probe_video(&p);
-                self.inputs.video_assist = Some(probe.assist.clone());
-                self.inputs.banner_suggestion = Some(probe.banner);
+                return Task::perform(
+                    async move {
+                        tokio::task::spawn_blocking(move || {
+                            crate::worker::probe_worker::probe_video(&p)
+                        })
+                        .await
+                    },
+                    |result| match result {
+                        Ok(probe) => Message::VideoProbed(probe.assist, probe.banner),
+                        Err(error) => Message::TaskNotes(vec![format!("视频探测失败：{error}")]),
+                    },
+                );
             }
             Message::ApplyVideoAssist => {
-                if let Some(p) = self.profiles.active_profile_mut() {
-                    p.canvas = crate::state::profile::CanvasMode::Uhd2160;
+                if let Some((w, h)) = self.inputs.video_assist.as_ref().and_then(|v| v.resolution) {
+                    if let Some(p) = self.profiles.active_profile_mut() {
+                        if core_model::Canvas::new(w, h)
+                            .and_then(|c| c.strict_16_9())
+                            .is_ok()
+                        {
+                            p.canvas = crate::state::profile::CanvasMode::Custom(w, h);
+                        }
+                    }
                 }
                 self.inputs.banner_suggestion = None;
             }
@@ -255,12 +355,25 @@ impl SubtitleApp {
             // === 中栏预览事件 ===
             Message::PreviewTimeChanged(time) => {
                 self.preview.set_time(time);
-                return self.request_preview();
+                self.preview_generation = self.preview_generation.wrapping_add(1);
             }
             Message::PreviewJumpEvent(next) => {
-                let step = if next { 2000 } else { -2000 };
-                let t = (self.preview.current_time_ms + step).max(0);
-                return self.update(Message::PreviewTimeChanged(t));
+                if let Some(item) = self.inputs.active_input() {
+                    let current = self.preview.current_time_ms;
+                    let target = if next {
+                        item.event_starts.iter().copied().find(|t| *t > current)
+                    } else {
+                        item.event_starts
+                            .iter()
+                            .rev()
+                            .copied()
+                            .find(|t| *t < current)
+                    };
+                    if let Some(time) = target {
+                        self.preview.set_time(time);
+                    }
+                }
+                return self.request_preview();
             }
             Message::ToggleSplitAb => {
                 self.preview.toggle_split_ab();
@@ -294,6 +407,7 @@ impl SubtitleApp {
                     };
                     self.preview
                         .set_ab_frames(a_rgba, a_dims, b_rgba, b_dims, provider);
+                    self.preview.source = source;
                 }
             }
             Message::FrameRendered {
@@ -333,6 +447,11 @@ impl SubtitleApp {
 
             // === 右栏 Profile 矩阵事件 ===
             Message::ProfileSelected(id) => self.profiles.active_edit_id = Some(id),
+            Message::ProfileRenamed(id, name) => {
+                if let Some(p) = self.profiles.profiles.iter_mut().find(|p| p.id == id) {
+                    p.name = name;
+                }
+            }
             Message::ProfileToggled(id) => {
                 if let Some(p) = self.profiles.profiles.iter_mut().find(|p| p.id == id) {
                     p.enabled = !p.enabled;
@@ -471,6 +590,9 @@ impl SubtitleApp {
 
             // === 底栏任务抽屉事件 ===
             Message::StartQueue => {
+                if self.task_drawer.is_running {
+                    return Task::none();
+                }
                 let inputs: Vec<(String, String)> = self
                     .inputs
                     .selected_inputs()
@@ -483,6 +605,17 @@ impl SubtitleApp {
                     .into_iter()
                     .cloned()
                     .collect();
+                let mut names = std::collections::HashSet::new();
+                if profiles.iter().any(|p| !names.insert(p.name.trim())) {
+                    self.task_drawer.notes = vec!["输出方案名称不能重复，请重命名后再开始".into()];
+                    self.task_drawer.is_expanded = true;
+                    return Task::none();
+                }
+                if profiles.iter().any(|p| !p.is_runnable()) {
+                    self.task_drawer.notes = profiles.iter().filter_map(|p| p.problem()).collect();
+                    self.task_drawer.is_expanded = true;
+                    return Task::none();
+                }
                 if inputs.is_empty() || profiles.is_empty() {
                     // 不给“看起来开始了”：什么都不摆，也不转圈
                     return Task::none();
@@ -523,6 +656,9 @@ impl SubtitleApp {
                 return launch_batch(spec, out_dir, cancel);
             }
             Message::RetryFailed => {
+                if self.task_drawer.is_running {
+                    return Task::none();
+                }
                 let targets = self.task_drawer.retry_targets();
                 if targets.is_empty() {
                     return Task::none();
@@ -648,7 +784,7 @@ impl SubtitleApp {
                 // 只改 is_running 而不置位，就是“按钮能点但没用”。
                 self.cancel
                     .store(true, std::sync::atomic::Ordering::Relaxed);
-                self.task_drawer.is_running = false;
+                // 保持忙碌直到后台 Finished，避免取消后重入并发写输出。
                 self.task_drawer
                     .notes
                     .push("已请求取消：正在跑的这一步会先做完，后续不再开始".to_string());
@@ -666,6 +802,7 @@ impl SubtitleApp {
             // === 顶部栏 ===
             Message::OpenDoctorDialog => {
                 self.show_doctor = true;
+                self.doctor = None;
                 // 真的跑一次 doctor（与 `subtitletool-cli doctor --json` 同一份实现）；
                 // 放进阻塞线程因为要探 ffprobe/render-host/字体环境。
                 return Task::perform(
@@ -690,39 +827,128 @@ impl SubtitleApp {
         let total_plan =
             self.inputs.selected_inputs().len() * self.profiles.enabled_profiles().len();
 
-        let top_header = header::view();
-
-        let main_workspace = row![
-            inputs_view::view(&self.inputs),
-            preview_view::view(&self.preview),
-            profiles_view::view(&self.profiles, &self.preset_notice),
+        use crate::views::style;
+        use iced::widget::{button, mouse_area, opaque, stack, text};
+        let tabs = row![
+            button(text("01  预览与校对"))
+                .padding([10, 18])
+                .style(if self.show_profiles {
+                    style::secondary
+                } else {
+                    style::primary
+                })
+                .on_press(Message::WorkspaceChanged(false)),
+            button(text(format!(
+                "02  输出方案 · {}",
+                self.profiles.enabled_profiles().len()
+            )))
+            .padding([10, 18])
+            .style(if self.show_profiles {
+                style::primary
+            } else {
+                style::secondary
+            })
+            .on_press(Message::WorkspaceChanged(true)),
         ]
-        .width(Length::Fill)
-        .height(Length::Fill);
-
-        let bottom_drawer = task_view::view(&self.task_drawer, total_plan);
-
-        let mut full_layout = column![top_header, main_workspace, bottom_drawer,]
-            .width(Length::Fill)
-            .height(Length::Fill);
-
-        // 自检弹窗：真有用内容才弹。以前 `show_doctor` 被设了却从不渲染，
-        // 点了按钮什么都不会发生——用户只会以为自己点错了。
-        if self.show_doctor {
-            full_layout = full_layout.push(doctor_view(self.doctor.as_ref()));
-        }
-        if self.show_settings {
-            full_layout = full_layout.push(settings_view(&self.settings, &self.settings_notice));
-        }
-
-        container(full_layout)
+        .spacing(8);
+        let content = if self.show_profiles {
+            profiles_view::view(&self.profiles, &self.preset_notice)
+        } else {
+            preview_view::view(&self.preview)
+        };
+        let offset = 6.0 * (1.0 - self.transition_progress).powi(3);
+        let content = container(content)
             .width(Length::Fill)
             .height(Length::Fill)
+            .padding(iced::Padding {
+                top: offset,
+                bottom: 6.0 - offset,
+                left: 0.0,
+                right: 0.0,
+            });
+        let workspace = row![
+            inputs_view::view(&self.inputs),
+            column![tabs, content]
+                .spacing(12)
+                .width(Length::Fill)
+                .height(Length::Fill)
+        ]
+        .spacing(16)
+        .height(Length::Fill);
+        let base: Element<'_, Message> = container(
+            column![
+                header::view(),
+                workspace,
+                task_view::view(&self.task_drawer, total_plan)
+            ]
+            .spacing(16),
+        )
+        .padding(20)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into();
+        let dialog = if self.show_settings {
+            Some((
+                settings_view(&self.settings, &self.settings_notice),
+                Message::CloseSettings,
+            ))
+        } else if self.show_doctor {
+            Some((doctor_view(self.doctor.as_ref()), Message::CloseDialog))
+        } else {
+            None
+        };
+        if let Some((panel, close)) = dialog {
+            let backdrop = mouse_area(
+                container(iced::widget::Space::new(Length::Fill, Length::Fill))
+                    .width(Length::Fill)
+                    .height(Length::Fill)
+                    .style(style::scrim),
+            )
+            .on_press(close);
+            stack![
+                base,
+                backdrop,
+                container(opaque(
+                    container(iced::widget::scrollable(panel).height(Length::Shrink))
+                        .max_height(560)
+                        .padding(12)
+                        .style(style::card)
+                ))
+                .center_x(Length::Fill)
+                .center_y(Length::Fill)
+            ]
             .into()
+        } else {
+            base
+        }
+    }
+
+    pub fn subscription(&self) -> iced::Subscription<Message> {
+        let events = iced::event::listen_with(|event, _, _| match event {
+            iced::Event::Window(iced::window::Event::FileDropped(path)) => {
+                let extension = path
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("")
+                    .to_ascii_lowercase();
+                if matches!(extension.as_str(), "mkv" | "mp4" | "mov" | "avi" | "webm") {
+                    Some(Message::VideoAssistDropped(path))
+                } else {
+                    Some(Message::FilesDropped(vec![path]))
+                }
+            }
+            _ => None,
+        });
+        let animation = if self.transition_started.is_some() {
+            iced::time::every(std::time::Duration::from_millis(16)).map(Message::MotionTick)
+        } else {
+            iced::Subscription::none()
+        };
+        iced::Subscription::batch([events, animation])
     }
 
     pub fn theme(&self) -> Theme {
-        Theme::Light
+        crate::views::style::theme()
     }
 }
 
@@ -811,7 +1037,7 @@ fn doctor_view(report: Option<&Result<serde_json::Value, String>>) -> iced::Elem
     .spacing(4);
 
     container(panel)
-        .width(Length::Fill)
+        .width(Length::Fixed(540.0))
         .padding([10, 16])
         .into()
 }
